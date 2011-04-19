@@ -8,7 +8,7 @@ LICENSE = "GPLv2"
 DEPENDS = "chumbhttpd libipod"
 RDEPENDS = "chumbhttpd"
 
-SRC_URI = "${CHUMBYSG_GIT_HOST}/chumby-clone/https_internal.chumby.com_thirdparty_chumbylibs_${RVERSION}_src;subpath=chumbipodd;protocol=${CHUMBY_GIT_PROTOCOL}"
+SRC_URI = "${CHUMBYSG_GIT_HOST}/chumby-clone/https_internal.chumby.com_thirdparty_chumbylibs_${RVERSION}_src${CHUMBYSG_GIT_EXTENSION};subpath=chumbipodd;protocol=${CHUMBYSG_GIT_PROTOCOL}"
 SRCREV = "${AUTOREV}"
 S = "${WORKDIR}/chumbipodd/src"
 

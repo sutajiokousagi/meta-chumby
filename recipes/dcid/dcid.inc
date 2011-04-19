@@ -12,9 +12,9 @@ RPROVIDES = "dcid"
 DEPENDS = "b64 libtomcrypt libtommath tomsfastmath expat"
 RDEPENDS = "expat"
 
-SRC_URI = "${CHUMBYSG_GIT_HOST}/chumby-clone/https_internal.chumby.com_ironforge_dcid_${RVERSION};subpath=src;protocol=${CHUMBY_GIT_PROTOCOL} \
-           ${CHUMBYSG_GIT_HOST}/chumby-clone/https_internal.chumby.com_ironforge_dcid_${RVERSION};subpath=include;protocol=${CHUMBY_GIT_PROTOCOL} \
-           ${CHUMBYSG_GIT_HOST}/chumby-clone/https_internal.chumby.com_firmware_scripts-1.0_${RVERSION}_src;subpath=scripts;protocol=${CHUMBY_GIT_PROTOCOL} \
+SRC_URI = "${CHUMBYSG_GIT_HOST}/chumby-clone/https_internal.chumby.com_ironforge_dcid_${RVERSION}${CHUMBYSG_GIT_EXTENSION}${CHUMBYSG_GIT_EXTENSION}${CHUMBYSG_GIT_EXTENSION};subpath=src;protocol=${CHUMBYSG_GIT_PROTOCOL} \
+           ${CHUMBYSG_GIT_HOST}/chumby-clone/https_internal.chumby.com_ironforge_dcid_${RVERSION}${CHUMBYSG_GIT_EXTENSION}${CHUMBYSG_GIT_EXTENSION}${CHUMBYSG_GIT_EXTENSION};subpath=include;protocol=${CHUMBYSG_GIT_PROTOCOL} \
+           ${CHUMBYSG_GIT_HOST}/chumby-clone/https_internal.chumby.com_firmware_scripts-1.0_${RVERSION}_src${CHUMBYSG_GIT_EXTENSION}${CHUMBYSG_GIT_EXTENSION}${CHUMBYSG_GIT_EXTENSION};subpath=scripts;protocol=${CHUMBYSG_GIT_PROTOCOL} \
            file://chumby_accel.h \
 "
 SRCREV = "${AUTOREV}"

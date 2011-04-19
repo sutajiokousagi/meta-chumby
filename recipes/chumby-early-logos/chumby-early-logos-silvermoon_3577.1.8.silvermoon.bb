@@ -8,8 +8,8 @@ PR = "r0"
 
 COMPATIBLE_MACHINE = "chumby-silvermoon"
 
-SRC_URI = "${CHUMBYSG_GIT_HOST}/chumby-clone/https_internal.chumby.com_firmware_partitions-2.0_${RVERSION};subpath=src;protocol=${CHUMBY_GIT_PROTOCOL} \
-           ${CHUMBYSG_GIT_HOST}/chumby-clone/https_internal.chumby.com_firmware_partitions-${CNPLATFORM}_${RVERSION};subpath=src;protocol=${CHUMBY_GIT_PROTOCOL} \
+SRC_URI = "${CHUMBYSG_GIT_HOST}/chumby-clone/https_internal.chumby.com_firmware_partitions-2.0_${RVERSION}${CHUMBYSG_GIT_EXTENSION}${CHUMBYSG_GIT_EXTENSION};subpath=src;protocol=${CHUMBYSG_GIT_PROTOCOL} \
+           ${CHUMBYSG_GIT_HOST}/chumby-clone/https_internal.chumby.com_firmware_partitions-${CNPLATFORM}_${RVERSION}${CHUMBYSG_GIT_EXTENSION}${CHUMBYSG_GIT_EXTENSION};subpath=src;protocol=${CHUMBYSG_GIT_PROTOCOL} \
 "
 SRCREV = "${AUTOREV}"
 S = "${WORKDIR}/src/rfs1/etc"

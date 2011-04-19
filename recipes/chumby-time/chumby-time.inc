@@ -8,7 +8,7 @@ PR = "r0"
 
 RDEPENDS = "cpi-${MACHINE} ntp"
 
-SRC_URI = "${CHUMBYSG_GIT_HOST}/chumby-clone/https_internal.chumby.com_firmware_scripts-1.0_${RVERSION}_src;subpath=scripts;protocol=${CHUMBY_GIT_PROTOCOL}"
+SRC_URI = "${CHUMBYSG_GIT_HOST}/chumby-clone/https_internal.chumby.com_firmware_scripts-1.0_${RVERSION}_src${CHUMBYSG_GIT_EXTENSION};subpath=scripts;protocol=${CHUMBYSG_GIT_PROTOCOL}"
 SRCREV = "${AUTOREV}"
 S = "${WORKDIR}/scripts"
 
