@@ -13,14 +13,11 @@ LICENSE = "GPLv2"
 DEPENDS = "virtual/kernel chumby-blobs-falconwing"
 PROVIDES = "virtual/bootsector"
 RPROVIDES_${PN} = "virtual/bootsector"
-PR = "r10"
+PR = "r11"
 COMPATIBLE_MACHINE = "chumby-falconwing"
 
 
-SRC_URI = "file://bootstream-1.0.tar.gz      \
-           file://0001-fix-oe-build.patch    \
-           file://0002-fix-boot-offset.patch \
-"
+SRC_URI = "file://chumby-bootshell-1.0.tar.gz"
 
 S = "${WORKDIR}/src"
 
@@ -35,5 +32,5 @@ addtask deploy before do_build after do_compile
 do_deploy () {
     install -d ${DEPLOY_DIR_IMAGE}
     install -m 0644 output/chumby_boot.rom ${DEPLOY_DIR_IMAGE}/chumby_shell.bin
-    package_stagefile_shell ${DEPLOY_DIR_IMAGE}/chumby_shell.bin
+#    package_stagefile_shell ${DEPLOY_DIR_IMAGE}/chumby_shell.bin
 }
