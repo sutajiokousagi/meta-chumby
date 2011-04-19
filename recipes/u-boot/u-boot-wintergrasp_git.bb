@@ -7,7 +7,7 @@ RPROVIDES = ""
 
 PR ="r1"
 
-SRC_URI = "${CHUMBYSG_GIT_HOST}/wintergrasp/u-boot-2009.08;protocol=${CHUMBY_GIT_PROTOCOL} \
+SRC_URI = "${CHUMBYSG_GIT_HOST}/wintergrasp/u-boot-2009.08${CHUMBYSG_GIT_EXTENSION};protocol=${CHUMBYSG_GIT_PROTOCOL} \
            file://u-boot-2009.08.patch \
 "
 SRCREV = "${AUTOREV}"

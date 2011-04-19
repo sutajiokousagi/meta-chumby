@@ -6,7 +6,7 @@ AUTHOR = "Sean Cross"
 LICENSE = "BSD"
 PR = "r1"
 
-SRC_URI = "${CHUMBYSG_GIT_HOST}/chumby-sg/makedisk;protocol=${CHUMBY_GIT_PROTOCOL}"
+SRC_URI = "${CHUMBYSG_GIT_HOST}/chumby-sg/makedisk${CHUMBYSG_GIT_EXTENSION};protocol=${CHUMBYSG_GIT_PROTOCOL}"
 SRCREV = "${AUTOREV}"
 S = "${WORKDIR}/git"
 
