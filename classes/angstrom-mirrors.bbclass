@@ -1,3 +1,5 @@
+# By default, consult angstrom mirrors last for git and svn
+
 PREMIRRORS_append () {
 cvs://.*/.* http://www.angstrom-distribution.org/unstable/sources/
 hg://.*/.* http://www.angstrom-distribution.org/unstable/sources/
