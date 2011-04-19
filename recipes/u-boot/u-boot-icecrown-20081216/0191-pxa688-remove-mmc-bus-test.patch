@@ -1,0 +1,34 @@
+From 4cb11c6a1a2ef10b993f8a9766ca78ce5b24a5f1 Mon Sep 17 00:00:00 2001
+From: Mingliang Hu <mhu4@marvell.com>
+Date: Fri, 14 May 2010 19:04:39 +0800
+Subject: [PATCH] pxa688: remove mmc bus test
+
+Signed-off-by: Mingliang Hu <mhu4@marvell.com>
+---
+ drivers/mmc/mmc.c |    3 ++-
+ 1 files changed, 2 insertions(+), 1 deletions(-)
+
+diff --git a/drivers/mmc/mmc.c b/drivers/mmc/mmc.c
+index 02a1095..59ddcfb 100644
+--- a/drivers/mmc/mmc.c
++++ b/drivers/mmc/mmc.c
+@@ -1229,6 +1229,7 @@ int mmc_startup(struct mmc *mmc)
+ 		} else
+ 			mmc_set_clock(mmc, 20000000);
+ 
++#if 0
+ 		if (mmc->card_caps & MMC_MODE_8BIT) {
+ 			err = mmc_bus_test(mmc, 8);
+ 			if (err)
+@@ -1238,7 +1239,7 @@ int mmc_startup(struct mmc *mmc)
+ 			if (err)
+ 				return err;
+ 		}
+-
++#endif
+ 		err = mmc_get_info(mmc);
+ 		if (err)
+ 			return err;
+-- 
+1.6.0.4
+

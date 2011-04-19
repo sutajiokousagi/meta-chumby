@@ -1,0 +1,30 @@
+From afa3a86ad0498f7e2626d7b47e15e58bbef48176 Mon Sep 17 00:00:00 2001
+From: Lei Wen <leiwen@marvell.com>
+Date: Mon, 9 Mar 2009 10:40:56 +0800
+Subject: [PATCH] pxa168: disable "L2 as sram" feature
+
+Signed-off-by: Mingwei Wang <mwwang@marvell.com>
+---
+ board/pxa/avengers/aspen_init.S |    6 ++++++
+ 1 files changed, 6 insertions(+), 0 deletions(-)
+
+diff --git a/board/pxa/avengers/aspen_init.S b/board/pxa/avengers/aspen_init.S
+index d181033..45325e7 100644
+--- a/board/pxa/avengers/aspen_init.S
++++ b/board/pxa/avengers/aspen_init.S
+@@ -70,6 +70,12 @@
+ aspen_init:
+ 	stmfd   sp!,    {r1-r2, lr}             @ Save r1, r2 and link register on the stack
+ 
++	@ Ensure L2 cache is not mapped as SRAM
++	ldr	r0, =0xD4282C08
++	ldr	r1, [r0]
++	bic	r1, r1, #0x10
++	str	r1, [r0]
++
+ 	@ Initialize MFPR registers
+ 	bl	xlli_MFPR_init
+ 
+-- 
+1.6.0.4
+

@@ -1,0 +1,78 @@
+From 67755a45c9b13e2242d1e5889a4448dce5eb0587 Mon Sep 17 00:00:00 2001
+From: Wen Lei <leiwen@marvell.com>
+Date: Fri, 27 Feb 2009 10:31:21 +0800
+Subject: [PATCH] pxa910: add tftp download via network to memory
+
+---
+ board/pxa/common/Makefile |    1 +
+ board/pxa/common/tftp.c   |   46 +++++++++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 47 insertions(+), 0 deletions(-)
+ create mode 100644 board/pxa/common/tftp.c
+
+diff --git a/board/pxa/common/Makefile b/board/pxa/common/Makefile
+index 4d7a97a..a5a910a 100644
+--- a/board/pxa/common/Makefile
++++ b/board/pxa/common/Makefile
+@@ -31,6 +31,7 @@ LIB	= $(obj)lib$(VENDOR).a
+ 
+ COBJS-y				+= boot.o
+ COBJS-${CONFIG_CMD_NAND}	+= nand.o
++COBJS-${CONFIG_CMD_NET}		+= tftp.o
+ COBJS-${CONFIG_USB_ETH}		+= usbeth/ether-mvu2o.o
+ COBJS-${CONFIG_USB_ETH}		+= usbeth/mv_u2o_ctl.o
+ COBJS-${CONFIG_USB_ETH}		+= usbeth/mv_u2o_ep0.o
+diff --git a/board/pxa/common/tftp.c b/board/pxa/common/tftp.c
+new file mode 100644
+index 0000000..953b04b
+--- /dev/null
++++ b/board/pxa/common/tftp.c
+@@ -0,0 +1,46 @@
++#include <common.h>
++#include <command.h>
++#include <net.h>
++
++int do_tftp (cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
++{
++	char *s;
++	char *end;
++	ulong addr;
++
++	/* pre-set load_addr */
++	if ((s = getenv("loadaddr")) != NULL) {
++		load_addr = simple_strtoul(s, NULL, 16);
++	}
++
++	switch (argc) {
++	case 1:
++		break;
++
++	case 2:
++		addr = simple_strtoul(argv[1], &end, 16);
++		if (end == (argv[1] + strlen(argv[1])))
++			load_addr = addr;
++		else
++			copy_filename(BootFile, argv[1], sizeof(BootFile));
++		break;
++
++	case 3:	load_addr = simple_strtoul(argv[1], NULL, 16);
++		copy_filename (BootFile, argv[2], sizeof(BootFile));
++
++		break;
++
++	default: printf ("Usage:\n%s\n", cmdtp->usage);
++		show_boot_progress (-80);
++		return 1;
++	}
++
++	show_boot_progress (80);
++	return NetLoop(TFTP);
++}
++
++U_BOOT_CMD(
++	tftp,	CONFIG_SYS_MAXARGS,	1,	do_tftp,
++	"tftp-    download image via network using TFTP protocol\n",
++	"[loadAddress] [[hostIPaddr:]filename]\n"
++);
+-- 
+1.6.0.4
+

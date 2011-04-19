@@ -1,0 +1,67 @@
+From 6a83ff61001cd1e70df5c7653aa247e78773e0fd Mon Sep 17 00:00:00 2001
+From: Lei Wen <leiwen@marvell.com>
+Date: Wed, 24 Jun 2009 15:08:54 +0800
+Subject: [PATCH] nand: fix nand sensing bug
+
+The nand sensing rely on nand->is_ready flag. However, this flag is
+always true, althrough in some case it should be false.
+
+Signed-off-by: Lei Wen <leiwen@marvell.com>
+---
+ drivers/mtd/nand/pxa3xx_nand.c |   13 ++++++-------
+ 1 files changed, 6 insertions(+), 7 deletions(-)
+
+diff --git a/drivers/mtd/nand/pxa3xx_nand.c b/drivers/mtd/nand/pxa3xx_nand.c
+index d5594ba..cde2b82 100644
+--- a/drivers/mtd/nand/pxa3xx_nand.c
++++ b/drivers/mtd/nand/pxa3xx_nand.c
+@@ -317,7 +317,6 @@ static irqreturn_t pxa3xx_nand_irq(int irq, void *devid)
+ 
+ 			complete(&nand->cmd_complete);
+ 		}
+-		nand->is_ready = 1;
+ 	}
+ 
+ 	if (status & ready) {
+@@ -424,7 +423,7 @@ static int prepare_command_poll(struct pxa3xx_nand *nand, int command,
+ 	nand->state		= 0;
+ 	nand->use_dma		= 0;
+ 	nand->is_write		= 0;
+-	nand->is_ready		= 1;
++	nand->is_ready		= 0;
+ 	nand->errcode		= ERR_NONE;
+ 	nand->bad_count		= 0;
+ 
+@@ -1024,15 +1023,12 @@ static int pxa3xx_nand_sensing(struct pxa3xx_nand_info *info, int cs)
+ 	struct mtd_info *mtd = nand->mtd[cs];
+ 
+ 	nand->wait_mode = 1;
+-	nand->is_ready  = 0;
+ 	pxa3xx_nand_config_flash(info, f);
+ 	pxa3xx_nand_cmdfunc(mtd, NAND_CMD_RESET, 0, 0);
+ 	nand->wait_mode = 0;
+ 
+-	if (nand->is_ready) {
+-		nand->is_ready  = 0;
++	if (nand->is_ready)
+ 		return 1;
+-	}
+ 	else
+ 		return 0;
+ }
+@@ -1053,8 +1049,11 @@ static int pxa3xx_nand_detect_flash(struct pxa3xx_nand *nand)
+ 		chip = mtd->priv;
+ 		info = mtd->priv;
+ 		ret = pxa3xx_nand_sensing(info, chip_select);
+-		if (!ret)
++		if (!ret) {
++			kfree (nand->mtd[chip_select]);
++			nand->mtd[chip_select] = NULL;
+ 			continue;
++		}
+ 
+ 		pxa3xx_nand_config_flash(info, f);
+ 		pxa3xx_nand_cmdfunc(mtd, NAND_CMD_READID, 0, 0);
+-- 
+1.6.0.4
+

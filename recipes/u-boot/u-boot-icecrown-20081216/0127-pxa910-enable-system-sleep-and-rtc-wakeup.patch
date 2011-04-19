@@ -1,0 +1,619 @@
+From d21c11aac1aba4f189b3299a40cc2dcc35e67255 Mon Sep 17 00:00:00 2001
+From: Ning Jiang <ning.jiang@marvell.com>
+Date: Sun, 23 Aug 2009 22:54:01 +0800
+Subject: [PATCH] pxa910: enable system sleep and rtc wakeup
+
+Signed-off-by: Ning Jiang <ning.jiang@marvell.com>
+Signed-off-by: Bin Yang <bin.yang@marvell.com>
+---
+ board/pxa/common/freq.c                |  231 +++++++++++++++++++++++++++++---
+ cpu/88SV331xV5/pxa168/timer.c          |  126 +++++++++++++++++-
+ include/asm-arm/arch-pxa168/regs-rtc.h |  109 +++++++++++++++
+ include/asm-arm/arch-pxa168/rtc.h      |   16 +++
+ 4 files changed, 460 insertions(+), 22 deletions(-)
+ create mode 100644 include/asm-arm/arch-pxa168/regs-rtc.h
+ create mode 100644 include/asm-arm/arch-pxa168/rtc.h
+
+diff --git a/board/pxa/common/freq.c b/board/pxa/common/freq.c
+index 6046404..721a2b0 100644
+--- a/board/pxa/common/freq.c
++++ b/board/pxa/common/freq.c
+@@ -11,6 +11,8 @@
+  */
+ 
+ #include <common.h>
++#if (defined(CONFIG_TAVOREVB) || defined(CONFIG_TTC_DKB) || \
++     defined(CONFIG_ASPENITE) || defined(CONFIG_ZYLONITE2))
+ #include <command.h>
+ #include <asm/io.h>
+ #include "pmua.h"
+@@ -18,6 +20,7 @@
+ #include "pmud.h"
+ #include "pmum.h"
+ #include "predefines.h"
++#include <asm/arch/icu.h>
+ 
+ #define CONFIG_AP_ALONE
+ #define CONFIG_MIPS
+@@ -1005,7 +1008,7 @@ U_BOOT_CMD(
+ 
+ static u32 i2c_base = I2C_BASE;
+ 
+-int i2c_init(unsigned int dev_id) 
++int i2c_init(unsigned int dev_id)
+ {
+ 
+ #if (defined(CONFIG_TAVOREVB) || defined(CONFIG_TTC_DKB))
+@@ -1025,7 +1028,7 @@ int i2c_init(unsigned int dev_id)
+ 	}
+ 
+ 	ICR = 0;
+-	/* Setup I2C slave address */ 
++	/* Setup I2C slave address */
+ 	ISAR = dev_id;
+ 	ICR = ICR_SCLEA;
+ 	ICR |= ICR_UIE;
+@@ -1033,7 +1036,7 @@ int i2c_init(unsigned int dev_id)
+ 	return 0;
+ }
+ 
+-int i2c_rx_full(int timeout) 
++int i2c_rx_full(int timeout)
+ {
+ 	unsigned int temp;
+ 	while (timeout--) {
+@@ -1048,7 +1051,7 @@ int i2c_rx_full(int timeout)
+ 	return -1;
+ }
+ 
+-int i2c_tx_empty(int timeout) 
++int i2c_tx_empty(int timeout)
+ {
+ 	unsigned int temp;
+ 
+@@ -1068,10 +1071,10 @@ int i2c_tx_empty(int timeout)
+ }
+ 
+ int __i2c_write(unsigned char slave_addr, unsigned char * bytes_buf,
+-	   unsigned int bytes_count, int stop) 
++	   unsigned int bytes_count, int stop)
+ {
+ 	unsigned int reg;
+-	
++
+ 	IDBR = (slave_addr << 1) & ~IDBR_MODE;
+ 	reg = ICR;
+ 	reg |= (ICR_START | ICR_TB);
+@@ -1103,7 +1106,7 @@ int __i2c_write(unsigned char slave_addr, unsigned char * bytes_buf,
+ }
+ 
+ int __i2c_read(unsigned char slave_addr, unsigned char * bytes_buf,
+-		unsigned int bytes_count, int stop) 
++		unsigned int bytes_count, int stop)
+ {
+ 	unsigned int reg;
+ 
+@@ -1355,22 +1358,50 @@ U_BOOT_CMD(
+ #endif
+ 
+ #ifdef CONFIG_WFI
++
++#define cp15_reg_write(primary_reg, secondary_reg, opcode, value) \
++	__asm__ __volatile__( \
++		"mcr	p15, 0, %0, " \
++		#primary_reg ", " #secondary_reg ", " #opcode "\n" \
++		: : "r" (value) : "memory");
++
++void issue_wfi(void)
++{
++	volatile unsigned int temp;
++
++	temp = reg_read(ICU_MOHAWK_GBL_IRQ_MSK);
++	reg_write(ICU_MOHAWK_GBL_IRQ_MSK, temp|0x3);
++	temp = 0x0;
++	/* need delay here, or console will be messed up, no root cause now */
++	udelay(100);
++	/* Issue wfi here */
++#if 1
++	cp15_reg_write(c7,c0,4,temp);
++#else
++	/* not workable when system sleep */
++	__asm__ __volatile__ ("\n\t\
++		mov     r0, #0\n\t\
++		mrc     p15, 0, r1, c1, c0, 0   @ read control register\n\t\
++		mcr     p15, 0, r0, c7, c10, 4  @ Drain write buffer\n\t\
++		bic     r2, r1, #1 << 12\n\t\
++		mrs     r3, cpsr                @ Disable FIQs while Icache\n\t\
++		orr     ip, r3, #0x00000040     @ is disabled\n\t\
++		msr     cpsr_c, ip\n\t\
++		mcr     p15, 0, r2, c1, c0, 0   @ Disable I cache\n\t\
++		mcr     p15, 0, r0, c7, c0, 4   @ Wait for interrupt\n\t\
++		mcr     p15, 0, r1, c1, c0, 0   @ Restore ICache enable\n\t\
++		msr     cpsr_c, r3              @ Restore FIQ state\n\t"
++	);
++#endif
++	reg_write(ICU_MOHAWK_GBL_IRQ_MSK, temp);
++}
++
+ int do_wfi(cmd_tbl_t * cmdtp, int flag, int argc, char *argv[])
+ {
+-       __asm__ __volatile__ ("\n\t\
+-               mov     r0, #0\n\t\
+-               mrc     p15, 0, r1, c1, c0, 0   @ read control register\n\t\
+-               mcr     p15, 0, r0, c7, c10, 4  @ Drain write buffer\n\t\
+-               bic     r2, r1, #1 << 12\n\t\
+-               mrs     r3, cpsr                @ Disable FIQs while Icache\n\t\
+-               orr     ip, r3, #0x00000040     @ is disabled\n\t\
+-               msr     cpsr_c, ip\n\t\
+-               mcr     p15, 0, r2, c1, c0, 0   @ Disable I cache\n\t\
+-               mcr     p15, 0, r0, c7, c0, 4   @ Wait for interrupt\n\t\
+-               mcr     p15, 0, r1, c1, c0, 0   @ Restore ICache enable\n\t\
+-               msr     cpsr_c, r3              @ Restore FIQ state\n\t"
+-       );
+-       return 0;
++	disable_interrupts();
++	issue_wfi();
++	enable_interrupts();
++	return 0;
+ }
+ 
+ U_BOOT_CMD(
+@@ -1506,6 +1537,8 @@ U_BOOT_CMD(
+ 		"hibernate - put system into hibernate mode\n"
+ 	  );
+ 
++void set_timer_match(ulong secs);
++
+ int do_timeout(cmd_tbl_t * cmdtp, int flag, int argc, char *argv[])
+ {
+ 	ulong secs;
+@@ -1558,3 +1591,159 @@ U_BOOT_CMD(
+ 		"releasecp - release seagull image at 0x18000\n"
+ 	  );
+ 
++static void reset_pmu_reg(void)
++{
++#if 0
++	printf("MOHAWK: Resetting baseline values \r\n");
++	//reg_write(MCB_CONF,0xC0000);
++	//reg_write(LCD_SPU_DMA_CTRL1,0x100000);
++	//reg_write(GEU_CONFIG,0x800000);
++	reg_write(APBC_TIMERS_CLK_RST,0x30);
++	reg_write(APBC_TIMERS1_CLK_RST,0x30);
++	reg_write(APBC_AIB_CLK_RST,0);
++	//reg_write(APBC_RTC_CLK_RST,0x0);
++	reg_write(APBC_SW_JTAG_CLK_RST,0x0);
++	reg_write(APBC_GPIO_CLK_RST,0x0);
++	reg_write(APBC_PWM0_CLK_RST,0x0);
++	reg_write(APBC_PWM1_CLK_RST,0x0);
++	reg_write(APBC_PWM2_CLK_RST,0x0);
++	reg_write(APBC_PWM3_CLK_RST,0x0);
++	reg_write(APBC_SSP0_CLK_RST,0x0);
++	reg_write(APBC_SSP1_CLK_RST,0x0);
++	reg_write(APBC_SSP2_CLK_RST,0x0);
++	reg_write(APBC_TWSI_CLK_RST,0x0);
++	reg_write(APBC_KPC_CLK_RST,0x0);
++	reg_write(APBC_TB_ROTARY_CLK_RST,0x0);
++	reg_write(APBC_ONEWIRE_CLK_RST,0x0);
++	reg_write(APBC_ASFAR,0x0);
++	reg_write(APBC_ASSAR,0x0);
++	reg_write(0xd407000c,0x0);//COEL_APB_CLK_GATE
++	reg_write(0xd4070014,0x0);//COEL_APB_RTU_CLKEN
++	reg_write(SCCR,0x0);
++#endif
++}
++
++static void power_mode_init_AP(void)
++{
++    /*Turn on max power switches */
++    /* reg_write(PMUA_MOH_IDLE_CFG,
++                 reg_read(PMUA_MOH_IDLE_CFG)|(PMUA_MOH_IDLE_CFG_MOH_PWR_SW_MSK|
++                 PMUA_MOH_IDLE_CFG_MOH_L2_PWR_SW_MSK));*/
++}
++
++static void core_idle_AP(unsigned int idle)
++{
++	if ( idle )
++		reg_write(PMUA_MOH_IDLE_CFG,
++			reg_read(PMUA_MOH_IDLE_CFG)|0x2);
++	else
++		reg_write(PMUA_MOH_IDLE_CFG,
++			reg_read(PMUA_MOH_IDLE_CFG) & ~0x2);
++}
++
++static void AP_PMU_timer_wakeup_Init(void)
++{
++	volatile unsigned int temp;
++
++	// enable the wakeup 4 decoder
++	temp = reg_read(PMUM_APCR);
++	temp &= ~(1<<18);
++	reg_write(PMUM_APCR,temp);
++
++	//Writing Wakeup and Clock Resume Lines Mask Register
++	//to disable the mask for RTC alarm and AP timer
++	reg_write(PMUM_AWUCRM,0x00020110);
++}
++
++static void AP_PMU_Sleep_Init(int state)
++{
++	volatile unsigned int apcr;
++
++	apcr = reg_read(PMUM_APCR);
++
++	apcr &= ~(1<<29) & ~(1<<27) & ~(1<<26) & ~(1u<<31);
++
++	switch (state) {
++	case 5:
++		apcr |= (1<<29);		/* set the SLPEN bit */
++		AP_PMU_timer_wakeup_Init();
++		/* fall through */
++	case 4:
++		apcr |= (1<<27) | (1<<26);	/* set DDRCORSD and APBSD */
++		/* fall through */
++	case 3:
++		apcr |= (1u<<31);		/* set AXISDD bit */
++		break;
++	default:
++		printf("only state 3, 4, 5 is supported\n");
++		break;
++	}
++
++	apcr |= (1<<30) | (1<<28) | (1<<25) | (1<<19) | (1<<14);
++
++	reg_write(PMUM_APCR,apcr);
++}
++
++static void initsleep(int state)
++{
++	ulong status;
++
++	reset_pmu_reg();
++
++	//graphics pwr dwn
++	status = *(volatile unsigned int *)0xd42828d0;
++	status &= (~0x10);
++	*(volatile unsigned int *)0xd42828d0 = status;
++	*(volatile unsigned int *)0xd42828d0 = 0x0;
++
++	AP_PMU_Sleep_Init(state);
++	power_mode_init_AP();
++	//drampowerdownmodes_AP(WFI_SR|AUTO_WAKE_SR);
++	core_idle_AP(1);
++	//core_powerdown_AP(PWR_DWN);
++}
++
++int do_initsleep(cmd_tbl_t * cmdtp, int flag, int argc, char *argv[])
++{
++	ulong state;
++
++	if (argc != 2) {
++		printf ("Usage:\n%s\n", cmdtp->usage);
++		return 1;
++	}
++
++	state = simple_strtoul(argv[1], NULL, 0);
++	initsleep(state);
++
++	return 0;
++}
++
++U_BOOT_CMD(
++		initsleep,	6,	1,	do_initsleep,
++		"initsleep	- initialize for system sleep mode\n",
++		"initsleep - initialize for system sleep mode\n"
++	  );
++
++void rtc_alarm_to_pmu(int alarm_secs);
++
++int do_setalarm(cmd_tbl_t * cmdtp, int flag, int argc, char *argv[])
++{
++	ulong sec;
++
++	if (argc != 2) {
++		printf ("Usage:\n%s\n", cmdtp->usage);
++		return 1;
++	}
++
++	sec = simple_strtoul(argv[1], NULL, 0);
++	rtc_alarm_to_pmu(sec);
++
++	return 0;
++}
++
++U_BOOT_CMD(
++		setalarm,	6,	1,	do_setalarm,
++		"setalarm	- set rtc alarm\n",
++		"setalarm nsecs - set rtc alarm to nsecs\n"
++	  );
++#endif
+diff --git a/cpu/88SV331xV5/pxa168/timer.c b/cpu/88SV331xV5/pxa168/timer.c
+index d53f52b..8cca784 100644
+--- a/cpu/88SV331xV5/pxa168/timer.c
++++ b/cpu/88SV331xV5/pxa168/timer.c
+@@ -38,6 +38,9 @@
+ #include <asm/io.h>
+ #include <common.h>
+ #include <asm/arch/interrupt.h>
++#include <asm/arch/regs-rtc.h>
++#include <asm/arch/rtc.h>
++
+ 
+ #define READ_TIMER ({volatile int loop=100; \
+ 	         	*(volatile ulong *)(CONFIG_SYS_TIMERBASE+0xa4) = 0x1; \
+@@ -89,9 +92,12 @@ int timer_init(void)
+ 	/* install interrupt handler for timer */
+ 	ISR_Connect(INT_AP_TMR1, timer_isr, (void *)0);
+ #endif
++	RTC_init();
++
++	return 0;
+ }
+ 
+-int set_timer_match(ulong secs)
++void set_timer_match(ulong secs)
+ {
+ 	*(volatile ulong *)(CONFIG_SYS_TIMERBASE + 0x4) =
+ 		(READ_TIMER + secs * CONFIG_SYS_HZ);
+@@ -198,3 +204,121 @@ unsigned long long get_ticks(void)
+ 	return READ_TIMER;
+ }
+ 
++
++/******************************** rtc ***********************************/
++void  RTC_set_raw_time(BU_U32 rawt)
++{
++	BU_REG_WRITE( RTC_CNR, rawt);
++}
++
++BU_U32 RTC_get_raw_time()
++{
++	return BU_REG_READ( RTC_CNR );
++}
++
++void RTC_enable_1hz_int()
++{
++	BU_REG_WRITE( RTC_SR, BU_REG_READ(RTC_SR) | RTC_SR_HZE);
++}
++
++void RTC_enable_alarm_int()
++{
++	BU_REG_WRITE( RTC_SR, BU_REG_READ(RTC_SR) | RTC_SR_ALE);
++}
++
++void RTC_disable_1hz_int()
++{
++	BU_REG_WRITE( RTC_SR, BU_REG_READ(RTC_SR) & ~RTC_SR_HZE);
++}
++
++void RTC_disable_alarm_int()
++{
++	BU_REG_WRITE( RTC_SR, BU_REG_READ(RTC_SR) & ~ RTC_SR_ALE);
++}
++
++void RTC_set_alarm( BU_U32 rm )
++{
++	BU_REG_WRITE( RTC_AR, rm );
++	RTC_enable_alarm_int();
++}
++
++#ifdef CONFIG_USE_IRQ
++void RTC_ISR(void *data)
++{
++	BU_U32	sr;
++	static int sec = 0;
++
++	sr = BU_REG_READ( RTC_SR );
++	if ( sr & RTC_SR_ALE && sr & RTC_SR_AL )
++	{
++		printf("Alarm wakeup at %x!\n", BU_REG_READ(RTC_CNR) );
++
++		BU_REG_WRITE( RTC_SR, ( sr & (RTC_SR_HZE|RTC_SR_ALE )) | RTC_SR_AL );
++		BU_REG_WRITE( RTC_AR, 0 );
++		return;
++	}
++
++	if ( sr & RTC_SR_HZE && sr & RTC_SR_HZ )
++	{
++		sec++;
++		printf("%d", sec);
++		BU_REG_WRITE( RTC_SR, ( sr & (RTC_SR_HZE|RTC_SR_ALE )) | RTC_SR_HZ );
++		return;
++	}
++
++	// else PMU Wake up BUG: in the PMU
++	printf("PMU Alarm wakeup at %x!\n", BU_REG_READ(RTC_CNR) );
++	BU_REG_WRITE( RTC_SR, sr | (RTC_SR_AL|RTC_SR_HZ) );
++	BU_REG_WRITE( RTC_AR, 0 );
++
++	return;
++}
++#endif
++
++#define APBC_RTC_CLK_RST (0xd4015028)
++
++void RTC_init(void)
++{
++	volatile int i;
++	BU_U32 reg;
++
++	BU_REG_WRITE( APBC_RTC_CLK_RST, 0x5);
++	reg=BU_REG_READ( APBC_RTC_CLK_RST);
++	i=0x200;
++	while(i--);
++
++	BU_REG_WRITE( APBC_RTC_CLK_RST, 3);
++	reg=BU_REG_READ( APBC_RTC_CLK_RST);
++	i=0x300;
++	while(i--);
++
++	BU_REG_WRITE( APBC_RTC_CLK_RST, 0x83);
++	reg=BU_REG_READ( APBC_RTC_CLK_RST);
++	i=0x300;
++	while(i--);
++
++#ifdef CONFIG_USE_IRQ
++	INT_Enable( INT_RTC_ALARM, IRQ_ROUTE, RTC_PRIORITY );
++	ISR_Connect(INT_RTC_ALARM, RTC_ISR, 0);
++
++	INT_Enable( INT_RTC_1HZ, IRQ_ROUTE, RTC_PRIORITY );
++	ISR_Connect(INT_RTC_1HZ, RTC_ISR, 0);
++#endif
++
++	RTC_disable_alarm_int();
++	RTC_disable_1hz_int();
++
++	BU_REG_WRITE( RTC_CNR, 0 );
++	BU_REG_WRITE( RTC_AR,  0 );
++}
++
++void rtc_alarm_to_pmu(int alarm_secs)
++{
++	BU_U32 raw_t;
++
++	printf("Alarm setup for %d seconds\n", alarm_secs);
++
++	raw_t = RTC_get_raw_time();
++	raw_t += alarm_secs;
++	RTC_set_alarm( raw_t );
++}
+diff --git a/include/asm-arm/arch-pxa168/regs-rtc.h b/include/asm-arm/arch-pxa168/regs-rtc.h
+new file mode 100644
+index 0000000..3741c33
+--- /dev/null
++++ b/include/asm-arm/arch-pxa168/regs-rtc.h
+@@ -0,0 +1,109 @@
++/******************************************************************************
++ *
++ * Name:	RTC.h
++ * Project:	Hermon-2
++ * Purpose:	Testing
++ *
++ ******************************************************************************/
++
++/******************************************************************************
++ *
++ *  (C)Copyright 2005 - 2008 Marvell. All Rights Reserved.
++ *
++ *  THIS IS UNPUBLISHED PROPRIETARY SOURCE CODE OF MARVELL.
++ *  The copyright notice above does not evidence any actual or intended
++ *  publication of such source code.
++ *  This Module contains Proprietary Information of Marvell and should be
++ *  treated as Confidential.
++ *  The information in this file is provided for the exclusive use of the
++ *  licensees of Marvell.
++ *  Such users have the right to use, modify, and incorporate this code into
++ *  products for purposes authorized by the license agreement provided they
++ *  include this notice and the associated copyright notice with any such
++ *  product.
++ *  The information in this file is provided "AS IS" without warranty.
++ *
++ ******************************************************************************/
++
++/******************************************************************************
++ *
++ * This file was automatically generated by reg.pl using  *	RTC.csv
++ *
++ ******************************************************************************/
++
++/******************************************************************************
++ *
++ * History:
++ *
++ ********* PLEASE INSERT THE CVS HISTORY OF THE PREVIOUS VERSION HERE. *********
++ *******************************************************************************/
++
++#ifndef	__INC_RTC_H
++#define	__INC_RTC_H
++
++
++/*
++ *
++ *	THE BASE ADDRESSES
++ *
++ */
++#define	RTC_BASE	0xD4010000
++
++/*
++ *
++ *	THE REGISTER DEFINES
++ *
++ */
++#define	RTC_CNR	(RTC_BASE+0x0000)	/* 32 bit	RTC Counter Register */
++#define	RTC_AR	(RTC_BASE+0x0004)	/* 32 bit	RTC Alarm Register */
++#define	RTC_SR	(RTC_BASE+0x0008)	/* 32 bit	RTC Status Register */
++#define	RTC_TR	(RTC_BASE+0x000C)	/* 32 bit	RTC Trim Register */
++#define	RTC_PR	(RTC_BASE+0x0010)	/* 32 bit	RTC Control Register */
++#define	RTC_BRN	(RTC_BASE+0x0014)	/* RTC Backup Registers Start */
++
++/*
++ *
++ *	THE BIT DEFINES
++ *
++ */
++/*	RTC_CNR	0x0000	RTC Counter Register */
++#define	RTC_CNR_TC_MSK		SHIFT0(0xffffffff)	/* Time Count */
++#define	RTC_CNR_TC_BASE		0
++
++/*	RTC_AR	0x0004	RTC Alarm Register */
++#define	RTC_AR_AT_MSK		SHIFT0(0xffffffff)	/* Alarm time */
++#define	RTC_AR_AT_BASE		0
++
++/*	RTC_SR	0x0008	RTC Status Register */
++/*		Bit(s) RTC_SR_RSRV_31_4 reserved */
++#define	RTC_SR_HZE					BIT_3				/* 1-Hz interrupt enable */
++/* RTC alarm interrupt enable */
++#define	RTC_SR_ALE					BIT_2
++/* 1-Hz rising-edge detected */
++#define	RTC_SR_HZ					BIT_1
++#define	RTC_SR_AL					BIT_0				/* RTC alarm detected */
++
++/*	RTC_TR	0x000C	RTC Trim Register */
++/* Locking bit for the trim value */
++#define	RTC_TR_LCK					BIT_31
++/*		Bit(s) RTC_TR_RSRV_30_26 reserved */
++#define	RTC_TR_D9_D0_MSK			SHIFT16(0x3ff)	/* Trim delete count */
++#define	RTC_TR_D9_D0_BASE			16
++#define	RTC_TR_C150_C0_MSK			SHIFT0(0xffff)	/* Clock divider count */
++#define	RTC_TR_C150_C0_BASE			0
++
++/*	RTC_PR	0x0010	RTC Control Register */
++/*		Bit(s) RTC_PR_RSRV_31_1 reserved */
++/* Controls the ALARM signal */
++#define	RTC_PR_SW_ALARM				BIT_0
++
++/*	RTC_BRn	0x0014	RTC Backup Registers */
++#define	RTC_BRN_DATA_MSK		SHIFT0(0xffffffff)	/* Backup Data */
++#define	RTC_BRN_DATA_BASE		0
++
++
++
++/* -------------------- */
++
++
++#endif	/* __INC_RTC_H */
+diff --git a/include/asm-arm/arch-pxa168/rtc.h b/include/asm-arm/arch-pxa168/rtc.h
+new file mode 100644
+index 0000000..e419033
+--- /dev/null
++++ b/include/asm-arm/arch-pxa168/rtc.h
+@@ -0,0 +1,16 @@
++#ifndef _BU_RTC_H_
++#define	_BU_RTC_H_
++
++#define	RTC_PRIORITY	15
++
++extern void RTC_init(void);
++extern void RTC_set_raw_time(BU_U32);
++extern BU_U32 RTC_get_raw_time(void);
++extern void RTC_enable_1hz_int(void);
++extern void RTC_enable_alarm_int(void);
++extern void RTC_disable_1hz_int(void);
++extern void RTC_disable_alarm_int(void);
++extern void RTC_set_alarm(BU_U32);
++extern void rtc_alarm_to_pmu(int);
++
++#endif
+-- 
+1.6.0.4
+

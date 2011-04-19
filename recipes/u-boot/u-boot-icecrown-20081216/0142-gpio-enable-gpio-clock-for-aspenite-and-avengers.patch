@@ -1,0 +1,39 @@
+From 6717e1e3febda8e5d5769620ac621144d09f754c Mon Sep 17 00:00:00 2001
+From: Lei Wen <leiwen@marvell.com>
+Date: Mon, 28 Sep 2009 12:12:18 +0800
+Subject: [PATCH] gpio: enable gpio clock for aspenite and avengers
+
+---
+ board/pxa/aspenite/aspenite_pxa168.c |    2 ++
+ board/pxa/avengers/avenger_pxa168.c  |    2 ++
+ 2 files changed, 4 insertions(+), 0 deletions(-)
+
+diff --git a/board/pxa/aspenite/aspenite_pxa168.c b/board/pxa/aspenite/aspenite_pxa168.c
+index 884eec0..c226446 100644
+--- a/board/pxa/aspenite/aspenite_pxa168.c
++++ b/board/pxa/aspenite/aspenite_pxa168.c
+@@ -116,6 +116,8 @@ int board_init (void)
+ 
+     /* Enable clocks */
+     *(unsigned int *)0xD4051024 = 0xffffffff;
++    /* enable GPIO clock */
++    *(volatile unsigned int *)0xd4015008=0x1;
+ 
+ #ifdef CONFIG_PXA3XX_SPI
+     /* Enable SSP1 clock */
+diff --git a/board/pxa/avengers/avenger_pxa168.c b/board/pxa/avengers/avenger_pxa168.c
+index 4a02568..ea84692 100644
+--- a/board/pxa/avengers/avenger_pxa168.c
++++ b/board/pxa/avengers/avenger_pxa168.c
+@@ -42,6 +42,8 @@ int board_init (void)
+     DECLARE_GLOBAL_DATA_PTR;
+     volatile unsigned int reg;
+ 
++    /* enable GPIO clock */
++    *(volatile unsigned int *)0xd4015008=0x1;
+     aspen_init();
+ 
+     gd->bd->bi_dram[0].start = PHYS_SDRAM_1;
+-- 
+1.6.0.4
+

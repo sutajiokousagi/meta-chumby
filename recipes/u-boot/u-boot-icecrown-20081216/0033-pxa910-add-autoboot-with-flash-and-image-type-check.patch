@@ -1,0 +1,106 @@
+From 344c1bf9eb9a1985c88f6d69ccb939954cbb89c3 Mon Sep 17 00:00:00 2001
+From: Lei Wen <leiwen@marvell.com>
+Date: Thu, 12 Mar 2009 17:16:18 +0800
+Subject: [PATCH] pxa910: add autoboot with flash and image type check
+
+Signed-off-by: Lei Wen <leiwen@marvell.com>
+---
+ board/pxa/common/boot.c   |   30 ++++++++++++++++++++++++++++++
+ drivers/mtd/nand/nand.c   |    2 +-
+ include/configs/ttc_dkb.h |    5 +++--
+ 3 files changed, 34 insertions(+), 3 deletions(-)
+
+diff --git a/board/pxa/common/boot.c b/board/pxa/common/boot.c
+index 2fa1a5f..e9e6127 100644
+--- a/board/pxa/common/boot.c
++++ b/board/pxa/common/boot.c
+@@ -8,6 +8,8 @@
+ #include <malloc.h>
+ #include <environment.h>
+ #include <linux/ctype.h>
++#include <nand.h>
++#include <onenand_uboot.h>
+ 
+ DECLARE_GLOBAL_DATA_PTR;
+ ulong load_addr = CONFIG_SYS_LOAD_ADDR;	/* Default Load Address */
+@@ -54,6 +56,8 @@ int do_bootz (cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
+ 	ulong		load_end = 0;
+ 	int		ret;
+ 	boot_os_fn	*boot_fn;
++	int		is_zImage, is_autoboot;
++	char		cmd_buf[CONFIG_SYS_CBSIZE];
+ 
+ 	if(argc < 2)
+ 		images.ep = 0x500000;
+@@ -66,6 +70,31 @@ int do_bootz (cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
+ 		}
+ 	}
+ 
++	is_autoboot = (strncmp(getenv("autoboot"), "boot", 4) == 0) ? 1 : 0;
++
++	/* Autoboot sequence is NAND, OneNAND .. */
++	if (is_autoboot) {
++		int n, col;
++		if (nand_curr_device >= 0) {
++			/* NAND Device Exist, try to boot from NAND */
++			printf("read zImage from NAND\n");
++			run_command(CONFIG_NANDBOOT, 0);
++		} else if (onenand_mtd.size > 0) {
++			/* OneNAND Device Exist, try to boot from OneNAND */
++			printf("read zImage from OneNAND\n");
++			run_command(CONFIG_ONENANDBOOT, 0);
++		} else {
++			printf("No flash device, fail to AUTOBOOT!!!\n\n");
++		}
++	}
++
++	is_zImage = (((ulong *)images.ep)[9] == 0x016f2818) ? 1 : 0;
++	/* AUTOBOOT support, check if the sepecified addr contain valid zImage */
++	if (is_autoboot && !is_zImage) {
++		printf("The address specified contains no valid zImage.\n AutoBOOT failed!!!\n\n");
++		return 0;
++	}
++
+ 	images.os.os = IH_OS_LINUX;
+ 	/* relocate boot function table */
+ 	if (!relocated) {
+@@ -75,6 +104,7 @@ int do_bootz (cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
+ 		relocated = 1;
+ 	}
+ 
++	printf("Ready to boot %s from %x\n\n", is_zImage ? "zImage" : "Image", images.ep);
+ 	boot_fn = boot_os[images.os.os];
+ 	boot_fn(0, argc, argv, &images);
+ 
+diff --git a/drivers/mtd/nand/nand.c b/drivers/mtd/nand/nand.c
+index eeb19ff..1ce569a 100644
+--- a/drivers/mtd/nand/nand.c
++++ b/drivers/mtd/nand/nand.c
+@@ -64,7 +64,7 @@ void nand_init(void)
+ 	for (i = 0; i < CONFIG_SYS_MAX_NAND_DEVICE; i++) {
+ 		nand_init_chip(&nand_info[i], &nand_chip[i], base_address[i]);
+ 		size += nand_info[i].size / 1024;
+-		if (nand_curr_device == -1)
++		if (nand_info[i].size != 0)
+ 			nand_curr_device = i;
+ 	}
+ 	printf("%u MiB\n", size / 1024);
+diff --git a/include/configs/ttc_dkb.h b/include/configs/ttc_dkb.h
+index a8bc685..6eaa2d7 100644
+--- a/include/configs/ttc_dkb.h
++++ b/include/configs/ttc_dkb.h
+@@ -113,8 +113,9 @@
+ #if (CONFIG_BOOTDELAY >= 0)
+ 
+ /* boot arguments" */
+-/*#define CONFIG_BOOTARGS 		"console=ttyS0,38400 root=/dev/ram0 init=/linuxrc rw initrd=0x800040,4M ramdisk_blocksize=1024"*/
+-#define CONFIG_BOOTCOMMAND      	"onenand read 0x920000 0x500000 0x300000; bootz 0x500000"
++#define CONFIG_ONENANDBOOT	     	"onenand read 0x500000 0x920000 0x300000"
++#define CONFIG_NANDBOOT 	     	"nand read 0x500000 0x920000 0x300000"
++#define CONFIG_BOOTCOMMAND      	"setenv autoboot boot; bootz 0x500000; setenv autoboot none"
+ #define CONFIG_ROOTPATH   		/tftpboot/rootfs_arm
+ 
+ #endif /* #if (CONFIG_BOOTDELAY >= 0) */
+-- 
+1.6.0.4
+

@@ -1,0 +1,45 @@
+From d058c78ffd4b2556aaaba217bd109b910fcff3d5 Mon Sep 17 00:00:00 2001
+From: Bin Yang <bin.yang@marvell.com>
+Date: Mon, 14 Sep 2009 11:07:36 +0800
+Subject: [PATCH] nand: add ba2c nand id support
+
+Signed-off-by: Bin Yang <bin.yang@marvell.com>
+---
+ include/asm-arm/arch-pxa168/nand_supported.h |   14 ++++++++++++++
+ 1 files changed, 14 insertions(+), 0 deletions(-)
+
+diff --git a/include/asm-arm/arch-pxa168/nand_supported.h b/include/asm-arm/arch-pxa168/nand_supported.h
+index 0deccad..b6eecfa 100644
+--- a/include/asm-arm/arch-pxa168/nand_supported.h
++++ b/include/asm-arm/arch-pxa168/nand_supported.h
+@@ -200,6 +200,19 @@ static struct pxa3xx_nand_flash micron2GbX16 = {
+ 	.ecc_type	= ECC_HAMMIN,
+ };
+ 
++static struct pxa3xx_nand_flash micron2GbX16_ba2c = {
++	.timing		= &micron_timing,
++	.cmdset         = &largepage_cmdset,
++	.name		= "Micron 2Gibx16",
++	.page_per_block	= 64,
++	.page_size	= 2048,
++	.flash_width	= 16,
++	.dfc_width	= 16,
++	.num_blocks	= 2048,
++	.chip_id	= 0xba2c,
++	.ecc_type	= ECC_HAMMIN,
++};
++
+ static struct pxa3xx_nand_flash micron4GbX8 = {
+ 	.timing		= &micron_timing,
+ 	.cmdset         = &largepage_cmdset,
+@@ -236,6 +249,7 @@ static struct pxa3xx_nand_flash *builtin_flash_types[] = {
+ 	&micron4GbX8,
+ 	&micron1GbX16,
+ 	&micron2GbX16,
++	&micron2GbX16_ba2c,
+ 	&stm2GbX16,
+ };
+ 
+-- 
+1.6.0.4
+

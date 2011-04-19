@@ -1,0 +1,33 @@
+From c80b9bf3776f60e26368113a66877f9afe3022de Mon Sep 17 00:00:00 2001
+From: WeiLi Xia <wlxia@marvell.com>
+Date: Tue, 25 May 2010 15:14:24 +0800
+Subject: [PATCH] mmp2: move bi_boot_params addr to 0x3C00
+
+Kernel will be decompressed to 0x8000. And start up code need 16K bytes
+down from 0x8000 for initial page tables to enable cache.
+So the bi_boot_params is put to (0x8000 - 16K - 1K) = 0x3C00.
+
+Signed-off-by: WeiLi Xia <wlxia@marvell.com>
+---
+ board/pxa/jasper/jasper.c |    4 ++--
+ 1 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/board/pxa/jasper/jasper.c b/board/pxa/jasper/jasper.c
+index 2fae705..15d09ff 100644
+--- a/board/pxa/jasper/jasper.c
++++ b/board/pxa/jasper/jasper.c
+@@ -324,9 +324,9 @@ int board_init (void)
+     
+     /* adress of boot parameters */
+ #ifdef CONFIG_PJ4_NON_SECURE_MODE
+-    gd->bd->bi_boot_params = 0x00680000;
++    gd->bd->bi_boot_params = 0x3C00;
+ #else
+-    gd->bd->bi_boot_params = 0x00680000;
++    gd->bd->bi_boot_params = 0x3C00;
+ #endif
+     gd->baudrate = CONFIG_BAUDRATE;
+ 
+-- 
+1.6.0.4
+

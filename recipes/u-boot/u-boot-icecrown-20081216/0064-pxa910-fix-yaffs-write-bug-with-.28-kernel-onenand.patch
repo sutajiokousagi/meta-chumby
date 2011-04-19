@@ -1,0 +1,128 @@
+From 92426deccbdaca6dd40c53325b8e7c78b7e213ed Mon Sep 17 00:00:00 2001
+From: Lei Wen <leiwen@marvell.com>
+Date: Thu, 21 May 2009 23:59:54 +0800
+Subject: [PATCH] pxa910: fix yaffs write bug with .28 kernel onenand code
+
+Signed-off-by: Lei Wen <leiwen@marvell.com>
+---
+ drivers/mtd/onenand/onenand_base.c |   77 ++++++++++++++++++++++++-----------
+ 1 files changed, 53 insertions(+), 24 deletions(-)
+
+diff --git a/drivers/mtd/onenand/onenand_base.c b/drivers/mtd/onenand/onenand_base.c
+index 7847f47..371e25d 100644
+--- a/drivers/mtd/onenand/onenand_base.c
++++ b/drivers/mtd/onenand/onenand_base.c
+@@ -29,23 +29,29 @@
+ 
+ #include <asm/io.h>
+ 
+-void * memcpy_32_aligned(void * dest,const void *src,size_t count)
++static inline void *memcpy_16aligned(void *dest, const void *src, int n)
+ {
+-	uint32_t *tmp = dest, *s = src;
+-	int size = count / 4;
++	const u8 * pS = (const u8*)src;
++	u8 s_low;
++	short s_high = 0xffff;
++	short *d = dest;
+ 
+-	while (size > 0) {
+-		*tmp++ = *s++;
+-		size --;
+-	}
++	while(n > 0) {
++		s_low = *pS;
++		if (n >= 2)
++			s_high = *(pS + 1);
++		else
++			s_high = 0xffff;
+ 
+-	if((4 * size) != count)
+-		*tmp = *s;
++		*d++ = ((s_high << 8) | s_low);
++		n -= 2;
++		pS += 2;
++	}
+ 
+ 	return dest;
+ }
+ 
+-#define memcpy memcpy_32_aligned
++#define memcpy memcpy_16aligned
+ /**
+  * onenand_oob_64 - oob info for large (2KB) page
+  */
+@@ -86,6 +92,27 @@ static const unsigned char ffchars[] = {
+ 	0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,	/* 64 */
+ };
+ 
++/* Convert generic oob buf to Onenand oob buf layout.
++ * This function should be called before Onenand write operation.
++ */
++static int convert_oob_before_write(unsigned char *oobbuf, const unsigned char *buf, int len)
++{
++	int i, count = 0;
++	unsigned char *tmp = (unsigned char *)buf;
++
++	for (i = 0; i < ARRAY_SIZE(onenand_oob_64.oobfree); i++) {
++		if (count > len)
++			break;
++
++		memcpy(oobbuf + onenand_oob_64.oobfree[i].offset,
++				tmp, onenand_oob_64.oobfree[i].length);
++		tmp += onenand_oob_64.oobfree[i].length;
++		count += onenand_oob_64.oobfree[i].length;
++	}
++
++	return count;
++}
++
+ /**
+  * onenand_readw - [OneNAND Interface] Read OneNAND register
+  * @param addr		address to read
+@@ -1558,26 +1585,28 @@ static int onenand_write_ops_nolock(struct mtd_info *mtd, loff_t to,
+ 
+ 		this->write_bufferram(mtd, ONENAND_DATARAM, wbuf, 0, mtd->writesize);
+ 
+-		if (is_yaffs) {
+-			oob = wbuf + mtd->writesize;
+-			buf += mtd->oobsize;
+-			written += mtd->oobsize;
+-		}
+-
+ 		if (oob) {
+ 			oobbuf = this->oob_buf;
+ 
+ 			/* We send data to spare ram with oobsize
+ 			 * to prevent byte access */
+ 			memset(oobbuf, 0xff, mtd->oobsize);
+-			if (ops->mode == MTD_OOB_AUTO)
+-				onenand_fill_auto_oob(mtd, oobbuf, oob, oobcolumn, thisooblen);
+-			else
+-				memcpy(oobbuf + oobcolumn, oob, thisooblen);
+-
+-			oobwritten += thisooblen;
+-			oob += thisooblen;
+-			oobcolumn = 0;
++			if (is_yaffs) {
++				oob = wbuf + mtd->writesize;
++				buf += mtd->oobsize;
++				written += mtd->oobsize;
++				convert_oob_before_write(oobbuf, oob, mtd->oobsize);
++			}
++			else {
++				if (ops->mode == MTD_OOB_AUTO)
++					onenand_fill_auto_oob(mtd, oobbuf, oob, oobcolumn, thisooblen);
++				else
++					memcpy(oobbuf + oobcolumn, oob, thisooblen);
++
++				oobwritten += thisooblen;
++				oob += thisooblen;
++				oobcolumn = 0;
++			}
+ 		} else
+ 			oobbuf = (u_char *) ffchars;
+ 
+-- 
+1.6.0.4
+

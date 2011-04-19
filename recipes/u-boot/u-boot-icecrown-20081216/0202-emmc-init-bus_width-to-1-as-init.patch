@@ -1,0 +1,35 @@
+From 203660dbf7078a20b25a1f323874c19454d847f4 Mon Sep 17 00:00:00 2001
+From: Zhangfei Gao <zgao6@marvell.com>
+Date: Fri, 25 Jun 2010 10:21:24 +0800
+Subject: [PATCH] emmc: init bus_width to 1 as init
+
+The partition number stays in boot partiton if boot from emmc.
+	So if write filesystem or mbr, pls switch to partition 0 (user partition) first.
+	MMP2>>mmc sw_part 0
+	MMP2>>tftp mbr
+	MMP2>>mmc write 0x4800 0x1 0x1100000
+
+Signed-off-by: Zhangfei Gao <zgao6@marvell.com>
+---
+ drivers/mmc/mmc.c |    5 +++++
+ 1 files changed, 5 insertions(+), 0 deletions(-)
+
+diff --git a/drivers/mmc/mmc.c b/drivers/mmc/mmc.c
+index 82fe61f..417980a 100644
+--- a/drivers/mmc/mmc.c
++++ b/drivers/mmc/mmc.c
+@@ -1165,6 +1165,11 @@ int mmc_startup(struct mmc *mmc)
+ 	if (err)
+ 		return err;
+ 
++	/* Set the card to use 1 bit*/
++	err = mmc_switch(mmc, EXT_CSD_CMD_SET_NORMAL,
++			EXT_CSD_BUS_WIDTH,
++			EXT_CSD_BUS_WIDTH_1);
++
+ 	if (IS_SD(mmc))
+ 		err = sd_change_freq(mmc);
+ 	else {
+-- 
+1.6.0.4
+

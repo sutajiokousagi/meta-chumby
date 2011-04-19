@@ -1,0 +1,62 @@
+From ee7a76869b88054229a495ed6619407ab96a3abe Mon Sep 17 00:00:00 2001
+From: Lei Wen <leiwen@marvell.com>
+Date: Tue, 2 Jun 2009 16:59:00 +0800
+Subject: [PATCH] update nand.h to support address more than 0x80000000
+
+In the original implementation, we use a wrapper function in
+nand.h to facilitate nand_base function usage in other files,
+like cmd_nand.c, nand_util.c etc.
+
+However, the wrapper in nand.h is using off_t which is long type.
+If we pass a address like 0x80000000, which is allowed by nand_base.c,
+the wrapper would recognize it as a negative num. So we would get a
+huge num when this parameter get into nand_base.c
+
+Fix it by replacing off_t to loff_t type.
+
+Signed-off-by: Lei Wen <leiwen@marvell.com>
+---
+ include/nand.h |   10 +++++-----
+ 1 files changed, 5 insertions(+), 5 deletions(-)
+
+diff --git a/include/nand.h b/include/nand.h
+index 230aa62..293d481 100644
+--- a/include/nand.h
++++ b/include/nand.h
+@@ -36,28 +36,28 @@ typedef struct mtd_info nand_info_t;
+ extern int nand_curr_device;
+ extern nand_info_t nand_info[];
+ 
+-static inline int nand_read(nand_info_t *info, off_t ofs, size_t *len, u_char *buf)
++static inline int nand_read(nand_info_t *info, loff_t ofs, size_t *len, u_char *buf)
+ {
+ 	return info->read(info, ofs, *len, (size_t *)len, buf);
+ }
+ 
+-static inline int nand_write(nand_info_t *info, off_t ofs, size_t *len, u_char *buf)
++static inline int nand_write(nand_info_t *info, loff_t ofs, size_t *len, u_char *buf)
+ {
+ 	return info->write(info, ofs, *len, (size_t *)len, buf);
+ }
+ 
+-static inline int nand_write_oob(nand_info_t *info, off_t ofs,
++static inline int nand_write_oob(nand_info_t *info, loff_t ofs,
+ 			  struct mtd_oob_ops *ops)
+ {
+ 	return info->write_oob(info, ofs, ops);
+ }
+ 
+-static inline int nand_block_isbad(nand_info_t *info, off_t ofs)
++static inline int nand_block_isbad(nand_info_t *info, loff_t ofs)
+ {
+ 	return info->block_isbad(info, ofs);
+ }
+ 
+-static inline int nand_erase(nand_info_t *info, off_t off, size_t size)
++static inline int nand_erase(nand_info_t *info, loff_t off, size_t size)
+ {
+ 	struct erase_info instr;
+ 
+-- 
+1.6.0.4
+

@@ -1,0 +1,54 @@
+From 322a74302a90274488ed9a0b9add1dbdaba1547d Mon Sep 17 00:00:00 2001
+From: Jack Ren <jack.ren@marvell.com>
+Date: Mon, 29 Jun 2009 21:49:39 +0800
+Subject: [PATCH] pxa: fix usb download performance downgrade
+
+caused by get_env in tstc( )
+
+Signed-off-by: Jack Ren <jack.ren@marvell.com>
+---
+ board/pxa/common/usbeth/ether-mvu2o.c |    2 ++
+ common/console.c                      |    7 +++----
+ 2 files changed, 5 insertions(+), 4 deletions(-)
+
+diff --git a/board/pxa/common/usbeth/ether-mvu2o.c b/board/pxa/common/usbeth/ether-mvu2o.c
+index e75cccf..17c1a22 100644
+--- a/board/pxa/common/usbeth/ether-mvu2o.c
++++ b/board/pxa/common/usbeth/ether-mvu2o.c
+@@ -351,10 +351,12 @@ int u2o_eth_initialize(u32 base)
+ 	check_usb_connection();
+ #ifdef CONFIG_NETCONSOLE
+ 	if(usb_connected) {
++		extern int netconsole;
+ 		/* switch to netconsole */
+ 		setenv("ncip","192.168.1.100");
+ 		setenv("stdin","nc");
+ 		setenv("stdout","nc");
++		netconsole = 1;
+ 	}
+ #endif
+ 	return 1;
+diff --git a/common/console.c b/common/console.c
+index 689d8b0..f0d4722 100644
+--- a/common/console.c
++++ b/common/console.c
+@@ -281,13 +281,12 @@ int getc (void)
+ 	return serial_getc ();
+ }
+ 
++int netconsole = 0;
+ int tstc (void)
+ {
+-	char *env;
+-	env = getenv("stdin");
+-	if (strcmp(env, "nc") == 0) {
++	if (netconsole)
+ 		return nc_tstc();
+-	}
++
+ #ifdef CONFIG_DISABLE_CONSOLE
+ 	if (gd->flags & GD_FLG_DISABLE_CONSOLE)
+ 		return 0;
+-- 
+1.6.0.4
+

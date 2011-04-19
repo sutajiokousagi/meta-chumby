@@ -1,0 +1,26 @@
+From 01924acc5a439b18e036ce8ee4163cc3cd0ccb14 Mon Sep 17 00:00:00 2001
+From: Yong Yao <yaoyong@marvell.com>
+Date: Fri, 14 Aug 2009 03:31:46 +0800
+Subject: [PATCH] pxa950: update mach id for tavorevb3 on 2.6.29
+
+Signed-off-by: Yong Yao <yaoyong@marvell.com>
+---
+ board/pxa/tavorevb3/tavorevb3.c |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/board/pxa/tavorevb3/tavorevb3.c b/board/pxa/tavorevb3/tavorevb3.c
+index 92abcb5..b004dac 100644
+--- a/board/pxa/tavorevb3/tavorevb3.c
++++ b/board/pxa/tavorevb3/tavorevb3.c
+@@ -97,7 +97,7 @@ int board_init (void)
+ 
+ 	/* arch number of tavor evb 3 */
+ #if defined (CONFIG_TAVOR_PV2)
+-	gd->bd->bi_arch_number = 1912;
++	gd->bd->bi_arch_number = 2137;
+ #elif defined (CONFIG_TAVOR_PV)
+ 	gd->bd->bi_arch_number = 1828;
+ #else
+-- 
+1.6.0.4
+

@@ -1,0 +1,483 @@
+From 0108ae06f15da124ffbc236102e333aa45cefa80 Mon Sep 17 00:00:00 2001
+From: Mingliang Hu <mingliang.hu@marvell.com>
+Date: Sun, 28 Feb 2010 20:26:55 +0800
+Subject: [PATCH] pxa688: add elpdia 512M ddr support and use op2 as default for Z1
+
+Signed-off-by: Mingliang Hu <mingliang.hu@marvell.com>
+---
+ Makefile                                  |    5 +
+ board/pxa/common/freq_ll.S                |   47 ++++++
+ board/pxa/jasper/jasper.c                 |    9 +-
+ drivers/mmc/mmc.c                         |    2 +-
+ include/configs/mmp2_jasper.h             |   10 +-
+ include/configs/mmp2_jasper_epd512.h      |  251 +++++++++++++++++++++++++++++
+ include/configs/mmp2_jasper_epd512_emmc.h |   41 +++++
+ 7 files changed, 359 insertions(+), 6 deletions(-)
+ create mode 100644 include/configs/mmp2_jasper_epd512.h
+ create mode 100644 include/configs/mmp2_jasper_epd512_emmc.h
+
+diff --git a/Makefile b/Makefile
+index 8c94042..74ec2bd 100644
+--- a/Makefile
++++ b/Makefile
+@@ -2995,6 +2995,11 @@ mmp2_jasper_config	:	unconfig
+ mmp2_jasper_emmc_config	:	unconfig
+ 	@$(MKCONFIG) $(@:_config=) arm 88SV581xV6 jasper pxa pxa688
+ 
++mmp2_jasper_epd512_config      :       unconfig
++	@$(MKCONFIG) $(@:_config=) arm 88SV581xV6 jasper pxa pxa688
++
++mmp2_jasper_epd512_emmc_config :       unconfig
++	@$(MKCONFIG) $(@:_config=) arm 88SV581xV6 jasper pxa pxa688
+ #========================================================================
+ # i386
+ #========================================================================
+diff --git a/board/pxa/common/freq_ll.S b/board/pxa/common/freq_ll.S
+index f22eef8..e88dbae 100644
+--- a/board/pxa/common/freq_ll.S
++++ b/board/pxa/common/freq_ll.S
+@@ -224,6 +224,39 @@ freq_sram_start:
+ 	ldr	r7, =0xD0004D56
+ 	str	r7, [r4, #0x010]
+ 
++	#if (defined(CONFIG_DDR_EPD_512M))
++	@ MMAP
++	ldr	r7, =0x000C0001
++	str	r7, [r4, #0x100]
++	ldr	r7, =0x100C0001
++	str	r7, [r4, #0x110]
++
++	@ CONFIG_TYPE
++	ldr	r7, =0x00006420
++	str	r7, [r4, #0x020]
++	ldr	r7, =0x00006420
++	str	r7, [r4, #0x030]
++	ldr	r7, =0x00000000
++	str	r7, [r4, #0xB40]
++	ldr	r7, =0x00000000
++	str	r7, [r4, #0xB50]
++
++	@ TIMING
++	ldr	r7, =0x4CDA00C5
++	str	r7, [r4, #0x050]
++	ldr	r7, =0x94860342
++	str	r7, [r4, #0x060]
++	ldr	r7, =0x2000381B
++	str	r7, [r4, #0x190]
++	ldr	r7, =0x3023009D
++	str	r7, [r4, #0x1C0]
++	ldr	r7, =0x00110142
++	str	r7, [r4, #0x650]
++	ldr	r7, =0x02424190
++	str	r7, [r4, #0x660]
++	#endif
++
++	#if (defined(CONFIG_DDR_MICRON_256M))
+ 	@ MMAP
+ 	ldr	r7, =0x000B0001
+ 	str	r7, [r4, #0x100]
+@@ -253,6 +286,7 @@ freq_sram_start:
+ 	str	r7, [r4, #0x650]
+ 	ldr	r7, =0x02424190
+ 	str	r7, [r4, #0x660]
++	#endif
+ 
+ 	@ CTRL
+ 	ldr	r7, =0x00005000
+@@ -323,6 +357,18 @@ freq_sram_start:
+ 	and	r7, r7, r8
+ 	str	r7, [r4, #0x200]
+ 
++	#if (defined(CONFIG_DDR_EPD_512M))
++	ldr	r7, =0x20004444
++	str	r7, [r4, #0x140]
++	ldr	r7, =0x13300559
++	str	r7, [r4, #0x1D0]
++	ldr	r7, =0x03300990
++	str	r7, [r4, #0x1E0]
++	ldr	r7, =0x00000077
++	str	r7, [r4, #0x1F0]
++	#endif
++
++	#if (defined(CONFIG_DDR_MICRON_256M))
+ 	ldr	r7, =0x20004455
+ 	str	r7, [r4, #0x140]
+ 	ldr	r7, =0x13300559
+@@ -331,6 +377,7 @@ freq_sram_start:
+ 	str	r7, [r4, #0x1E0]
+ 	ldr	r7, =0x00000077
+ 	str	r7, [r4, #0x1F0]
++	#endif
+ 
+ 	ldr	r7, =0x20000088
+ 	str	r7, [r4, #0x230]
+diff --git a/board/pxa/jasper/jasper.c b/board/pxa/jasper/jasper.c
+index 9a2e4b2..0fbc224 100644
+--- a/board/pxa/jasper/jasper.c
++++ b/board/pxa/jasper/jasper.c
+@@ -213,8 +213,13 @@ int board_init (void)
+ 	reg &= ~(1<<23);
+ 	*(volatile unsigned int *)0xd4282c08 = reg;
+ 
+-    freq_init_sram(0xd1020000);
+-    freq_chg_seq(0xd1020000, 0xd1028000, 1);
++    if(cpu_is_pxa688_z0()){
++    	freq_init_sram(0xd1020000);
++    	freq_chg_seq(0xd1020000, 0xd1028000, 1);
++    }else{
++    	freq_init_sram(0xd1020000);
++    	freq_chg_seq(0xd1020000, 0xd1028000, 2);
++    }
+ 
+     *(volatile unsigned int *)0xd4282110 = 0x0;
+ 
+diff --git a/drivers/mmc/mmc.c b/drivers/mmc/mmc.c
+index d31d6ee..b9033e8 100644
+--- a/drivers/mmc/mmc.c
++++ b/drivers/mmc/mmc.c
+@@ -1255,7 +1255,7 @@ int mmc_startup(struct mmc *mmc)
+ 	sprintf(mmc->block_dev.product, "%s", mmc->bcid.prod_name);
+ 	sprintf(mmc->block_dev.revision, "%d.%d", (mmc->bcid.prod_ver >> 4) & 0xf,
+ 			mmc->bcid.prod_ver & 0xf);
+-	printf("MMC: Man %06x Snr %08x", mc->bcid.manu_id,
++	printf("MMC: Man %06x Snr %08x", mmc->bcid.manu_id,
+                         mmc->bcid.prod_sn);
+ 	printf("MMC PNM:  %s", mmc->bcid.prod_name);
+ 	printf("MMC PRV: %d.%d", (mmc->bcid.prod_ver >> 4) & 0xf,
+diff --git a/include/configs/mmp2_jasper.h b/include/configs/mmp2_jasper.h
+index 4385cc1..bc84d94 100644
+--- a/include/configs/mmp2_jasper.h
++++ b/include/configs/mmp2_jasper.h
+@@ -40,6 +40,10 @@
+ #define CONFIG_MMP2_JASPER	    		1
+ #define CONFIG_FFUART
+ 
++/* DDR Type and Size on Bonnell Platform*/
++#define CONFIG_DDR_MICRON_256M
++#undef CONFIG_DDR_EPD_512M
++
+ #define CONFIG_SYS_BOARD_NAME		"ARM1176JZF based"
+ #define CONFIG_SYS_VENDOR_NAME     	"MARVELL"
+ 
+@@ -194,11 +198,11 @@
+ #define CONFIG_NR_DRAM_BANKS    	1   /* we have 1 bank of DRAM */
+ #ifdef CONFIG_PJ4_NON_SECURE_MODE
+ #define PHYS_SDRAM_1            	0x00200000   /* SDRAM Bank #1 */
+-#define PHYS_SDRAM_1_SIZE       	0x07e00000   /* 126 MB */
+-#define PHYS_SDRAM_SIZE_DEC     	126
++#define PHYS_SDRAM_1_SIZE       	0x0fe00000   /* 254 MB */
++#define PHYS_SDRAM_SIZE_DEC     	254
+ #else
+ #define PHYS_SDRAM_1            	0x00000000   /* SDRAM Bank #1 */
+-#define PHYS_SDRAM_1_SIZE       	0x10000000   /* 128 MB */
++#define PHYS_SDRAM_1_SIZE       	0x10000000   /* 256 MB */
+ #define PHYS_SDRAM_SIZE_DEC     	256
+ #endif
+ #define CONFIG_SYS_ENV_SIZE            	0x10000   /* Total Size of Environment Sector */
+diff --git a/include/configs/mmp2_jasper_epd512.h b/include/configs/mmp2_jasper_epd512.h
+new file mode 100644
+index 0000000..9d4dcfa
+--- /dev/null
++++ b/include/configs/mmp2_jasper_epd512.h
+@@ -0,0 +1,251 @@
++/*
++ * (C) Copyright 2008
++ * Marvell Semiconductors Ltd. Shanghai, China.
++ *
++ * Configuration for Tavor EVB board.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.    See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++#ifndef __CONFIG_H
++#define __CONFIG_H
++
++/************/
++/* VERSIONS */
++/************/
++#define CONFIG_IDENT_STRING   		"\nMarvell version: 1.1.1.1 MMP2"
++
++/* version number passing when loading Kernel */
++#define VER_NUM 			0x01010101	/* 1.1.1.18 */
++/*
++ * High Level Configuration Options
++ * (easy to change)
++ */
++#define CONFIG_CPU_PXA910		1 /* This is an pxa910 core*/
++#define CONFIG_CPU_PXA688		1 /* This is an pxa410 core*/
++#define CONFIG_PXAXXX      		1 /*  pxa family */
++#define CONFIG_MMP2_JASPER	    		1
++#define CONFIG_FFUART
++
++/* DDR Type and Size on Bonnell Platform*/
++#undef CONFIG_DDR_MICRON_256M
++#define CONFIG_DDR_EPD_512M
++
++#define CONFIG_SYS_BOARD_NAME		"ARM1176JZF based"
++#define CONFIG_SYS_VENDOR_NAME     	"MARVELL"
++
++#ifdef CONFIG_PJ4_NON_SECURE_MODE
++#define CONFIG_SYS_UBOOT_BASE		0x1100000	
++#define CONFIG_SYS_MEMTEST_START      	0x00300000
++#define CONFIG_SYS_MEMTEST_END        	0x01100000
++#else
++#define CONFIG_SYS_UBOOT_BASE		0xf00000	
++#define CONFIG_SYS_MEMTEST_START      	0x00100000
++#define CONFIG_SYS_MEMTEST_END        	0x00f00000
++#endif
++
++#define CONFIG_SYS_HZ   		(6500000)      /* KV - Timer 0 is clocked at 3.25 MHz */
++#define CONFIG_SYS_TIMERBASE 		0xD4014000 
++#define CONFIG_SYS_CPUSPEED		0x161		/* set core clock to 400/200/100 MHz */
++#define CONFIG_DISPLAY_BOARDINFO
++
++#define CONFIG_CMDLINE_TAG         	1   /* enable passing of ATAGs  */
++#define CONFIG_SETUP_MEMORY_TAGS   	1
++#define CONFIG_MISC_INIT_R         	1   /* call misc_init_r during start up */
++
++/*
++ * Size of malloc() pool
++ */
++#define CONFIG_SYS_MALLOC_LEN      	(CONFIG_SYS_ENV_SIZE + 512*1024)
++#define CONFIG_SYS_GBL_DATA_SIZE   	128   /* size in bytes reserved for initial data */
++
++/*
++ *  Configuration
++ */
++#define CONFIG_AUTO_COMPLETE
++#define CONFIG_CONS_INDEX     		1
++#undef  CONFIG_SERIAL_SOFTWARE_FIFO
++#define CONFIG_SYS_NS16550
++#define CONFIG_SYS_NS16550_SERIAL
++#define CONFIG_SYS_NS16550_REG_SIZE   	-4
++#define CONFIG_SYS_NS16550_CLK        	26000000
++#define CONFIG_BAUDRATE        		38400
++#define CONFIG_SYS_BAUDRATE_TABLE     	{ 9600, 19200, 38400, 57600, 115200 }
++#define CONFIG_SYS_NS16550_COM1       	0xD4018000 /* configure for PXA910*/
++
++#define CONFIG_SHOW_BOOT_PROGRESS
++
++#define CONFIG_CMD_PING
++#define CONFIG_CMD_NET
++#define CONFIG_NET_MULTI
++#define CONFIG_LOOP_WRITE_MTD
++#define MV_ETH_DEVS 			1
++
++#define CONFIG_IPADDR      		192.168.1.101
++
++#define CONFIG_SERVERIP    		192.168.1.100
++
++#define CONFIG_ETHADDR			"00:00:5A:9F:6D:82"
++
++/* enable passing of ATAGs  */
++#define CONFIG_CMDLINE_TAG       	1
++#define CONFIG_SETUP_MEMORY_TAGS 	1
++#define CONFIG_SYS_TCLK         	0 /* not in use */
++#define CONFIG_SYS_BUS_CLK         	0 /* not in use */
++#define CONFIG_ENV_SIZE		 	0x4000
++#define CONFIG_ENV_OFFSET        	0x40000
++
++/***************************************/
++/* LINUX BOOT and other ENV PARAMETERS */
++/***************************************/
++#define CONFIG_SYS_BOOTARGS_END     	":::MMP2:eth0:none"
++#define CONFIG_SYS_BOOTARGS_ROOT    	"root=/dev/nfs rw init=/linuxrc"
++#define CONFIG_ZERO_BOOTDELAY_CHECK
++#ifdef CONFIG_PJ4_NON_SECURE_MODE
++#define CONFIG_SYS_LOAD_ADDR        	0x01100000   /* default load address   */
++#define CONFIG_SYS_DEF_LOAD_ADDR    	"0x01100000"
++#else
++#define CONFIG_SYS_LOAD_ADDR        	0x01100000   /* default load address   */
++#define CONFIG_SYS_DEF_LOAD_ADDR    	"0x01100000"
++#endif
++#define CONFIG_SYS_IMG_NAME		"zImage"
++#define CONFIG_SYS_INITRD_NAME      	"ramdisk.image.gz"
++#ifdef CONFIG_PJ4_NON_SECURE_MODE
++#define CONFIG_SYS_INITRD_LOAD_ADDR 	"1500000"
++#else
++#define CONFIG_SYS_INITRD_LOAD_ADDR 	"1500000"
++#endif
++#define CONFIG_SYS_INITRD_SIZE      	"400000"
++#undef  CONFIG_BOOTARGS
++
++#define CONFIG_BOOTDELAY        	3
++
++#if (CONFIG_BOOTDELAY >= 0)
++
++/* boot arguments" */
++#ifdef CONFIG_PJ4_NON_SECURE_MODE
++#define CONFIG_ONENANDBOOT	     	"onenand read 0x1100000 0x980000 0x300000"
++#define CONFIG_NANDBOOT 	     	"nand read 0x1100000 0x980000 0x300000"
++#define CONFIG_BOOTCOMMAND      	"setenv autoboot boot; bootz 0x1100000; setenv autoboot none"
++#else
++#define CONFIG_ONENANDBOOT	     	"onenand read 0x1100000 0x980000 0x300000"
++#define CONFIG_NANDBOOT 	     	"nand read 0x1100000 0x980000 0x300000"
++#define CONFIG_BOOTCOMMAND      	"setenv autoboot boot; bootz 0x1100000; setenv autoboot none"
++#endif
++#define CONFIG_ROOTPATH   		/tftpboot/rootfs_arm
++
++#endif /* #if (CONFIG_BOOTDELAY >= 0) */
++
++#define CONFIG_SYS_BARGSIZE   		CONFIG_SYS_CBSIZE   /* Boot Argument Buffer Size   */
++
++/*
++ * For booting Linux, the board info and command line data
++ * have to be in the first 8 MB of memory, since this is
++ * the maximum mapped by the Linux kernel during initialization.
++ */
++#define CONFIG_SYS_BOOTMAPSZ      	(8<<20)   /* Initial Memory map for Linux */
++
++/*
++ * Miscellaneous configurable options
++ */
++#define CONFIG_SYS_LONGHELP        	/* undef to save memory     */
++#define CONFIG_SYS_PROMPT         	"MMP2>> "   /* Monitor Command Prompt   */
++#define CONFIG_SYS_PROMPT_HUSH_PS2     	"> "
++/* Console I/O Buffer Size  */
++#define CONFIG_SYS_CBSIZE         	512
++/* Print Buffer Size */
++#define CONFIG_SYS_PBSIZE         	(CONFIG_SYS_CBSIZE+sizeof(CONFIG_SYS_PROMPT)+16)
++/* max number of command args   */
++#define CONFIG_SYS_MAXARGS        	16
++/* Boot Argument Buffer Size    */
++#define CONFIG_SYS_BARGSIZE       	CONFIG_SYS_CBSIZE
++#undef  CONFIG_SYS_CLKS_IN_HZ         	/* everything, incl board info, in Hz */
++#define CONFIG_ENV_OVERWRITE    	/* allow to change env parameters */
++#undef  CONFIG_INIT_CRITICAL
++#define CONFIG_CMDLINE_EDITING
++#define CONFIG_COMMAND_HISTORY
++#define CONFIG_COMMAND_EDIT
++#define CONFIG_SYS_64BIT_VSPRINTF
++
++
++/*-----------------------------------------------------------------------
++ * Stack sizes
++ *
++ * The stack sizes are set up in start.S using the settings below
++ */
++#define CONFIG_STACKSIZE       		(128*1024)   /* regular stack */
++#ifdef  CONFIG_USE_IRQ
++#define CONFIG_STACKSIZE_IRQ   		(4*1024)   /* IRQ stack */
++#define CONFIG_STACKSIZE_FIQ   		(4*1024)   /* FIQ stack */
++#endif
++
++/*-----------------------------------------------------------------------
++ * Physical Memory Map
++ */
++#define CONFIG_NR_DRAM_BANKS    	1   /* we have 1 bank of DRAM */
++#ifdef CONFIG_PJ4_NON_SECURE_MODE
++#define PHYS_SDRAM_1            	0x00200000   /* SDRAM Bank #1 */
++#define PHYS_SDRAM_1_SIZE       	0x1fe00000   /* 510 MB */
++#define PHYS_SDRAM_SIZE_DEC     	510
++#else
++#define PHYS_SDRAM_1            	0x00000000   /* SDRAM Bank #1 */
++#define PHYS_SDRAM_1_SIZE       	0x20000000   /* 512 MB */
++#define PHYS_SDRAM_SIZE_DEC     	512
++#endif
++#define CONFIG_SYS_ENV_SIZE            	0x10000   /* Total Size of Environment Sector */
++#define	CONFIG_ENV_IS_NOWHERE		1
++#define CONFIG_SYS_NO_FLASH		1
++#define CONFIG_BBM			1
++
++/*-----------------------------------------------------------------------
++ * NAND and DFC configuration
++ */
++#define CONFIG_NAND_PXA3XX
++#define CONFIG_CMD_NAND 		1
++#define CONFIG_SYS_MAX_NAND_DEVICE	1         /* Max number of NAND devices */
++#define CONFIG_SYS_NAND_BASE		0xD4283000
++
++/*-----------------------------------------------------------------------
++ * ONENAND configuration
++ */
++#define CONFIG_CMD_ONENAND 		1
++#define CONFIG_SYS_ONENAND_BASE 	0x80000000  /* configure for PXA910*/
++
++/*-----------------------------------------------------------------------
++ * FREQUENCE configuration
++ */
++#define CONFIG_CMD_FREQUENCE		1
++
++#undef TURN_ON_ETHERNET
++#define TURN_ON_ETHERNET
++#ifdef TURN_ON_ETHERNET
++#define CONFIG_USB_ETH			1
++#define CONFIG_U2O_REG_BASE		0xd4208000
++#define CONFIG_U2O_PHY_BASE		0xd4207000
++#define CONFIG_DRIVER_SMC91111 		1
++#define CONFIG_SMC91111_BASE   		0x90000300 /* PXA910*/
++#define CONFIG_SMC_USE_16_BIT
++#undef CONFIG_SMC_USE_IOFUNCS          /* just for use with the kernel */
++#endif
++#define CONFIG_NET_RETRY_COUNT 		10000
++
++/*-----------------------------------------------------------------------
++ * cache set/way configuration
++ */
++#undef CONFIG_FLUSH_ALL_REPLACEMENT
++
++#endif
++/* __CONFIG_H */
+diff --git a/include/configs/mmp2_jasper_epd512_emmc.h b/include/configs/mmp2_jasper_epd512_emmc.h
+new file mode 100644
+index 0000000..a4ada9d
+--- /dev/null
++++ b/include/configs/mmp2_jasper_epd512_emmc.h
+@@ -0,0 +1,41 @@
++/*
++ * (C) Copyright 2008
++ * Marvell Semiconductors Ltd. Shanghai, China.
++ *
++ * Configuration for Tavor EVB board.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.    See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++#ifndef __CONFIG_MMP2_JASPER_EMMC_H
++#define __CONFIG_MMP2_JASPER_EMMC_H
++
++#include <configs/mmp2_jasper_epd512.h>
++
++/* MMC configuration */
++#define CONFIG_CMD_MMC
++#define CONFIG_MMC
++#define CONFIG_GENERIC_MMC
++#define CONFIG_PXA9XX_SDH
++#define CONFIG_DOS_PARTITION
++
++#define BOOT_FROM_EMMC
++#define CONFIG_MMCBOOT			"mmc read 0x4c00 0x1800 0x1100000"
++#define CONFIG_MBR_SECTOR		0x4800
++
++#define CONFIG_PXA688_EMMC_WORKAROUND
++#endif
++/* __CONFIG_MMP2_JASPER_EMMC_H */
+-- 
+1.6.0.4
+

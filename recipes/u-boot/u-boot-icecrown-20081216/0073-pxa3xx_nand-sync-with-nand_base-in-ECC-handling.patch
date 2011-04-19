@@ -1,0 +1,186 @@
+From 3aefba7b63419fceb6a38539bc50852cc16aebb9 Mon Sep 17 00:00:00 2001
+From: Lei Wen <leiwen@marvell.com>
+Date: Wed, 3 Jun 2009 10:55:20 +0800
+Subject: [PATCH] pxa3xx_nand: sync with nand_base in ECC handling
+
+Signed-off-by: Lei Wen <leiwen@marvell.com>
+---
+ drivers/mtd/nand/pxa3xx_nand.c            |   66 +++++++++++++++++++++--------
+ include/asm-arm/arch-pxa168/pxa3xx_nand.h |   10 +++--
+ 2 files changed, 54 insertions(+), 22 deletions(-)
+
+diff --git a/drivers/mtd/nand/pxa3xx_nand.c b/drivers/mtd/nand/pxa3xx_nand.c
+index 9f7140e..69c49aa 100644
+--- a/drivers/mtd/nand/pxa3xx_nand.c
++++ b/drivers/mtd/nand/pxa3xx_nand.c
+@@ -269,7 +269,7 @@ static void pxa3xx_nand_data_dma_irq(int channel, void *data)
+ 	DCSR(channel) = dcsr;
+ 
+ 	if (dcsr & DCSR_BUSERR) {
+-		nand->errcode = ERR_DMABUSERR;
++		nand->errcode |= ERR_DMABUSERR;
+ 	}
+ 
+ 	complete(&nand->cmd_complete);
+@@ -336,6 +336,7 @@ static irqreturn_t pxa3xx_nand_irq(int irq, void *devid)
+ 	}
+ 
+ 	if (status & NDSR_TRUSTVIO) {
++		nand->errcode |= ERR_TRUSTVIO;
+ 	}
+ 
+ 	if (status & NDSR_ERR_CNT_MASK) {
+@@ -343,13 +344,15 @@ static irqreturn_t pxa3xx_nand_irq(int irq, void *devid)
+ 	}
+ 
+ 	if (status & NDSR_CORERR) {
++		nand->errcode |= ERR_CORERR;
+ 	}
+ 
+ 	if (status & NDSR_UNCERR) {
++		nand->errcode |= ERR_DBERR;
+ 	}
+ 
+ 	if (status & badblock_detect) {
+-		nand->errcode = ERR_BBERR;
++		nand->errcode |= ERR_BBERR;
+ 	}
+ 
+ 	if (status & page_done) {
+@@ -423,6 +426,7 @@ static int prepare_command_poll(struct pxa3xx_nand *nand, int command,
+ 	nand->is_write		= 0;
+ 	nand->is_ready		= 1;
+ 	nand->errcode		= ERR_NONE;
++	nand->bad_count		= 0;
+ 
+ 	addr_cycle = NDCB0_ADDR_CYC(info->row_addr_cycles  	    \
+ 			+ info->col_addr_cycles);
+@@ -441,7 +445,6 @@ static int prepare_command_poll(struct pxa3xx_nand *nand, int command,
+ 		else {
+ 			info->buf_start = column;
+ 			info->use_ecc = flash_info->ecc_type;
+-			nand->errcode= ERR_NONE;
+ 		}
+ 
+ 		pxa3xx_set_datasize(info);
+@@ -703,6 +706,8 @@ RETRY:
+ 
+ 			if (retry_times ++ < 3)
+ 				goto RETRY;
++			else
++				nand->errcode |= ERR_SENDCMD;
+ 		}
+ 	}
+ }
+@@ -769,27 +774,55 @@ static int pxa3xx_nand_waitfunc(struct mtd_info *mtd, struct nand_chip *this)
+ 	struct pxa3xx_nand_info *info = mtd->priv;
+ 	struct pxa3xx_nand *nand = info->nand_data;
+ 
+-	if (nand->errcode == ERR_BBERR)
++	if (nand->errcode & (ERR_BBERR | ERR_SENDCMD))
+ 		return NAND_STATUS_FAIL;
+ 	else
+ 		return 0;
+ }
+ 
+-static void pxa3xx_nand_ecc_hwctl(struct mtd_info *mtd, int mode)
++static int pxa3xx_nand_read_page_hwecc(struct mtd_info *mtd,
++			struct nand_chip *chip,	uint8_t *buf)
+ {
+-	return;
+-}
++	struct pxa3xx_nand_info *info = mtd->priv;
++	struct pxa3xx_nand *nand = info->nand_data;
++
++	chip->read_buf(mtd, buf, mtd->writesize);
++	chip->read_buf(mtd, chip->oob_poi, mtd->oobsize);
++
++	if (nand->errcode & ERR_CORERR) {
++		switch (info->use_ecc) {
++		case ECC_BCH:
++			if (nand->bad_count > BCH_THRESHOLD)
++				mtd->ecc_stats.corrected +=
++					(nand->bad_count - BCH_THRESHOLD);
++			break;
++
++		case ECC_HAMMIN:
++			mtd->ecc_stats.corrected ++;
++			break;
++
++		case ECC_NONE:
++		default:
++			break;
++		}
++	}
++	else if (nand->errcode & ERR_DBERR) {
++		int buf_blank;
++
++		buf_blank = is_buf_blank(buf, mtd->writesize);
++
++		if (!buf_blank)
++			mtd->ecc_stats.failed++;
++	}
+ 
+-static int pxa3xx_nand_ecc_calculate(struct mtd_info *mtd,
+-		const uint8_t *dat, uint8_t *ecc_code)
+-{
+ 	return 0;
+ }
+ 
+-static int pxa3xx_nand_ecc_correct(struct mtd_info *mtd,
+-		uint8_t *dat, uint8_t *read_ecc, uint8_t *calc_ecc)
++static void pxa3xx_nand_write_page_hwecc(struct mtd_info *mtd,
++			struct nand_chip *chip, const uint8_t *buf)
+ {
+-	return 0;
++	chip->write_buf(mtd, buf, mtd->writesize);
++	chip->write_buf(mtd, chip->oob_poi, mtd->oobsize);
+ }
+ 
+ static int pxa3xx_nand_config_flash(struct pxa3xx_nand_info *info,
+@@ -923,10 +956,9 @@ static void pxa3xx_nand_init_mtd(struct mtd_info *mtd)
+ 	this->write_page	= NULL;
+ 
+ 	this->ecc.mode		= NAND_ECC_HW;
+-	this->ecc.hwctl		= pxa3xx_nand_ecc_hwctl;
+-	this->ecc.calculate	= pxa3xx_nand_ecc_calculate;
+-	this->ecc.correct	= pxa3xx_nand_ecc_correct;
+ 	this->ecc.size		= f->page_size;
++	this->ecc.read_page	= pxa3xx_nand_read_page_hwecc;
++	this->ecc.write_page	= pxa3xx_nand_write_page_hwecc;
+ 
+ 	this->chipsize 		= (uint64_t)f->num_blocks 	* \
+ 				  f->page_per_block 		* \
+@@ -937,8 +969,6 @@ static void pxa3xx_nand_init_mtd(struct mtd_info *mtd)
+ 
+ 	/* Calculate the address shift from the page size */
+ 	this->page_shift = ffs(mtd->writesize) - 1;
+-
+-	/* temporary workaround for limited support 64bit */
+ 	this->pagemask = mtd_div_by_ws(this->chipsize, mtd) - 1;
+ 
+ 	this->bbt_erase_shift = this->phys_erase_shift =
+diff --git a/include/asm-arm/arch-pxa168/pxa3xx_nand.h b/include/asm-arm/arch-pxa168/pxa3xx_nand.h
+index be0db9e..915528b 100644
+--- a/include/asm-arm/arch-pxa168/pxa3xx_nand.h
++++ b/include/asm-arm/arch-pxa168/pxa3xx_nand.h
+@@ -343,10 +343,12 @@ enum ecc_type {
+ 
+ enum {
+ 	ERR_NONE	= 0,
+-	ERR_DMABUSERR	= -1,
+-	ERR_SENDCMD	= -2,
+-	ERR_DBERR	= -3,
+-	ERR_BBERR	= -4,
++	ERR_DMABUSERR	= 1,
++	ERR_SENDCMD	= (1 << 1),
++	ERR_DBERR	= (1 << 2),
++	ERR_BBERR	= (1 << 3),
++	ERR_CORERR	= (1 << 4),
++	ERR_TRUSTVIO	= (1 << 5),
+ };
+ 
+ enum {
+-- 
+1.6.0.4
+

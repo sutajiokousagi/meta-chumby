@@ -1,0 +1,49 @@
+From 3c6b9c0b62ab0041653b3b3a14bca43c8cdca59a Mon Sep 17 00:00:00 2001
+From: Wen Lei <leiwen@marvell.com>
+Date: Fri, 27 Feb 2009 10:32:35 +0800
+Subject: [PATCH] pxa910: add ping function
+
+---
+ board/pxa/common/tftp.c |   29 +++++++++++++++++++++++++++++
+ 1 files changed, 29 insertions(+), 0 deletions(-)
+
+diff --git a/board/pxa/common/tftp.c b/board/pxa/common/tftp.c
+index 953b04b..b95cc5d 100644
+--- a/board/pxa/common/tftp.c
++++ b/board/pxa/common/tftp.c
+@@ -44,3 +44,32 @@ U_BOOT_CMD(
+ 	"tftp-    download image via network using TFTP protocol\n",
+ 	"[loadAddress] [[hostIPaddr:]filename]\n"
+ );
++
++#if defined(CONFIG_CMD_PING)
++int do_ping (cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
++{
++	if (argc < 2)
++		return -1;
++
++	NetPingIP = string_to_ip(argv[1]);
++	if (NetPingIP == 0) {
++		printf ("Usage:\n%s\n", cmdtp->usage);
++		return -1;
++	}
++
++	if (NetLoop(PING) < 0) {
++		printf("ping failed; host %s is not alive\n", argv[1]);
++		return 1;
++	}
++
++	printf("host %s is alive\n", argv[1]);
++
++	return 0;
++}
++
++U_BOOT_CMD(
++	ping,	2,	1,	do_ping,
++	"ping\t- send ICMP ECHO_REQUEST to network host\n",
++	"pingAddress\n"
++);
++#endif
+-- 
+1.6.0.4
+

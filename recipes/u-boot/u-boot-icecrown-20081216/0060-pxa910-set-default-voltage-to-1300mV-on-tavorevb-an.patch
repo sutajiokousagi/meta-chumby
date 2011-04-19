@@ -1,0 +1,60 @@
+From 3c0ea650f99a7ad05a3c44b820e7c5f5ea46fa51 Mon Sep 17 00:00:00 2001
+From: Ning Jiang <ning.jiang@marvell.com>
+Date: Wed, 22 Apr 2009 10:42:59 +0800
+Subject: [PATCH] pxa910: set default voltage to 1300mV on tavorevb and ttc_dkb
+
+Signed-off-by: Ning Jiang <ning.jiang@marvell.com>
+---
+ board/pxa/tavorEVB/tavorevb_pxa168.c |    5 +++++
+ board/pxa/ttc_dkb/ttc_dkb.c          |    5 +++++
+ 2 files changed, 10 insertions(+), 0 deletions(-)
+
+diff --git a/board/pxa/tavorEVB/tavorevb_pxa168.c b/board/pxa/tavorEVB/tavorevb_pxa168.c
+index a0fe0cf..296d38d 100644
+--- a/board/pxa/tavorEVB/tavorevb_pxa168.c
++++ b/board/pxa/tavorEVB/tavorevb_pxa168.c
+@@ -23,6 +23,8 @@
+ #include <asm/arch/mfp.h>
+ #include <asm/arch/mfp-pxa168.h>
+ 
++int set_volt(u32 vol);
++
+ static mfp_cfg_t pxa910_tavorevb_mfp_cfg[] __initdata = {
+ 	/* UART2 */
+ 	GPIO47_UART2_RXD,
+@@ -253,6 +255,9 @@ int board_init (void)
+     *(volatile unsigned int *)0xd4282804=0x0ffd96d8;
+     reg = *(volatile unsigned int *)0xd4282804;
+ 
++    /* set voltage to 1300mV by default */
++    set_volt(1300);
++
+     return 0;
+ }
+ 
+diff --git a/board/pxa/ttc_dkb/ttc_dkb.c b/board/pxa/ttc_dkb/ttc_dkb.c
+index f60b595..8423862 100644
+--- a/board/pxa/ttc_dkb/ttc_dkb.c
++++ b/board/pxa/ttc_dkb/ttc_dkb.c
+@@ -23,6 +23,8 @@
+ #include <asm/arch/mfp.h>
+ #include <asm/arch/mfp-pxa168.h>
+ 
++int set_volt(u32 vol);
++
+ static mfp_cfg_t pxa910_tavorevb_mfp_cfg[] __initdata = {
+ 	/* UART2 */
+ 	GPIO47_UART2_RXD,
+@@ -249,6 +251,9 @@ int board_init (void)
+     pxa3xx_mfp_set_pull(MFP_CFG_PIN(GPIO48_UART2_TXD), MFP_PULL_HIGH);
+     pxa3xx_mfp_set_pull(MFP_CFG_PIN(DF_RDY0_DF_RDY0), MFP_PULL_HIGH);
+ 
++    /* set voltage to 1300mV by default */
++    set_volt(1300);
++
+     return 0;
+ }
+ 
+-- 
+1.6.0.4
+

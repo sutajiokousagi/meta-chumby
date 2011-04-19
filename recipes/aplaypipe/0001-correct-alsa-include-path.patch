@@ -1,0 +1,13 @@
+Only in src: .aplaypipe.cpp.swp
+diff -ur src-stock/aplaypipe.cpp src/aplaypipe.cpp
+--- src-stock/aplaypipe.cpp	2010-10-21 08:10:42.478546966 +0000
++++ src/aplaypipe.cpp	2010-10-21 08:11:21.998546984 +0000
+@@ -32,7 +32,7 @@
+ // Internals
+ #include <libio.h>
+ 
+-#include "alsa/asoundlib.h"
++#include <alsa/asoundlib.h>
+ 
+ #define VER_STR "1.12"
+ 

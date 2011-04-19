@@ -1,0 +1,282 @@
+From 7edfaa57ded122ac317a9c4cf68cf0b291ab45ce Mon Sep 17 00:00:00 2001
+From: Lei Wen <leiwen@marvell.com>
+Date: Mon, 20 Jul 2009 17:03:42 +0800
+Subject: [PATCH] soc: add tavor pv support
+
+Signed-off-by: Lei Wen <leiwen@marvell.com>
+---
+ Makefile                        |    3 +
+ board/pxa/tavorevb3/tavorevb3.c |    6 +
+ include/configs/tavorevb3.h     |    1 +
+ include/configs/tavorpv.h       |  215 +++++++++++++++++++++++++++++++++++++++
+ 4 files changed, 225 insertions(+), 0 deletions(-)
+ create mode 100644 include/configs/tavorpv.h
+
+diff --git a/Makefile b/Makefile
+index 1f6043f..63ad1f0 100644
+--- a/Makefile
++++ b/Makefile
+@@ -2934,6 +2934,9 @@ xsengine_config :	unconfig
+ zylonite_config :
+ 	@$(MKCONFIG) $(@:_config=) arm pxa zylonite
+ 
++tavorpv_config :
++	@$(MKCONFIG) $(@:_config=) arm pxa tavorevb3 pxa
++
+ tavorevb3_config :
+ 	@$(MKCONFIG) $(@:_config=) arm pxa tavorevb3 pxa
+ 
+diff --git a/board/pxa/tavorevb3/tavorevb3.c b/board/pxa/tavorevb3/tavorevb3.c
+index 16c7bb9..ebc4b33 100644
+--- a/board/pxa/tavorevb3/tavorevb3.c
++++ b/board/pxa/tavorevb3/tavorevb3.c
+@@ -96,7 +96,13 @@ int board_init (void)
+ 	/* so we do _nothing_ here */
+ 
+ 	/* arch number of tavor evb 3 */
++#if defined (CONFIG_TAVOR_PV2)
+ 	gd->bd->bi_arch_number = 1912;
++#elif defined (CONFIG_TAVOR_PV)
++	gd->bd->bi_arch_number = 1828;
++#else
++#error "Should specify PV2 or PV"
++#endif
+ 
+ 	/* adress of boot parameters */
+ 	gd->bd->bi_boot_params = 0;
+diff --git a/include/configs/tavorevb3.h b/include/configs/tavorevb3.h
+index 43857a4..55f3631 100644
+--- a/include/configs/tavorevb3.h
++++ b/include/configs/tavorevb3.h
+@@ -36,6 +36,7 @@
+  */
+ #define CONFIG_CPU_MONAHANS		1
+ #define CONFIG_PXAXXX
++#define CONFIG_TAVOR_PV2
+ #define CONFIG_SKIP_LOWLEVEL_INIT
+ #define CONFIG_FFUART
+ 
+diff --git a/include/configs/tavorpv.h b/include/configs/tavorpv.h
+new file mode 100644
+index 0000000..e587d64
+--- /dev/null
++++ b/include/configs/tavorpv.h
+@@ -0,0 +1,215 @@
++/*
++ * (C) Copyright 2008
++ * Marvell Semiconductors Ltd. Shanghai, China.
++ *
++ * Configuration for Tavor EVB board.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.    See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++#ifndef __CONFIG_H
++#define __CONFIG_H
++
++/************/
++/* VERSIONS */
++/************/
++#define CONFIG_IDENT_STRING   		"\nMarvell version: 1.1.1.1 PXAxxx"
++
++/* version number passing when loading Kernel */
++#define VER_NUM 			0x01010101	/* 1.1.1.18 */
++/*
++ * High Level Configuration Options
++ * (easy to change)
++ */
++#define CONFIG_CPU_MONAHANS		1
++#define CONFIG_PXAXXX
++#define CONFIG_TAVOR_PV
++#define CONFIG_SKIP_LOWLEVEL_INIT
++#define CONFIG_FFUART
++
++#define CONFIG_SYS_BOARD_NAME		"88SV331xV5 based PXAxxx"
++#define CONFIG_SYS_VENDOR_NAME     	"MARVELL"
++
++#define CONFIG_SYS_MEMTEST_START      	0x00100000
++#define CONFIG_SYS_MEMTEST_END        	0x00F00000
++
++#define CONFIG_SYS_HZ   		(3250000)      /* KV - Timer 0 is clocked at 3.25 MHz */
++/* Monahans Core Frequency */
++#define CONFIG_SYS_MONAHANS_RUN_MODE_OSC_RATIO          16 /* valid values: 8, 16, 24, 31 */
++#define CONFIG_SYS_MONAHANS_TURBO_RUN_MODE_RATIO        1  /* valid values: 1, 2 */
++
++#define CONFIG_SYS_TIMERBASE 		0xD4014000 
++#define CONFIG_SYS_CPUSPEED		0x161		/* set core clock to 400/200/100 MHz */
++#define CONFIG_DISPLAY_BOARDINFO
++
++#define CONFIG_CMDLINE_TAG         	1   /* enable passing of ATAGs  */
++#define CONFIG_DONOT_REPEAT_COMMAND
++#define CONFIG_SETUP_MEMORY_TAGS   	1
++
++/*
++ * Size of malloc() pool
++ */
++#define CONFIG_SYS_MALLOC_LEN      	(CONFIG_SYS_ENV_SIZE + 512*1024)
++#define CONFIG_SYS_GBL_DATA_SIZE   	128   /* size in bytes reserved for initial data */
++
++/*
++ *  Configuration
++ */
++#define CONFIG_AUTO_COMPLETE
++#define CONFIG_CONS_INDEX     		1
++#undef  CONFIG_SERIAL_SOFTWARE_FIFO
++#define CONFIG_SYS_NS16550
++#define CONFIG_SYS_NS16550_SERIAL
++#define CONFIG_SYS_NS16550_REG_SIZE   	-4
++#define CONFIG_SYS_NS16550_CLK        	14745600
++#define CONFIG_BAUDRATE        		115200
++#define CONFIG_SYS_BAUDRATE_TABLE     	{ 9600, 19200, 38400, 57600, 115200 }
++#define CONFIG_SYS_NS16550_COM1       	0x40100000
++
++#define CONFIG_SHOW_BOOT_PROGRESS
++
++#define CONFIG_CMD_PING
++#define CONFIG_CMD_NET
++#define CONFIG_NET_MULTI
++#define MV_ETH_DEVS 			1
++
++#define CONFIG_IPADDR      		192.168.1.101
++
++#define CONFIG_SERVERIP    		192.168.1.100
++
++#define CONFIG_ETHADDR			"00:00:5A:9F:6D:82"
++
++/* enable passing of ATAGs  */
++#define CONFIG_CMDLINE_TAG       	1
++#define CONFIG_SETUP_MEMORY_TAGS 	1
++#define CONFIG_SYS_TCLK         	0 /* not in use */
++#define CONFIG_SYS_BUS_CLK         	0 /* not in use */
++#define CONFIG_ENV_SIZE		 	0x4000
++#define CONFIG_ENV_OFFSET        	0x40000
++
++/***************************************/
++/* LINUX BOOT and other ENV PARAMETERS */
++/***************************************/
++#define CONFIG_SYS_BOOTARGS_END     	":::TAVOREVB3:eth0:none"
++#define CONFIG_SYS_BOOTARGS_ROOT    	"root=/dev/nfs rw init=/linuxrc"
++#define CONFIG_ZERO_BOOTDELAY_CHECK
++#define CONFIG_SYS_LOAD_ADDR        	0x80800000 /* default load address   */
++#define CONFIG_SYS_DEF_LOAD_ADDR    	"0x80800000"
++#define CONFIG_SYS_IMG_NAME		"zImage"
++#define CONFIG_SYS_INITRD_NAME      	"ramdisk.image.gz"
++#define CONFIG_SYS_INITRD_LOAD_ADDR 	"800000"
++#define CONFIG_SYS_INITRD_SIZE      	"400000"
++#undef  CONFIG_BOOTARGS
++
++#define CONFIG_BOOTDELAY        	10
++
++#if (CONFIG_BOOTDELAY >= 0)
++
++/* boot arguments" */
++#define CONFIG_ONENANDBOOT	     	"onenand read 0x80800000 0x920000 0x300000"
++#define CONFIG_NANDBOOT 	     	"nand read 0x80800000 0x920000 0x300000"
++#define CONFIG_BOOTCOMMAND      	"setenv autoboot boot; bootz 0x80800000; setenv autoboot none"
++#define CONFIG_ROOTPATH   		/tftpboot/rootfs_arm
++
++#endif /* #if (CONFIG_BOOTDELAY >= 0) */
++
++#define CONFIG_SYS_BARGSIZE   		CONFIG_SYS_CBSIZE   /* Boot Argument Buffer Size   */
++
++/*
++ * For booting Linux, the board info and command line data
++ * have to be in the first 8 MB of memory, since this is
++ * the maximum mapped by the Linux kernel during initialization.
++ */
++#define CONFIG_SYS_BOOTMAPSZ      	(8<<20)   /* Initial Memory map for Linux */
++
++/*
++ * Miscellaneous configurable options
++ */
++#define CONFIG_SYS_LONGHELP        	/* undef to save memory     */
++#define CONFIG_SYS_PROMPT         	"TavorPV>> "   /* Monitor Command Prompt   */
++#define CONFIG_SYS_PROMPT_HUSH_PS2     	"> "
++/* Console I/O Buffer Size  */
++#define CONFIG_SYS_CBSIZE         	512
++/* Print Buffer Size */
++#define CONFIG_SYS_PBSIZE         	(CONFIG_SYS_CBSIZE+sizeof(CONFIG_SYS_PROMPT)+16)
++/* max number of command args   */
++#define CONFIG_SYS_MAXARGS        	16
++/* Boot Argument Buffer Size    */
++#define CONFIG_SYS_BARGSIZE       	CONFIG_SYS_CBSIZE
++#undef  CONFIG_SYS_CLKS_IN_HZ         	/* everything, incl board info, in Hz */
++#define CONFIG_ENV_OVERWRITE    	/* allow to change env parameters */
++#undef  CONFIG_INIT_CRITICAL
++#define CONFIG_CMDLINE_EDITING
++#define CONFIG_SYS_64BIT_VSPRINTF
++
++
++/*-----------------------------------------------------------------------
++ * Stack sizes
++ *
++ * The stack sizes are set up in start.S using the settings below
++ */
++#define CONFIG_STACKSIZE       		(128*1024)   /* regular stack */
++#ifdef  CONFIG_USE_IRQ
++#define CONFIG_STACKSIZE_IRQ   		(4*1024)   /* IRQ stack */
++#define CONFIG_STACKSIZE_FIQ   		(4*1024)   /* FIQ stack */
++#endif
++
++/*-----------------------------------------------------------------------
++ * Physical Memory Map
++ */
++#define CONFIG_NR_DRAM_BANKS    	1   /* we have 1 bank of DRAM */
++#define PHYS_SDRAM_1            	0x80008000 /* SDRAM Bank #1 */
++#define PHYS_SDRAM_1_SIZE       	0x08000000   /* 128 MB */
++#define PHYS_SDRAM_SIZE_DEC     	128
++#define CONFIG_SYS_ENV_SIZE            	0x10000   /* Total Size of Environment Sector */
++#define	CONFIG_ENV_IS_NOWHERE		1
++#define CONFIG_SYS_NO_FLASH		1
++#define CONFIG_BBM			1
++
++/*-----------------------------------------------------------------------
++ * NAND and DFC configuration
++ */
++#define CONFIG_CMD_NAND 		1
++#define CONFIG_SYS_MAX_NAND_DEVICE	1         /* Max number of NAND devices */
++#define CONFIG_SYS_NAND_BASE		0x43100000
++
++/*-----------------------------------------------------------------------
++ * ONENAND configuration
++ */
++#define CONFIG_CMD_ONENAND 		1
++#define CONFIG_SYS_ONENAND_BASE 	0x10000000
++
++/*-----------------------------------------------------------------------
++ * FREQUENCE configuration
++ */
++#define CONFIG_CMD_FREQUENCE		1
++
++#undef TURN_ON_ETHERNET
++#define TURN_ON_ETHERNET
++#ifdef TURN_ON_ETHERNET
++#define CONFIG_USB_ETH
++#define CONFIG_U2O_REG_BASE		0x55502000
++#define CONFIG_U2O_PHY_BASE		0x5550A000
++#define CONFIG_DRIVER_SMC91111 		1
++#define CONFIG_SMC91111_BASE   		0x14000300
++#define CONFIG_SMC_USE_16_BIT
++#undef CONFIG_SMC_USE_IOFUNCS          /* just for use with the kernel */
++#endif
++
++#define CONFIG_NET_RETRY_COUNT 		10000
++
++#endif
++/* __CONFIG_H */
+-- 
+1.6.0.4
+

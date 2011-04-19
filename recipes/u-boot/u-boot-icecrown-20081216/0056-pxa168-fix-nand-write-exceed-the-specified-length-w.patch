@@ -1,0 +1,56 @@
+From e9f13054532cb160b3dabc34f09334960a9abc21 Mon Sep 17 00:00:00 2001
+From: Lei Wen <leiwen@marvell.com>
+Date: Thu, 21 May 2009 10:42:08 +0800
+Subject: [PATCH] pxa168: fix nand write exceed the specified length with yaffs
+
+Signed-off-by: Lei Wen <leiwen@marvell.com>
+---
+ drivers/mtd/nand/nand_util.c |    8 +++++---
+ 1 files changed, 5 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/mtd/nand/nand_util.c b/drivers/mtd/nand/nand_util.c
+index e4beeca..d4af478 100644
+--- a/drivers/mtd/nand/nand_util.c
++++ b/drivers/mtd/nand/nand_util.c
+@@ -481,7 +481,7 @@ int nand_write_skip_bad(nand_info_t *nand, size_t offset, size_t *length,
+ 	size_t len_incl_bad;
+ 	u_char *p_buffer = buffer;
+ 	struct nand_chip * n_chip = (struct nand_chip *)(nand->priv);
+-	int is_yaffs = 0;
++	int is_yaffs = 0, blocksize;
+ 	u_char *tmp_buf;
+ 
+ 	/* Reject writes, which are not page aligned */
+@@ -494,9 +494,11 @@ int nand_write_skip_bad(nand_info_t *nand, size_t offset, size_t *length,
+ 		}
+ 
+ 		is_yaffs = 1;
++		blocksize = (nand->oobsize << (n_chip->phys_erase_shift - n_chip->page_shift)) + nand->erasesize;
+ 		tmp_buf = n_chip->ops.datbuf;
+ 	}
+ 	else {
++		blocksize = nand->erasesize;
+ 		if ((offset & (nand->writesize - 1)) != 0 ||
+ 				(*length & (nand->writesize - 1)) != 0) {
+ 			printf ("Attempt to write non page aligned data\n");
+@@ -539,7 +541,7 @@ int nand_write_skip_bad(nand_info_t *nand, size_t offset, size_t *length,
+ 			continue;
+ 		}
+ 
+-		if (left_to_write < (nand->erasesize - block_offset)) {
++		if (left_to_write < (blocksize - block_offset)) {
+ 			if ( unlikely(is_yaffs == 1)){
+ 				write_size = (left_to_write / (nand->writesize + nand->oobsize)) \
+ 					     * nand->writesize;
+@@ -568,7 +570,7 @@ int nand_write_skip_bad(nand_info_t *nand, size_t offset, size_t *length,
+ 
+ 		/* Correct the real write bytes for YAFFS*/
+ 		if ( unlikely(is_yaffs == 1)) {
+-			if (left_to_write < (nand->erasesize - block_offset)) 
++			if (left_to_write < (blocksize - block_offset)) 
+ 				write_size = left_to_write;
+ 			else {
+ 				left_to_write -= nand->oobsize * (nand->erasesize	\
+-- 
+1.6.0.4
+

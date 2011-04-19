@@ -1,0 +1,35 @@
+From 4d0aedf9d6676cca4391a58c62cb6e50e6bb4113 Mon Sep 17 00:00:00 2001
+From: WeiLi Xia <wlxia@marvell.com>
+Date: Thu, 10 Jun 2010 19:15:42 +0800
+Subject: [PATCH] mmp2: no loner enabling vmeta clock in u-boot
+
+Move this task to kernel.
+
+Signed-off-by: WeiLi Xia <wlxia@marvell.com>
+---
+ board/pxa/jasper/jasper.c |    2 ++
+ 1 files changed, 2 insertions(+), 0 deletions(-)
+
+diff --git a/board/pxa/jasper/jasper.c b/board/pxa/jasper/jasper.c
+index 33ce0a7..581f490 100644
+--- a/board/pxa/jasper/jasper.c
++++ b/board/pxa/jasper/jasper.c
+@@ -266,6 +266,7 @@ int board_init (void)
+     *(volatile unsigned int *)0xd42828e8 = 0x1b; 
+ 
+     /* vmeta clock*/
++#if 0
+     reg = *(volatile unsigned int *)0xd42828a4;
+ 	reg |= (3<<9);
+ 	reg &= (~(1<<9));
+@@ -287,6 +288,7 @@ int board_init (void)
+ 	reg &= (~(1<<9));
+ 	reg &= (~(1<<6));
+     *(volatile unsigned int *)0xd42828a4=reg;
++#endif
+ 
+     *(volatile unsigned int *)0xd428284c=(1<<3);
+     *(volatile unsigned int *)0xd428284c=(1<<3) | 1;
+-- 
+1.6.0.4
+

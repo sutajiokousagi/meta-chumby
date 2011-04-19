@@ -1,0 +1,50 @@
+diff -ur src-stock/chumby_boot/Makefile src/chumby_boot/Makefile
+--- src-stock/chumby_boot/Makefile	2011-01-19 11:36:51.493104275 +0800
++++ src/chumby_boot/Makefile	2011-01-19 11:38:37.121103408 +0800
+@@ -5,7 +5,7 @@
+ INCLUDEDIR	= $(CURRENTDIR)/include
+ 
+ # Linker script 
+-BASE_ADDR	?= 0x00002000
++BASE_ADDR	= 0x40808000
+ BOOT_LAYOUT_IN	= $(SRCDIR)/chumby_boot.ld.in
+ BOOT_LAYOUT_OUT    = ../output/chumby_boot.ld
+ 
+diff -ur src-stock/chumby_boot/src/shell_funcs.c src/chumby_boot/src/shell_funcs.c
+--- src-stock/chumby_boot/src/shell_funcs.c	2011-03-09 09:38:39.269759323 +0800
++++ src/chumby_boot/src/shell_funcs.c	2011-03-09 09:39:56.309760246 +0800
+@@ -1065,15 +1065,6 @@
+ 
+ struct shell_command *shell_funcs_init() {
+     struct shell_command *cmd_fixup = cmds;
+-	sd_initted = 0;
+-
+-    // Fixup the cmd array by adding the base_address value to each pointer.
+-    while(cmd_fixup->name) {
+-        cmd_fixup->name += base_address;
+-        cmd_fixup->func += base_address;
+-        if(cmd_fixup->help)
+-            cmd_fixup->help += base_address;
+-        cmd_fixup++;
+-    }
++    sd_initted = 0;
+     return cmds;
+ }
+Only in src/chumby_boot/src: .shell.c.swp
+diff -ur src-stock/chumby_boot/src/shell.c src/chumby_boot/src/shell.c
+--- src-stock/chumby_boot/src/shell.c	2011-03-09 11:40:44.413759065 +0800
++++ src/chumby_boot/src/shell.c	2011-03-09 11:46:25.321759128 +0800
+@@ -539,13 +539,6 @@
+     env.shell_commands = shell_funcs_init();
+     shell_commands     = env.shell_commands;
+ 
+-    // Fixup command lines.  I'd like to know why this is needed now...
+-    command_lines[0] += base_address;
+-    command_lines[1] += base_address;
+-    command_lines[2] += base_address;
+-    command_lines[3] += base_address;
+-    command_lines[4] += base_address;
+-
+     // Get the hardware version from the cryptoprocessor eeprom.
+     hwver = eeprom_read(0xa2, 0x2a2c);
+     if(hwver) {

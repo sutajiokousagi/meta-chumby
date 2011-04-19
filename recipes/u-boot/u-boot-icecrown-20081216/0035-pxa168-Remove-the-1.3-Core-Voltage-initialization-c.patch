@@ -1,0 +1,100 @@
+From ceb013809ae10813383999d02a9c38f8ba152bf5 Mon Sep 17 00:00:00 2001
+From: Kiran Vedere <kvedere@marvell.com>
+Date: Tue, 17 Feb 2009 12:27:34 -0500
+Subject: [PATCH] pxa168: Remove the 1.3 Core Voltage initialization code in aspen_init.S
+
+Signed-off-by: Kiran Vedere <kvedere@marvell.com>
+---
+ board/pxa/aspenite/aspen_init.S |   69 ---------------------------------------
+ 1 files changed, 0 insertions(+), 69 deletions(-)
+
+diff --git a/board/pxa/aspenite/aspen_init.S b/board/pxa/aspenite/aspen_init.S
+index ff556d8..c904ca0 100644
+--- a/board/pxa/aspenite/aspen_init.S
++++ b/board/pxa/aspenite/aspen_init.S
+@@ -68,8 +68,6 @@ aspen_init:
+ 	stmfd   sp!,    {r1-r2, lr}             @ Save r1, r2 and link register on the stack
+ 
+ 	@ =========================================
+-	@ Set Aspen core voltage to 1.3 volts - BEGIN
+-
+ 	@ Init the Power I2C interface - set up clocks
+ 	ldr	r0, =0xD4051024
+ 	ldr	r1, =0xDFFFFFFE
+@@ -97,73 +95,6 @@ aspen_init:
+ 	str	r1, [r0]
+ 	delay	r0
+ 
+-	@ CODE SEQUNECE TO WRITE REGISTER 0X23 WITH THE VALUE 0X1F        
+-	@
+-	@ 1) Program Slave Address (0x68) into IDBR with start bit
+-	@
+-	ldr	r0, =0xD4025008
+-	mov	r1, #0x68
+-	str	r1, [r0]
+-	ldr	r0, =0xD4025010
+-	mov	r1, #0x69
+-	str	r1, [r0]
+-	delay	r0
+-
+-	@ 2) Send PMIC Address Tx data=0x23
+-	@
+-	ldr	r0, =0xD4025008
+-	mov	r1, #0x23
+-	str	r1, [r0]
+-	ldr	r0, =0xD4025010
+-	mov	r1, #0x68
+-	str	r1, [r0]
+-	delay	r0
+-
+-	@ 3) Data = 0x1F (for 1.300V core voltage), with a stop
+-	@
+-	ldr	r0, =0xD4025008
+-	mov	r1, #0x1F
+-	str	r1, [r0]
+-	ldr	r0, =0xD4025010
+-	mov	r1, #0x6A
+-	str	r1, [r0]
+-	delay	r0
+-
+-	@
+-	@ CODE SEQUNECE TO WRITE REGISTER 0X20 WITH THE VALUE 0X01        
+-	@
+-	@ 1) Program Slave Address (0x68) into IDBR with start bit
+-	@
+-	ldr	r0, =0xD4025008
+-	mov	r1, #0x68
+-	str	r1, [r0]
+-	ldr	r0, =0xD4025010
+-	mov	r1, #0x69
+-	str	r1, [r0]
+-	delay	r0
+-
+-	@ 2) Send PMIC Address Tx data=0x20
+-	@
+-	ldr	r0, =0xD4025008
+-	mov	r1, #0x20
+-	str	r1, [r0]
+-	ldr	r0, =0xD4025010
+-	mov	r1, #0x68
+-	str	r1, [r0]
+-	delay	r0
+-
+-	@ 3) Data 0=1 (sets the GO bit), with a stop
+-	@
+-	ldr	r0, =0xD4025008
+-	mov	r1, #0x01
+-	str	r1, [r0]
+-	ldr	r0, =0xD4025010
+-	mov	r1, #0x6A
+-	str	r1, [r0]
+-	delay	r0
+-	@ Set Aspen core voltage to 1.3 volts - END
+-	@ =========================================
+-
+ 	@ =========================================
+ 	@ Enable PMIC V6 & V7 regulators - BEGIN
+ 	@ TODO:	JMC - Find a better "home" for this code!
+-- 
+1.6.0.4
+

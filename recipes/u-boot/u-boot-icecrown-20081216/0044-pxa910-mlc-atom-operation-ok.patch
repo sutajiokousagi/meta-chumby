@@ -1,0 +1,1994 @@
+From b294609828cf49531bb6687361fce8e8ebf97cc1 Mon Sep 17 00:00:00 2001
+From: Lei Wen <leiwen@marvell.com>
+Date: Thu, 19 Mar 2009 11:15:56 +0800
+Subject: [PATCH] pxa910: mlc atom operation ok
+
+Signed-off-by: Lei Wen <leiwen@marvell.com>
+---
+ board/pxa/common/nand.c                   |   47 +-
+ drivers/mtd/nand/nand_bbt.c               |    1 +
+ drivers/mtd/nand/nand_ids.c               |    5 +
+ drivers/mtd/nand/pxa3xx_nand.c            |  839 ++++++++++-------------------
+ include/asm-arm/arch-pxa168/common.h      |  196 +++++---
+ include/asm-arm/arch-pxa168/pxa3xx_nand.h |  511 ++++++++++++++++++
+ 6 files changed, 954 insertions(+), 645 deletions(-)
+ create mode 100644 include/asm-arm/arch-pxa168/pxa3xx_nand.h
+
+diff --git a/board/pxa/common/nand.c b/board/pxa/common/nand.c
+index 419dc92..019cbaa 100644
+--- a/board/pxa/common/nand.c
++++ b/board/pxa/common/nand.c
+@@ -7,23 +7,23 @@
+ #include <asm/arch/regs-pxa168.h>
+ #include <asm/errno.h>
+ 
++#define DEFAULT_TRANSFER_DMA	0
+ #undef	DEBUG_NAND
+ #undef	__KERNEL__
++#include <asm/arch/pxa3xx_nand.h>
+ #ifndef DEBUG_NAND
+ #define	printk(...)
+ #endif
+-#define UBOOT_INCLUDE
+ #define nand_scan		__nand_scan
+ #include <../drivers/mtd/nand/pxa3xx_nand.c>
+ #undef 	nand_scan(...)
+-#undef  UBOOT_INCLUDE
+ 
+ static int nand_polling(struct pxa3xx_nand_info* info, unsigned long timeout)
+ {
+ 	unsigned int status, i;
+ 
+ 	for (i = 0; i < timeout; i ++) {
+-		udelay(1000);
++		udelay(10);
+ 		info->cmd_complete.done = 0;
+ 		pxa3xx_nand_irq(0, info);
+ 	
+@@ -44,42 +44,37 @@ wait_for_completion_timeout(struct completion *x, unsigned long timeout)
+ 
+ int __nand_scan (struct mtd_info *mtd, int max_chips)
+ {
+-	struct dfc_flash_info  *flash_info;
++	struct pxa3xx_nand_info *info;
++	struct pxa3xx_nand_flash *flash_info;
+ 	struct nand_chip *chip;
+ 	int status;
+-       
+-	status = dfc_get_flash_info(flash_config, &flash_info);
++      
++	info = (struct pxa3xx_nand_info *)(&mtd[1]);
++	flash_info  = info->flash_info;
+ 
+-	if (status == 0) {
+-		chip = mtd->priv;
+-		chip->chipsize = flash_info->num_blocks * 	\
+-				 flash_info->page_per_block *	\
+-				 flash_info->page_size;
+-	        chip->chip_shift = ffs(chip->chipsize) - 1;
+-	} else {
+-		return status;
+-	}
++	chip = mtd->priv;
++	chip->chipsize = flash_info->num_blocks * 	\
++			 flash_info->page_per_block *	\
++			 flash_info->page_size;
++	chip->chip_shift = ffs(chip->chipsize) - 1;
+ 
++	memcpy(&(nand_info[0]), mtd, sizeof(struct mtd_info));
++	nand_curr_device = (chip->numchips > 0) ? 0 : -1;
+ 	return 0;
+ }
+ 
+ int board_nand_init(struct nand_chip *nand)
+ {
+-	struct nand_chip *chip;
+ 	struct mtd_info *mtd_info;
+ 	int ret;
+ 
+-	tavorevb_nand_info.parts = pxa910_128m_partitions;
+-	tavorevb_nand_info.nr_parts = ARRAY_SIZE(pxa910_128m_partitions);
++	pxa_nandinfo.enable_arbiter = 1;
++	pxa_nandinfo.num_flash = 1;
++	pxa_nandinfo.parts = pxa168_128m_partitions;
++	pxa_nandinfo.nr_parts = ARRAY_SIZE(pxa168_128m_partitions);
+ 
+-	pxa910_device_nand.dev.platform_data = &tavorevb_nand_info;	
+-	ret = pxa3xx_nand_probe(&pxa910_device_nand);
++	pxa168_device_nand.dev.platform_data = &pxa_nandinfo;
++	ret = pxa3xx_nand_probe(&pxa168_device_nand);
+ 
+-	if (ret >= 0) {
+-		memcpy(&(nand_info[0]), monahans_mtd, sizeof(struct mtd_info));
+-		chip = (struct nand_chip *)(nand_info[0].priv);
+-		nand_curr_device = (chip->numchips > 0) ? 0 : -1;
+-	}
+-	
+ 	return ret;
+ }
+diff --git a/drivers/mtd/nand/nand_bbt.c b/drivers/mtd/nand/nand_bbt.c
+index d68a315..93a37cb 100644
+--- a/drivers/mtd/nand/nand_bbt.c
++++ b/drivers/mtd/nand/nand_bbt.c
+@@ -1158,6 +1158,7 @@ int nand_default_bbt(struct mtd_info *mtd)
+ {
+ 	struct nand_chip *this = mtd->priv;
+ 
++	return 0;
+ 	/* Default for AG-AND. We must use a flash based
+ 	 * bad block table as the devices have factory marked
+ 	 * _good_ blocks. Erasing those blocks leads to loss
+diff --git a/drivers/mtd/nand/nand_ids.c b/drivers/mtd/nand/nand_ids.c
+index 077c305..9f7bf28 100644
+--- a/drivers/mtd/nand/nand_ids.c
++++ b/drivers/mtd/nand/nand_ids.c
+@@ -110,6 +110,11 @@ struct nand_flash_dev nand_flash_ids[] = {
+ 	{"NAND 2GiB 1,8V 16-bit",	0xB5, 0, 2048, 0, LP_OPTIONS16},
+ 	{"NAND 2GiB 3,3V 16-bit",	0xC5, 0, 2048, 0, LP_OPTIONS16},
+ 
++	/* 32 Gigabit */
++	{"NAND 4GiB 1,8V 8-bit",	0xA7, 0, 3072, 0, LP_OPTIONS},
++	{"NAND 4GiB 3,3V 8-bit",	0xD7, 0, 3072, 0, LP_OPTIONS},
++	{"NAND 4GiB 1,8V 16-bit",	0xB7, 0, 3072, 0, LP_OPTIONS16},
++	{"NAND 4GiB 3,3V 16-bit",	0xC7, 0, 3072, 0, LP_OPTIONS16},
+ 	/*
+ 	 * Renesas AND 1 Gigabit. Those chips do not support extended id and
+ 	 * have a strange page/block layout !  The chosen minimum erasesize is
+diff --git a/drivers/mtd/nand/pxa3xx_nand.c b/drivers/mtd/nand/pxa3xx_nand.c
+index 556ab06..961ff51 100644
+--- a/drivers/mtd/nand/pxa3xx_nand.c
++++ b/drivers/mtd/nand/pxa3xx_nand.c
+@@ -23,281 +23,27 @@
+ 
+ #include <mach/dma.h>
+ #include <mach/pxa3xx_nand.h>
++#define DEFAULT_TRANSFER_DMA	1
+ #endif
+-#define	CHIP_DELAY_TIMEOUT	(2 * HZ/10)
+-
+-/* registers and bit definitions */
+-#define NDCR		(0x00) /* Control register */
+-#define NDTR0CS0	(0x04) /* Timing Parameter 0 for CS0 */
+-#define NDTR1CS0	(0x0C) /* Timing Parameter 1 for CS0 */
+-#define NDSR		(0x14) /* Status Register */
+-#define NDPCR		(0x18) /* Page Count Register */
+-#define NDBDR0		(0x1C) /* Bad Block Register 0 */
+-#define NDBDR1		(0x20) /* Bad Block Register 1 */
+-#define NDDB		(0x40) /* Data Buffer */
+-#define NDCB0		(0x48) /* Command Buffer0 */
+-#define NDCB1		(0x4C) /* Command Buffer1 */
+-#define NDCB2		(0x50) /* Command Buffer2 */
+-
+-#define NDCR_SPARE_EN		(0x1 << 31)
+-#define NDCR_ECC_EN		(0x1 << 30)
+-#define NDCR_DMA_EN		(0x1 << 29)
+-#define NDCR_ND_RUN		(0x1 << 28)
+-#define NDCR_DWIDTH_C		(0x1 << 27)
+-#define NDCR_DWIDTH_M		(0x1 << 26)
+-#define NDCR_PAGE_SZ		(0x1 << 24)
+-#define NDCR_NCSX		(0x1 << 23)
+-#define NDCR_ND_MODE		(0x3 << 21)
+-#define NDCR_NAND_MODE   	(0x0)
+-#define NDCR_CLR_PG_CNT		(0x1 << 20)
+-#define NDCR_CLR_ECC		(0x1 << 19)
+-#define NDCR_RD_ID_CNT_MASK	(0x7 << 16)
+-#define NDCR_RD_ID_CNT(x)	(((x) << 16) & NDCR_RD_ID_CNT_MASK)
+-
+-#define NDCR_RA_START		(0x1 << 15)
+-#define NDCR_PG_PER_BLK		(0x1 << 14)
+-#define NDCR_ND_ARB_EN		(0x1 << 12)
+-
+-#define NDSR_MASK		(0xfff)
+-#define NDSR_RDY		(0x1 << 11)
+-#define NDSR_CS0_PAGED		(0x1 << 10)
+-#define NDSR_CS1_PAGED		(0x1 << 9)
+-#define NDSR_CS0_CMDD		(0x1 << 8)
+-#define NDSR_CS1_CMDD		(0x1 << 7)
+-#define NDSR_CS0_BBD		(0x1 << 6)
+-#define NDSR_CS1_BBD		(0x1 << 5)
+-#define NDSR_DBERR		(0x1 << 4)
+-#define NDSR_SBERR		(0x1 << 3)
+-#define NDSR_WRDREQ		(0x1 << 2)
+-#define NDSR_RDDREQ		(0x1 << 1)
+-#define NDSR_WRCMDREQ		(0x1)
+-
+-#define NDCB0_AUTO_RS		(0x1 << 25)
+-#define NDCB0_CSEL		(0x1 << 24)
+-#define NDCB0_CMD_TYPE_MASK	(0x7 << 21)
+-#define NDCB0_CMD_TYPE(x)	(((x) << 21) & NDCB0_CMD_TYPE_MASK)
+-#define NDCB0_NC		(0x1 << 20)
+-#define NDCB0_DBC		(0x1 << 19)
+-#define NDCB0_ADDR_CYC_MASK	(0x7 << 16)
+-#define NDCB0_ADDR_CYC(x)	(((x) << 16) & NDCB0_ADDR_CYC_MASK)
+-#define NDCB0_CMD2_MASK		(0xff << 8)
+-#define NDCB0_CMD1_MASK		(0xff)
+-#define NDCB0_ADDR_CYC_SHIFT	(16)
+-
+-/* dma-able I/O address for the NAND data and commands */
+-#define NDCB0_DMA_ADDR		(0x43100048)
+-#define NDDB_DMA_ADDR		(0x43100040)
+-
+-/* macros for registers read/write */
+-#define nand_writel(info, off, val)	\
+-	__raw_writel((val), (info)->mmio_base + (off))
+-
+-#define nand_readl(info, off)		\
+-	__raw_readl((info)->mmio_base + (off))
+-
+-/* error code and state */
+-enum {
+-	ERR_NONE	= 0,
+-	ERR_DMABUSERR	= -1,
+-	ERR_SENDCMD	= -2,
+-	ERR_DBERR	= -3,
+-	ERR_BBERR	= -4,
+-};
+-
+-enum {
+-	STATE_READY	= 0,
+-	STATE_CMD_HANDLE,
+-	STATE_DMA_READING,
+-	STATE_DMA_WRITING,
+-	STATE_DMA_DONE,
+-	STATE_PIO_READING,
+-	STATE_PIO_WRITING,
+-};
+-
+-struct pxa3xx_nand_info {
+-	struct nand_chip	nand_chip;
+-
+-	struct platform_device	 *pdev;
+-	const struct pxa3xx_nand_flash *flash_info;
+-
+-	struct clk		*clk;
+-	void __iomem		*mmio_base;
+-
+-	unsigned int 		buf_start;
+-	unsigned int		buf_count;
+-
+-	/* DMA information */
+-	int			drcmr_dat;
+-	int			drcmr_cmd;
+-
+-	unsigned char		*data_buff;
+-	dma_addr_t 		data_buff_phys;
+-	size_t			data_buff_size;
+-	int 			data_dma_ch;
+-	struct pxa_dma_desc	*data_desc;
+-	dma_addr_t 		data_desc_addr;
+-
+-	uint32_t		reg_ndcr;
+-
+-	/* saved column/page_addr during CMD_SEQIN */
+-	int			seqin_column;
+-	int			seqin_page_addr;
+-
+-	/* relate to the command */
+-	unsigned int		state;
+-
+-	int			use_ecc;	/* use HW ECC ? */
+-	int			use_dma;	/* use DMA ? */
+-
+-	size_t			data_size;	/* data size in FIFO */
+-	int 			retcode;
+-	struct completion 	cmd_complete;
+ 
+-	/* generated NDCBx register values */
+-	uint32_t		ndcb0;
+-	uint32_t		ndcb1;
+-	uint32_t		ndcb2;
+-
+-	/* calculated from pxa3xx_nand_flash data */
+-	size_t		oob_size;
+-	size_t		read_id_bytes;
++/* convert nano-seconds to nand flash controller clock cycles */
++#define ns2cycle(ns, clk)	(int)(((ns) * (clk / 1000000) / 1000) + 1)
++#define	CHIP_DELAY_TIMEOUT	(10)
+ 
+-	unsigned int	col_addr_cycles;
+-	unsigned int	row_addr_cycles;
+-};
++#define BCH_THRESHOLD 		8
++#define PAGE_CHUNK_SIZE		2048
+ 
+-static int use_dma = 1;
++static int use_dma = DEFAULT_TRANSFER_DMA;
+ module_param(use_dma, bool, 0444);
+ MODULE_PARM_DESC(use_dma, "enable DMA for data transfering to/from NAND HW");
+ 
+-#ifdef CONFIG_MTD_NAND_PXA3xx_BUILTIN
+-static struct pxa3xx_nand_cmdset smallpage_cmdset = {
+-	.read1		= 0x0000,
+-	.read2		= 0x0050,
+-	.program	= 0x1080,
+-	.read_status	= 0x0070,
+-	.read_id	= 0x0090,
+-	.erase		= 0xD060,
+-	.reset		= 0x00FF,
+-	.lock		= 0x002A,
+-	.unlock		= 0x2423,
+-	.lock_status	= 0x007A,
+-};
+-
+-static struct pxa3xx_nand_cmdset largepage_cmdset = {
+-	.read1		= 0x3000,
+-	.read2		= 0x0050,
+-	.program	= 0x1080,
+-	.read_status	= 0x0070,
+-	.read_id	= 0x0090,
+-	.erase		= 0xD060,
+-	.reset		= 0x00FF,
+-	.lock		= 0x002A,
+-	.unlock		= 0x2423,
+-	.lock_status	= 0x007A,
+-};
+-
+-static struct pxa3xx_nand_timing samsung512MbX16_timing = {
+-	.tCH	= 10,
+-	.tCS	= 0,
+-	.tWH	= 20,
+-	.tWP	= 40,
+-	.tRH	= 30,
+-	.tRP	= 40,
+-	.tR	= 11123,
+-	.tWHR	= 110,
+-	.tAR	= 10,
+-};
+-
+-static struct pxa3xx_nand_flash samsung512MbX16 = {
+-	.timing		= &samsung512MbX16_timing,
+-	.cmdset		= &smallpage_cmdset,
+-	.page_per_block	= 32,
+-	.page_size	= 512,
+-	.flash_width	= 16,
+-	.dfc_width	= 16,
+-	.num_blocks	= 4096,
+-	.chip_id	= 0x46ec,
+-};
+-
+-static struct pxa3xx_nand_timing micron_timing = {
+-	.tCH	= 10,
+-	.tCS	= 25,
+-	.tWH	= 15,
+-	.tWP	= 25,
+-	.tRH	= 15,
+-	.tRP	= 25,
+-	.tR	= 25000,
+-	.tWHR	= 60,
+-	.tAR	= 10,
+-};
+-
+-static struct pxa3xx_nand_flash micron1GbX8 = {
+-	.timing		= &micron_timing,
+-	.cmdset		= &largepage_cmdset,
+-	.page_per_block	= 64,
+-	.page_size	= 2048,
+-	.flash_width	= 8,
+-	.dfc_width	= 8,
+-	.num_blocks	= 1024,
+-	.chip_id	= 0xa12c,
+-};
+-
+-static struct pxa3xx_nand_flash micron1GbX16 = {
+-	.timing		= &micron_timing,
+-	.cmdset		= &largepage_cmdset,
+-	.page_per_block	= 64,
+-	.page_size	= 2048,
+-	.flash_width	= 16,
+-	.dfc_width	= 16,
+-	.num_blocks	= 1024,
+-	.chip_id	= 0xb12c,
+-};
+-
+-static struct pxa3xx_nand_timing stm2GbX16_timing = {
+-	.tCH = 10,
+-	.tCS = 35,
+-	.tWH = 15,
+-	.tWP = 25,
+-	.tRH = 15,
+-	.tRP = 25,
+-	.tR = 25000,
+-	.tWHR = 60,
+-	.tAR = 10,
+-};
+-
+-static struct pxa3xx_nand_flash stm2GbX16 = {
+-	.timing = &stm2GbX16_timing,
+-	.cmdset	= &largepage_cmdset,
+-	.page_per_block = 64,
+-	.page_size = 2048,
+-	.flash_width = 16,
+-	.dfc_width = 16,
+-	.num_blocks = 2048,
+-	.chip_id = 0xba20,
+-};
+-
+-static struct pxa3xx_nand_flash *builtin_flash_types[] = {
+-	&samsung512MbX16,
+-	&micron1GbX8,
+-	&micron1GbX16,
+-	&stm2GbX16,
+-};
+-#endif /* CONFIG_MTD_NAND_PXA3xx_BUILTIN */
+-
+-#define NDTR0_tCH(c)	(min((c), 7) << 19)
+-#define NDTR0_tCS(c)	(min((c), 7) << 16)
+-#define NDTR0_tWH(c)	(min((c), 7) << 11)
+-#define NDTR0_tWP(c)	(min((c), 7) << 8)
+-#define NDTR0_tRH(c)	(min((c), 7) << 3)
+-#define NDTR0_tRP(c)	(min((c), 7) << 0)
+-
+-#define NDTR1_tR(c)	(min((c), 65535) << 16)
+-#define NDTR1_tWHR(c)	(min((c), 15) << 4)
+-#define NDTR1_tAR(c)	(min((c), 15) << 0)
+-
+-/* convert nano-seconds to nand flash controller clock cycles */
+-#define ns2cycle(ns, clk)	(int)(((ns) * (clk / 1000000) / 1000) + 1)
++static inline int is_buf_blank(uint8_t *buf, size_t len)
++{
++	for (; len > 0; len--)
++		if (*buf++ != 0xff)
++			return 0;
++	return 1;
++}
+ 
+ static void pxa3xx_nand_set_timing(struct pxa3xx_nand_info *info,
+ 				   const struct pxa3xx_nand_timing *t)
+@@ -320,121 +66,180 @@ static void pxa3xx_nand_set_timing(struct pxa3xx_nand_info *info,
+ 	nand_writel(info, NDTR1CS0, ndtr1);
+ }
+ 
+-#define WAIT_EVENT_TIMEOUT	10
+-
+-static int wait_for_event(struct pxa3xx_nand_info *info, uint32_t event)
++static int prepare_cmd(struct pxa3xx_nand_info *info, unsigned command,
++			int column, int page_addr, int cmd_seq)
+ {
+-	int timeout = WAIT_EVENT_TIMEOUT;
+-	uint32_t ndsr;
++	/* According to ONFI 2.1 SPEC, 08h is a vendor specified opcode, 	*/
++	/* which now is used to specify a invalid opcode in Marvell platform 	*/
++	uint16_t cmd = 0x08;
++	const struct pxa3xx_nand_flash *f = info->flash_info;
+ 
+-	while (timeout--) {
+-		ndsr = nand_readl(info, NDSR) & NDSR_MASK;
+-		if (ndsr & event) {
+-			nand_writel(info, NDSR, ndsr);
+-			return 0;
+-		}
+-		udelay(10);
++	/* generate values for NDCBx registers */
++	info->ndcb0 = 0;
++	if (command != NAND_CMD_PAGEPROG) {
++		info->ndcb1 = 0;
++		info->ndcb2 = 0;
+ 	}
+ 
+-	return -ETIMEDOUT;
+-}
+-
+-static int prepare_read_prog_cmd(struct pxa3xx_nand_info *info,
+-			uint16_t cmd, int column, int page_addr)
+-{
+-	const struct pxa3xx_nand_flash *f = info->flash_info;
+-	const struct pxa3xx_nand_cmdset *cmdset = f->cmdset;
+-
+ 	/* calculate data size */
+-	switch (f->page_size) {
+-	case 2048:
+-		info->data_size = (info->use_ecc) ? 2088 : 2112;
+-		break;
+-	case 512:
+-		info->data_size = (info->use_ecc) ? 520 : 528;
+-		break;
+-	default:
+-		return -EINVAL;
+-	}
++	switch (command) {
++		case NAND_CMD_READOOB:
++		case NAND_CMD_READ0:
++			cmd  = f->cmdset->read1;
++			info->ndcb0 |= NDCB0_ADDR_CYC(info->row_addr_cycles + info->col_addr_cycles);
++
++			if (f->page_size > PAGE_CHUNK_SIZE) {
++				switch (cmd_seq) {
++					case 0:
++						info->ndcb0 |= NDCB0_CMD_TYPE(0x6) | NDCB0_NC \
++							      | NDCB0_CMD2_MASK;
++						break;
++					case 1:
++						info->ndcb0 |= NDCB0_CMD_TYPE(0x7) | NDCB0_NC \
++							      | NDCB0_CMD2_MASK;
++						info->ndcb1 |= (info->seqin_page_addr << 16) | (info->seqin_column & 0xffff);
++						printf("\n\n###############ndcb1 %x page addr %x\n", info->ndcb1, info->seqin_page_addr);
++						if (info->row_addr_cycles == 3)
++							info->ndcb2 = (page_addr >> 16) & 0xff;
++						break;
++					case 2:
++						info->ndcb0 |= NDCB0_CMD_TYPE(0x6) | NDCB0_NC \
++							      | NDCB0_CMD2_MASK \
++							      | ((cmd >> 8) & NDCB0_CMD1_MASK);
++						break;
++					case 4:
++						info->seqin_column += PAGE_CHUNK_SIZE;
++					case 3:
++						info->ndcb0 |= NDCB0_CMD_XTYPE(0x5) | NDCB0_NC \
++							      | (cmd & NDCB0_CMD2_MASK) \
++							      | NDCB0_CMD1_MASK;
++					default:
++						break;
++				}
++				
++				/* Not process the DBC check */
++				cmd = 0x8;
++			}
++			else {
++				if (info->col_addr_cycles == 2) {
++					/* large block, 2 cycles for column address
++					 * row address starts from 3rd cycle
++					 */
++					info->ndcb1 |= (page_addr << 16) | (column & 0xffff);
++					if (info->row_addr_cycles == 3)
++						info->ndcb2 = (page_addr >> 16) & 0xff;
++				} else
++					/* small block, 1 cycles for column address
++					 * row address starts from 2nd cycle
++					 */
++					info->ndcb1 = (page_addr << 8) | (column & 0xff);
++			}
+ 
+-	/* generate values for NDCBx registers */
+-	info->ndcb0 = cmd | ((cmd & 0xff00) ? NDCB0_DBC : 0);
+-	info->ndcb1 = 0;
+-	info->ndcb2 = 0;
+-	info->ndcb0 |= NDCB0_ADDR_CYC(info->row_addr_cycles + info->col_addr_cycles);
+-
+-	if (info->col_addr_cycles == 2) {
+-		/* large block, 2 cycles for column address
+-		 * row address starts from 3rd cycle
+-		 */
+-		info->ndcb1 |= (page_addr << 16) | (column & 0xffff);
+-		if (info->row_addr_cycles == 3)
+-			info->ndcb2 = (page_addr >> 16) & 0xff;
+-	} else
+-		/* small block, 1 cycles for column address
+-		 * row address starts from 2nd cycle
+-		 */
+-		info->ndcb1 = (page_addr << 8) | (column & 0xff);
++		case NAND_CMD_SEQIN:
++
++			if (likely(f->page_size >= PAGE_CHUNK_SIZE)) {
++				switch (info->use_ecc) {
++					case 1:
++						info->data_size = 2088;
++						break;
++					case 2:
++						info->data_size = 2080;
++						break;
++					default:
++						info->data_size = 2112;
++						break;
++				}
++			}
++			else {
++				switch (info->use_ecc) {
++					case 1:
++						info->data_size = 520;
++						break;
++					case 2:
++					default:
++						info->data_size = 528;
++						break;
++				}
++			}
+ 
+-	if (cmd == cmdset->program)
+-		info->ndcb0 |= NDCB0_CMD_TYPE(1) | NDCB0_AUTO_RS;
+ 
+-	return 0;
+-}
+ 
+-static int prepare_erase_cmd(struct pxa3xx_nand_info *info,
+-			uint16_t cmd, int page_addr)
+-{
+-	info->ndcb0 = cmd | ((cmd & 0xff00) ? NDCB0_DBC : 0);
+-	info->ndcb0 |= NDCB0_CMD_TYPE(2) | NDCB0_AUTO_RS | NDCB0_ADDR_CYC(3);
+-	info->ndcb1 = page_addr;
+-	info->ndcb2 = 0;
+-	return 0;
+-}
++			break;
++		case NAND_CMD_PAGEPROG:
++			cmd = f->cmdset->program;
++			info->ndcb0 |= NDCB0_ADDR_CYC(info->row_addr_cycles + info->col_addr_cycles);
++			if (f->page_size > PAGE_CHUNK_SIZE) {
++				switch (cmd_seq) {
++					case 0:
++						info->ndcb0 |= NDCB0_CMD_TYPE(0x6) | NDCB0_NC \
++							      | (cmd & NDCB0_CMD1_MASK);
++						break;
++					case 1:
++						info->ndcb0 |= NDCB0_CMD_TYPE(0xF) | NDCB0_NC \
++							      | (cmd & NDCB0_CMD1_MASK);
++						info->ndcb1 |= (info->seqin_page_addr << 16) | (info->seqin_column & 0xffff);
++						break;
++					case 3:
++						info->seqin_column += PAGE_CHUNK_SIZE;
++					case 2:
++						info->ndcb0 |= NDCB0_CMD_XTYPE(0x5) | NDCB0_AUTO_RS \
++							      | NDCB0_CMD_TYPE(0x1) | NDCB0_NC;
++						info->ndcb1 |= (info->seqin_page_addr << 16) | (info->seqin_column & 0xffff);
++						break;
++					case 4:
++						info->ndcb0 |= NDCB0_CMD_XTYPE(0x3) | NDCB0_ST_ROW_EN \
++							      | NDCB0_CMD_TYPE(0x1) | NDCB0_NC | NDCB0_DBC \
++							      | (cmd & NDCB0_CMD2_MASK) \
++							      | NDCB0_CMD1_MASK;
++						break;
++					default:
++						break;
++				}
++
++				/* Not process the DBC check */
++				cmd = 0x8;
++			}
++			else
++				info->ndcb0 |= NDCB0_CMD_TYPE(1) | NDCB0_AUTO_RS;
+ 
+-static int prepare_other_cmd(struct pxa3xx_nand_info *info, uint16_t cmd)
+-{
+-	const struct pxa3xx_nand_cmdset *cmdset = info->flash_info->cmdset;
+-
+-	info->ndcb0 = cmd | ((cmd & 0xff00) ? NDCB0_DBC : 0);
+-	info->ndcb1 = 0;
+-	info->ndcb2 = 0;
+-
+-	if (cmd == cmdset->read_id) {
+-		info->ndcb0 |= NDCB0_CMD_TYPE(3);
+-		info->data_size = 8;
+-	} else if (cmd == cmdset->read_status) {
+-		info->ndcb0 |= NDCB0_CMD_TYPE(4);
+-		info->data_size = 8;
+-	} else if (cmd == cmdset->reset || cmd == cmdset->lock ||
+-		   cmd == cmdset->unlock) {
+-		info->ndcb0 |= NDCB0_CMD_TYPE(5);
+-	} else
+-		return -EINVAL;
++			break;
+ 
+-	return 0;
+-}
++		case NAND_CMD_ERASE1:
++			cmd = f->cmdset->erase;
++			info->ndcb0 |= NDCB0_CMD_TYPE(2) | NDCB0_AUTO_RS | NDCB0_ADDR_CYC(3);
++			info->ndcb1 = page_addr;
++			break;
+ 
+-static void enable_int(struct pxa3xx_nand_info *info, uint32_t int_mask)
+-{
+-	uint32_t ndcr;
++		case NAND_CMD_READID:
++			cmd = f->cmdset->read_id;
++			info->ndcb0 |= NDCB0_CMD_TYPE(3) | NDCB0_ADDR_CYC(1);
++			info->data_size = 8;
++			break;
++		case NAND_CMD_STATUS:
++			cmd = f->cmdset->read_status;
++			info->ndcb0 |= NDCB0_CMD_TYPE(4) | NDCB0_ADDR_CYC(1);
++			info->data_size = 8;
++			break;
++		case NAND_CMD_RESET:
++			cmd = f->cmdset->reset;
++			info->ndcb0 |= NDCB0_CMD_TYPE(5);
++			break;
++		default:
++			break;
++	}
+ 
+-	ndcr = nand_readl(info, NDCR);
+-	nand_writel(info, NDCR, ndcr & ~int_mask);
+-}
++	if (cmd != 0x08)
++		info->ndcb0 |= (cmd | ((cmd & 0xff00) ? NDCB0_DBC : 0));
+ 
+-static void disable_int(struct pxa3xx_nand_info *info, uint32_t int_mask)
+-{
+-	uint32_t ndcr;
++	printf("ndcb0 %x, ndcb1 %x\n", info->ndcb0, info->ndcb1);
+ 
+-	ndcr = nand_readl(info, NDCR);
+-	nand_writel(info, NDCR, ndcr | int_mask);
++	return 0;
+ }
+ 
+ /* NOTE: it is a must to set ND_RUN firstly, then write command buffer
+  * otherwise, it does not work
+  */
+-static int write_cmd(struct pxa3xx_nand_info *info)
++static void write_cmd(struct pxa3xx_nand_info *info)
+ {
+ 	uint32_t ndcr;
+ 
+@@ -447,17 +252,8 @@ static int write_cmd(struct pxa3xx_nand_info *info)
+ 	ndcr |= info->use_dma ? NDCR_DMA_EN : 0;
+ 	ndcr |= NDCR_ND_RUN;
+ 
++	printf("ndcr %x\n", ndcr);
+ 	nand_writel(info, NDCR, ndcr);
+-
+-	if (wait_for_event(info, NDSR_WRCMDREQ)) {
+-		printk(KERN_ERR "timed out writing command\n");
+-		return -ETIMEDOUT;
+-	}
+-
+-	nand_writel(info, NDCB0, info->ndcb0);
+-	nand_writel(info, NDCB0, info->ndcb1);
+-	nand_writel(info, NDCB0, info->ndcb2);
+-	return 0;
+ }
+ 
+ static int handle_data_pio(struct pxa3xx_nand_info *info)
+@@ -466,10 +262,9 @@ static int handle_data_pio(struct pxa3xx_nand_info *info)
+ 
+ 	switch (info->state) {
+ 	case STATE_PIO_WRITING:
+-		__raw_writesl(info->mmio_base + NDDB, info->data_buff,
+-				info->data_size << 2);
++		__raw_writesl(info->mmio_base + NDDB, info->data_buff + info->seqin_column,
++				info->data_size >> 2);
+ 
+-		enable_int(info, NDSR_CS0_BBD | NDSR_CS0_CMDD);
+ 
+ 		ret = wait_for_completion_timeout(&info->cmd_complete, timeout);
+ 		if (!ret) {
+@@ -478,8 +273,8 @@ static int handle_data_pio(struct pxa3xx_nand_info *info)
+ 		}
+ 		break;
+ 	case STATE_PIO_READING:
+-		__raw_readsl(info->mmio_base + NDDB, info->data_buff,
+-				info->data_size << 2);
++		__raw_readsl(info->mmio_base + NDDB, info->data_buff + info->seqin_column,
++				info->data_size >> 2);
+ 		break;
+ 	default:
+ 		printk(KERN_ERR "%s: invalid state %d\n", __func__,
+@@ -529,7 +324,6 @@ static void pxa3xx_nand_data_dma_irq(int channel, void *data)
+ 
+ 	if (info->state == STATE_DMA_WRITING) {
+ 		info->state = STATE_DMA_DONE;
+-		enable_int(info, NDSR_CS0_BBD | NDSR_CS0_CMDD);
+ 	} else {
+ 		info->state = STATE_READY;
+ 		complete(&info->cmd_complete);
+@@ -543,12 +337,21 @@ static irqreturn_t pxa3xx_nand_irq(int irq, void *devid)
+ 
+ 	status = nand_readl(info, NDSR);
+ 
++	/* If state machine is in the CMD HANDLE, write	*/
++	/* them into the NDCB0 				*/
++	if ((status & NDSR_WRCMDREQ) && info->state == STATE_CMD_HANDLE) {
++		printf("ndcb0 %x, ndcb1 %x, ndcb2 %x\n", info->ndcb0, info->ndcb1, info->ndcb2);
++		nand_writel(info, NDCB0, info->ndcb0);
++		nand_writel(info, NDCB0, info->ndcb1);
++		nand_writel(info, NDCB0, info->ndcb2);
++		info->state = STATE_CMD_WAITING;
++	}
++
++	printf("%4x\n", status);
+ 	if (status & (NDSR_RDDREQ | NDSR_DBERR)) {
+ 		if (status & NDSR_DBERR)
+ 			info->retcode = ERR_DBERR;
+ 
+-		disable_int(info, NDSR_RDDREQ | NDSR_DBERR);
+-
+ 		if (info->use_dma) {
+ 			info->state = STATE_DMA_READING;
+ 			start_data_dma(info, 0);
+@@ -557,7 +360,6 @@ static irqreturn_t pxa3xx_nand_irq(int irq, void *devid)
+ 			complete(&info->cmd_complete);
+ 		}
+ 	} else if (status & NDSR_WRDREQ) {
+-		disable_int(info, NDSR_WRDREQ);
+ 		if (info->use_dma) {
+ 			info->state = STATE_DMA_WRITING;
+ 			start_data_dma(info, 1);
+@@ -569,28 +371,22 @@ static irqreturn_t pxa3xx_nand_irq(int irq, void *devid)
+ 		if (status & NDSR_CS0_BBD)
+ 			info->retcode = ERR_BBERR;
+ 
+-		disable_int(info, NDSR_CS0_BBD | NDSR_CS0_CMDD);
+ 		info->state = STATE_READY;
+ 		complete(&info->cmd_complete);
+ 	}
++	
+ 	nand_writel(info, NDSR, status);
+ 	return IRQ_HANDLED;
+ }
+ 
+-static int pxa3xx_nand_do_cmd(struct pxa3xx_nand_info *info, uint32_t event)
++static int pxa3xx_nand_do_cmd(struct pxa3xx_nand_info *info)
+ {
+ 	uint32_t ndcr;
+ 	int ret, timeout = CHIP_DELAY_TIMEOUT;
+ 
+-	if (write_cmd(info)) {
+-		info->retcode = ERR_SENDCMD;
+-		goto fail_stop;
+-	}
+-
++	write_cmd(info);
+ 	info->state = STATE_CMD_HANDLE;
+ 
+-	enable_int(info, event);
+-
+ 	ret = wait_for_completion_timeout(&info->cmd_complete, timeout);
+ 	if (!ret) {
+ 		printk(KERN_ERR "command execution timed out\n");
+@@ -617,92 +413,59 @@ static int pxa3xx_nand_dev_ready(struct mtd_info *mtd)
+ 	return (nand_readl(info, NDSR) & NDSR_RDY) ? 1 : 0;
+ }
+ 
+-static inline int is_buf_blank(uint8_t *buf, size_t len)
+-{
+-	for (; len > 0; len--)
+-		if (*buf++ != 0xff)
+-			return 0;
+-	return 1;
+-}
+-
+ static void pxa3xx_nand_cmdfunc(struct mtd_info *mtd, unsigned command,
+ 				int column, int page_addr)
+ {
+ 	struct pxa3xx_nand_info *info = mtd->priv;
+ 	const struct pxa3xx_nand_flash *flash_info = info->flash_info;
+-	const struct pxa3xx_nand_cmdset *cmdset = flash_info->cmdset;
+-	int ret;
++	int ret, exec_cmd = 1, cmd_seqs, i;
+ 
++	cmd_seqs = (info->flash_info->page_size > PAGE_CHUNK_SIZE) ? 5 : 1;
+ 	info->use_dma = (use_dma) ? 1 : 0;
+ 	info->use_ecc = 0;
+-	info->data_size = 0;
+ 	info->state = STATE_READY;
++	info->seqin_column = 0;
++
++	if (NAND_CMD_PAGEPROG != command)
++		info->data_size = 0;
+ 
+ 	init_completion(&info->cmd_complete);
+ 
++	printf("exec cmd %x\n", command);
+ 	switch (command) {
+ 	case NAND_CMD_READOOB:
+-		/* disable HW ECC to get all the OOB data */
+-		info->buf_count = mtd->writesize + mtd->oobsize;
+-		info->buf_start = mtd->writesize + column;
+-
+-		if (prepare_read_prog_cmd(info, cmdset->read1, column, page_addr))
+-			break;
+-
+-		pxa3xx_nand_do_cmd(info, NDSR_RDDREQ | NDSR_DBERR);
+-
+-		/* We only are OOB, so if the data has error, does not matter */
+-		if (info->retcode == ERR_DBERR)
+-			info->retcode = ERR_NONE;
+-		break;
+-
+ 	case NAND_CMD_READ0:
+-		info->use_ecc = 1;
+-		info->retcode = ERR_NONE;
+-		info->buf_start = column;
++		/* disable HW ECC to get all the OOB data */
+ 		info->buf_count = mtd->writesize + mtd->oobsize;
+ 		memset(info->data_buff, 0xFF, info->buf_count);
+ 
+-		if (prepare_read_prog_cmd(info, cmdset->read1, column, page_addr))
+-			break;
+-
+-		pxa3xx_nand_do_cmd(info, NDSR_RDDREQ | NDSR_DBERR);
+-
+-		if (info->retcode == ERR_DBERR) {
+-			/* for blank page (all 0xff), HW will calculate its ECC as
+-			 * 0, which is different from the ECC information within
+-			 * OOB, ignore such double bit errors
+-			 */
+-			if (is_buf_blank(info->data_buff, mtd->writesize))
+-				info->retcode = ERR_NONE;
++		if (command == NAND_CMD_READOOB)
++			info->buf_start = mtd->writesize + column;
++		else {
++			info->buf_start = column;
++			info->use_ecc = 1;
++			info->retcode = ERR_NONE;
+ 		}
++		/* save column/page_addr for next CMD_PAGEPROG */
++		info->seqin_column = column;
++		info->seqin_page_addr = page_addr;
++
+ 		break;
++
+ 	case NAND_CMD_SEQIN:
++		exec_cmd = 0;
+ 		info->buf_start = column;
+ 		info->buf_count = mtd->writesize + mtd->oobsize;
+-		memset(info->data_buff, 0xff, info->buf_count);
+ 
+ 		/* save column/page_addr for next CMD_PAGEPROG */
+ 		info->seqin_column = column;
+ 		info->seqin_page_addr = page_addr;
+-		break;
++
+ 	case NAND_CMD_PAGEPROG:
+ 		info->use_ecc = (info->seqin_column >= mtd->writesize) ? 0 : 1;
+ 
+-		if (prepare_read_prog_cmd(info, cmdset->program,
+-				info->seqin_column, info->seqin_page_addr))
+-			break;
+-
+-		pxa3xx_nand_do_cmd(info, NDSR_WRDREQ);
+ 		break;
+-	case NAND_CMD_ERASE1:
+-		if (prepare_erase_cmd(info, cmdset->erase, page_addr))
+-			break;
+ 
+-		pxa3xx_nand_do_cmd(info, NDSR_CS0_BBD | NDSR_CS0_CMDD);
+-		break;
+-	case NAND_CMD_ERASE2:
+-		break;
+ 	case NAND_CMD_READID:
+ 	case NAND_CMD_STATUS:
+ 		info->use_dma = 0;	/* force PIO read */
+@@ -710,39 +473,49 @@ static void pxa3xx_nand_cmdfunc(struct mtd_info *mtd, unsigned command,
+ 		info->buf_count = (command == NAND_CMD_READID) ?
+ 				info->read_id_bytes : 1;
+ 
+-		if (prepare_other_cmd(info, (command == NAND_CMD_READID) ?
+-				cmdset->read_id : cmdset->read_status))
+-			break;
+-
+-		pxa3xx_nand_do_cmd(info, NDSR_RDDREQ);
+ 		break;
+-	case NAND_CMD_RESET:
+-		if (prepare_other_cmd(info, cmdset->reset))
+-			break;
+-
+-		ret = pxa3xx_nand_do_cmd(info, NDSR_CS0_CMDD);
+-		if (ret == 0) {
+-			int timeout = 2;
+-			uint32_t ndcr;
+-
+-			while (timeout--) {
+-				if (nand_readl(info, NDSR) & NDSR_RDY)
+-					break;
+-				msleep(10);
+-			}
+ 
+-			ndcr = nand_readl(info, NDCR);
+-			nand_writel(info, NDCR, ndcr & ~NDCR_ND_RUN);
+-		}
++	case NAND_CMD_ERASE1:
++	case NAND_CMD_ERASE2:
++	case NAND_CMD_RESET:
+ 		break;
++
+ 	default:
+ 		printk(KERN_ERR "non-supported command.\n");
+ 		break;
+ 	}
+ 
+-	if (info->retcode == ERR_DBERR) {
+-		printk(KERN_ERR "double bit error @ page %08x\n", page_addr);
+-		info->retcode = ERR_NONE;
++	for (i =0; i < cmd_seqs; i ++) {
++		prepare_cmd(info, command, column, page_addr, i);
++
++		if (exec_cmd) {
++			ret = pxa3xx_nand_do_cmd(info);
++			if (ret == 0) {
++				int timeout = 2;
++				uint32_t ndcr;
++
++				while (timeout--) {
++					if (nand_readl(info, NDSR) & NDSR_RDY)
++						break;
++					msleep(10);
++				}
++
++				ndcr = nand_readl(info, NDCR);
++				nand_writel(info, NDCR, ndcr & ~NDCR_ND_RUN);
++			}
++			if (info->retcode == ERR_DBERR) {
++				/* for blank page (all 0xff), HW will calculate its ECC as
++				 * 0, which is different from the ECC information within
++				 * OOB, ignore such double bit errors
++				 */
++				if (is_buf_blank(info->data_buff, mtd->writesize) || command == NAND_CMD_READOOB)
++					info->retcode = ERR_NONE;
++				else {
++					printk(KERN_ERR "double bit error @ page %08x\n", page_addr);
++					info->retcode = ERR_NONE;
++				}
++			}
++		}
+ 	}
+ }
+ 
+@@ -847,56 +620,20 @@ static int pxa3xx_nand_ecc_correct(struct mtd_info *mtd,
+ 	return 0;
+ }
+ 
+-static int __readid(struct pxa3xx_nand_info *info, uint32_t *id)
+-{
+-	const struct pxa3xx_nand_flash *f = info->flash_info;
+-	const struct pxa3xx_nand_cmdset *cmdset = f->cmdset;
+-	uint32_t ndcr;
+-	uint8_t  id_buff[8];
+-
+-	if (prepare_other_cmd(info, cmdset->read_id)) {
+-		printk(KERN_ERR "failed to prepare command\n");
+-		return -EINVAL;
+-	}
+-
+-	/* Send command */
+-	if (write_cmd(info))
+-		goto fail_timeout;
+-
+-	/* Wait for CMDDM(command done successfully) */
+-	if (wait_for_event(info, NDSR_RDDREQ))
+-		goto fail_timeout;
+-
+-	__raw_readsl(info->mmio_base + NDDB, id_buff, 2);
+-	*id = id_buff[0] | (id_buff[1] << 8);
+-	return 0;
+-
+-fail_timeout:
+-	ndcr = nand_readl(info, NDCR);
+-	nand_writel(info, NDCR, ndcr & ~NDCR_ND_RUN);
+-	udelay(10);
+-	return -ETIMEDOUT;
+-}
+-
+ static int pxa3xx_nand_config_flash(struct pxa3xx_nand_info *info,
+ 				    const struct pxa3xx_nand_flash *f)
+ {
+ 	struct platform_device *pdev = info->pdev;
+ 	struct pxa3xx_nand_platform_data *pdata = pdev->dev.platform_data;
+-	uint32_t ndcr = 0x00000FFF; /* disable all interrupts */
+-
+-	if (f->page_size != 2048 && f->page_size != 512)
+-		return -EINVAL;
+-
+-	if (f->flash_width != 16 && f->flash_width != 8)
+-		return -EINVAL;
++//	uint32_t ndcr = 0x00000FFF; /* disable all interrupts */
++	uint32_t ndcr = 0;	/* enable all interrupts */
+ 
+ 	/* calculate flash information */
+-	info->oob_size = (f->page_size == 2048) ? 64 : 16;
+-	info->read_id_bytes = (f->page_size == 2048) ? 4 : 2;
++	info->oob_size = (f->page_size >= 2048) ? 64 : 16;
++	info->read_id_bytes = (f->page_size >= 2048) ? 4 : 2;
+ 
+ 	/* calculate addressing information */
+-	info->col_addr_cycles = (f->page_size == 2048) ? 2 : 1;
++	info->col_addr_cycles = (f->page_size >= 2048) ? 2 : 1;
+ 
+ 	if (f->num_blocks * f->page_per_block > 65536)
+ 		info->row_addr_cycles = 3;
+@@ -905,11 +642,36 @@ static int pxa3xx_nand_config_flash(struct pxa3xx_nand_info *info,
+ 
+ 	ndcr |= (pdata->enable_arbiter) ? NDCR_ND_ARB_EN : 0;
+ 	ndcr |= (info->col_addr_cycles == 2) ? NDCR_RA_START : 0;
+-	ndcr |= (f->page_per_block == 64) ? NDCR_PG_PER_BLK : 0;
+-	ndcr |= (f->page_size == 2048) ? NDCR_PAGE_SZ : 0;
+ 	ndcr |= (f->flash_width == 16) ? NDCR_DWIDTH_M : 0;
+ 	ndcr |= (f->dfc_width == 16) ? NDCR_DWIDTH_C : 0;
+ 
++	switch (f->page_per_block) {
++		case 32:
++			ndcr |= NDCR_PG_PER_BLK(0x0);
++			break;
++		case 128:
++			ndcr |= NDCR_PG_PER_BLK(0x1);
++			break;
++		case 256:
++			ndcr |= NDCR_PG_PER_BLK(0x3);
++			break;
++		case 64:
++		default:
++			ndcr |= NDCR_PG_PER_BLK(0x2);
++			break;
++	}
++
++	switch (f->page_size) {
++		case 512:
++			ndcr |= NDCR_PAGE_SZ(0x0);
++			break;
++		case 2048:
++		default:
++			ndcr |= NDCR_PAGE_SZ(0x1);
++			break;
++
++	}
++
+ 	ndcr |= NDCR_RD_ID_CNT(info->read_id_bytes);
+ 	ndcr |= NDCR_SPARE_EN; /* enable spare by default */
+ 
+@@ -920,45 +682,35 @@ static int pxa3xx_nand_config_flash(struct pxa3xx_nand_info *info,
+ 	return 0;
+ }
+ 
+-static int pxa3xx_nand_detect_flash(struct pxa3xx_nand_info *info,
+-				    const struct pxa3xx_nand_platform_data *pdata)
++static int pxa3xx_nand_detect_flash(struct platform_device *pdev)
+ {
++	struct mtd_info *mtd = platform_get_drvdata(pdev);
++	struct pxa3xx_nand_info *info = mtd->priv;
+ 	const struct pxa3xx_nand_flash *f;
+ 	uint32_t id = -1;
+ 	int i;
+ 
+-	for (i = 0; i<pdata->num_flash; ++i) {
+-		f = pdata->flash + i;
++	f = builtin_flash_types[0];
++	pxa3xx_nand_config_flash(info, f);
++	pxa3xx_nand_cmdfunc(mtd, NAND_CMD_READID, 0, 0);
+ 
+-		if (pxa3xx_nand_config_flash(info, f))
+-			continue;
++	id = *((uint16_t *)(info->data_buff));
++	printf("Detect a flash id %x\n", id);
+ 
+-		if (__readid(info, &id))
+-			continue;
+-
+-		if (id == f->chip_id)
+-			return 0;
+-	}
+-
+-#ifdef CONFIG_MTD_NAND_PXA3xx_BUILTIN
+-	for (i = 0; i < ARRAY_SIZE(builtin_flash_types); i++) {
++	for (i = 1; i < ARRAY_SIZE(builtin_flash_types); i++) {
+ 
+ 		f = builtin_flash_types[i];
+ 
+-		if (pxa3xx_nand_config_flash(info, f))
+-			continue;
+-
+-		if (__readid(info, &id))
+-			continue;
+-
+-		if (id == f->chip_id)
++		/* find the chip in default list */
++		if (f->chip_id == id) {
++			pxa3xx_nand_config_flash(info, f);
+ 			return 0;
++		}
+ 	}
+-#endif
+ 
+ 	dev_warn(&info->pdev->dev,
+-		 "failed to detect configured nand flash; found %04x instead of\n",
+-		 id);
++			"failed to detect configured nand flash; found %04x instead of\n",
++			id);
+ 	return -ENODEV;
+ }
+ 
+@@ -974,6 +726,7 @@ static int pxa3xx_nand_init_buff(struct pxa3xx_nand_info *info)
+ 	int data_desc_offset = MAX_BUFF_SIZE - sizeof(struct pxa_dma_desc);
+ 
+ 	if (use_dma == 0) {
++
+ 		info->data_buff = kmalloc(MAX_BUFF_SIZE, GFP_KERNEL);
+ 		if (info->data_buff == NULL)
+ 			return -ENOMEM;
+@@ -1142,17 +895,15 @@ static int pxa3xx_nand_probe(struct platform_device *pdev)
+ 		goto fail_free_buf;
+ 	}
+ 
+-	ret = pxa3xx_nand_detect_flash(info, pdata);
++	platform_set_drvdata(pdev, mtd);
++	ret = pxa3xx_nand_detect_flash(pdev);
+ 	if (ret) {
+ 		dev_err(&pdev->dev, "failed to detect flash\n");
+ 		ret = -ENODEV;
+ 		goto fail_free_irq;
+ 	}
+-
++	
+ 	pxa3xx_nand_init_mtd(mtd, info);
+-
+-	platform_set_drvdata(pdev, mtd);
+-
+ 	if (nand_scan(mtd, 1)) {
+ 		dev_err(&pdev->dev, "failed to scan nand\n");
+ 		ret = -ENXIO;
+diff --git a/include/asm-arm/arch-pxa168/common.h b/include/asm-arm/arch-pxa168/common.h
+index 3c9033c..d068483 100644
+--- a/include/asm-arm/arch-pxa168/common.h
++++ b/include/asm-arm/arch-pxa168/common.h
+@@ -13,10 +13,12 @@
+ #define __init
+ #define __deprecated
+ #define module_init(...)
++#define module_param(...)
+ #define module_exit(...)
+ #define MODULE_DESCRIPTION(...)
+ #define MODULE_AUTHOR(...)
+ #define MODULE_LICENSE(...)
++#define MODULE_PARM_DESC(...)
+ 
+ #define HZ CONFIG_SYS_HZ
+ #define IRQ_NONE        (0)
+@@ -34,7 +36,11 @@
+ #define IRQF_SHARED	1
+ #undef	ioremap
+ #define ioremap(physaddr, size) DFC_BASE_ADDR
++#undef	iounmap
++#define iounmap(...)
+ #define ARRAY_AND_SIZE(x)       (x), ARRAY_SIZE(x)
++#define msleep(a) udelay(a * 1000)
++#define dev_warn(...)
+ 
+ #define __REG_PXA910(x)	(*((volatile u32 *)(x)))
+ #define BU_U32            unsigned int
+@@ -74,6 +80,9 @@ static inline int __decalare_return(void)
+ #define THIS_MODULE		0
+ #define wait_for_completion(...)
+ 
++#define platform_get_irq(...)	0
++#define request_mem_region(x,y,z)	(container_of(x, struct resource, start))
++#define release_mem_region(...)
+ /* Parameters used to convert the timespec values: */
+ #define MSEC_PER_SEC    1000L
+ #define USEC_PER_MSEC   1000L
+@@ -307,8 +316,9 @@ inline unsigned long msecs_to_jiffies(int time);
+ void dev_err(struct device * dev, char *msg);
+ void getnstimeofday(struct timespec *tv);
+ struct clk *clk_get(struct device *dev, const char *id);
++void clk_put(struct clk *clk);
+ unsigned long clk_get_rate(struct clk * clk);
+-
++#define outsl(p,d,l)                   __raw_writesl(__io(p),d,l)
+ #define CPUID_ID	        0
+ 
+ #define __stringify_1(x)        #x
+@@ -408,12 +418,7 @@ static int add_mtd_partitions(struct mtd_info *master,
+ 	return 0;
+ }
+ 
+-struct pxa3xx_nand_platform_data {
+-	struct mtd_partition *parts;
+-	unsigned int    nr_parts;
+-};
+-
+-static struct mtd_partition pxa910_128m_partitions[] = {
++static struct mtd_partition pxa168_128m_partitions[] = {
+ 	[0] = {
+ 		.name        = "Bootloader",
+ 		.offset      = 0x00040000,
+@@ -454,34 +459,58 @@ static struct mtd_partition pxa910_128m_partitions[] = {
+ 	},
+ };
+ 
+-static struct pxa3xx_nand_platform_data tavorevb_nand_info;
+-static struct resource pxa910_resources_nand[] = {
++static struct resource pxa168_resources_nand[] = {
+ 	[0] = {
+ 		.start  = 0xD4283000,
+ 		.end    = 0xD4283200,
+ 		.flags  = IORESOURCE_MEM,
+ 	},
+-};
+-
+-static struct resource pxa3xx_resource_nand[] = {
+-	[0] = {
+-		.start  = 0x43100000,
+-		.end    = 0x431000ff,
+-		.flags  = IORESOURCE_MEM,
++	[1] = {
++		.start  = IRQ_NAND,
++		.end    = IRQ_NAND,
++		.flags  = IORESOURCE_IRQ,
++	},
++	[2] = {
++		/* DRCMR for Data DMA */
++		.start  = 97,
++		.end    = 97,
++		.flags  = IORESOURCE_DMA,
++	},
++	[3] = {
++		/* DRCMR for Command DMA */
++		.start  = 99,
++		.end    = 99,
++		.flags  = IORESOURCE_DMA,
+ 	},
+ };
+ 
+-static struct platform_device pxa910_device_nand = {
++#define DMA_BIT_MASK(n) (((n) == 64) ? ~0ULL : ((1ULL<<(n))-1))
++static u64 pxa3xx_nand_dma_mask = DMA_BIT_MASK(32);
++
++static struct pxa3xx_nand_platform_data pxa_nandinfo;
++
++static struct platform_device pxa168_device_nand = {
+ 	.name           = "pxa3xx-nand",
+ 	.id             = -1,
+-	.resource = pxa910_resources_nand,
+-	//.resource = pxa3xx_resource_nand,
+-	.num_resources  = ARRAY_SIZE(pxa3xx_resource_nand),
++	.dev            = {
++		.dma_mask = &pxa3xx_nand_dma_mask,
++		.coherent_dma_mask = DMA_BIT_MASK(32),
++	},
++	.num_resources  = ARRAY_SIZE(pxa168_resources_nand),
++	.resource = pxa168_resources_nand,
+ };
+ 
+-static inline void dev_set_drvdata(struct device *dev, void *data)
++static inline void *dev_get_drvdata(const struct device *dev)
+ {
+-}
++	return dev->driver_data;
++}       
++
++static inline void dev_set_drvdata(struct device *dev, void *data)
++{       
++	dev->driver_data = data;
++}       
++
++#define platform_get_drvdata(_dev)      dev_get_drvdata(&(_dev)->dev)
+ #define platform_set_drvdata(_dev,data) dev_set_drvdata(&(_dev)->dev, (data))
+ 
+ static inline void init_completion(struct completion *x)
+@@ -489,58 +518,75 @@ static inline void init_completion(struct completion *x)
+         x->done = 0;
+ }
+ 
+-struct pxa3xx_nand_timing {
+-	unsigned int	tCH;  /* Enable signal hold time */
+-	unsigned int	tCS;  /* Enable signal setup time */
+-	unsigned int	tWH;  /* ND_nWE high duration */
+-	unsigned int	tWP;  /* ND_nWE pulse time */
+-	unsigned int	tRH;  /* ND_nRE high duration */
+-	unsigned int	tRP;  /* ND_nRE pulse width */
+-	unsigned int	tR;   /* ND_nWE high to ND_nRE low for read */
+-	unsigned int	tWHR; /* ND_nWE high to ND_nRE low for status read */
+-	unsigned int	tAR;  /* ND_ALE low to ND_nRE low delay */
+-};
+-
+-struct pxa3xx_nand_cmdset {
+-	uint16_t	read1;
+-	uint16_t	read2;
+-	uint16_t	program;
+-	uint16_t	read_status;
+-	uint16_t	read_id;
+-	uint16_t	erase;
+-	uint16_t	reset;
+-	uint16_t	lock;
+-	uint16_t	unlock;
+-	uint16_t	lock_status;
+-};
+-
+-struct pxa3xx_nand_flash {
+-	const struct pxa3xx_nand_timing *timing; /* NAND Flash timing */
+-	const struct pxa3xx_nand_cmdset *cmdset;
+-
+-	uint32_t page_per_block;/* Pages per block (PG_PER_BLK) */
+-	uint32_t page_size;	/* Page size in bytes (PAGE_SZ) */
+-	uint32_t flash_width;	/* Width of Flash memory (DWIDTH_M) */
+-	uint32_t dfc_width;	/* Width of flash controller(DWIDTH_C) */
+-	uint32_t num_blocks;	/* Number of physical blocks in Flash */
+-	uint32_t chip_id;
+-};
+-
+-struct pxa3xx_nand_platform_data {
+-
+-	/* the data flash bus is shared between the Static Memory
+-	 * Controller and the Data Flash Controller,  the arbiter
+-	 * controls the ownership of the bus
+-	 */
+-	int	enable_arbiter;
+-
+-	const struct mtd_partition		*parts;
+-	unsigned int				nr_parts;
+-
+-	const struct pxa3xx_nand_flash * 	flash;
+-	size_t					num_flash;
+-};
+-
+-extern void pxa3xx_set_nand_info(struct pxa3xx_nand_platform_data *info);
++/* non use of DMA */
++/*
++ * Descriptor structure for PXA's DMA engine
++ * Note: this structure must always be aligned to a 16-byte boundary.
++ */
+ 
++typedef struct pxa_dma_desc {
++	volatile u32 ddadr;     /* Points to the next descriptor + flags */
++	volatile u32 dsadr;     /* DSADR value for the current transfer */
++	volatile u32 dtadr;     /* DTADR value for the current transfer */
++	volatile u32 dcmd;      /* DCMD value for the current transfer */
++} pxa_dma_desc;
++
++typedef enum {
++	DMA_PRIO_HIGH = 0,
++	DMA_PRIO_MEDIUM = 1,
++	DMA_PRIO_LOW = 2
++} pxa_dma_prio;
++
++#define DMAC_REGS_VIRT  io_p2v(0x40000000)
++#define DMAC_REG(x)     (*((volatile u32 *)(DMAC_REGS_VIRT + (x))))
++
++#define DCSR(n)         DMAC_REG((n) << 2)
++#define DALGN           DMAC_REG(0x00a0)  /* DMA Alignment Register */
++#define DINT            DMAC_REG(0x00f0)  /* DMA Interrupt Register */
++#define DDADR(n)        DMAC_REG(0x0200 + ((n) << 4))
++#define DSADR(n)        DMAC_REG(0x0204 + ((n) << 4))
++#define DTADR(n)        DMAC_REG(0x0208 + ((n) << 4))
++#define DCMD(n)         DMAC_REG(0x020c + ((n) << 4))
++#define DRCMR(n)        DMAC_REG((((n) < 64) ? 0x0100 : 0x1100) + \
++		                                 (((n) & 0x3f) << 2))
++
++#define DCSR_RUN        (1 << 31)       /* Run Bit (read / write) */
++#define DCSR_NODESC     (1 << 30)       /* No-Descriptor Fetch (read / write) */
++#define DCSR_STOPIRQEN  (1 << 29)       /* Stop Interrupt Enable (read / write) */
++#define DCSR_REQPEND    (1 << 8)        /* Request Pending (read-only) */
++#define DCSR_STOPSTATE  (1 << 3)        /* Stop State (read-only) */
++#define DCSR_ENDINTR    (1 << 2)        /* End Interrupt (read / write) */
++#define DCSR_STARTINTR  (1 << 1)        /* Start Interrupt (read / write) */
++#define DCSR_BUSERR     (1 << 0)        /* Bus Error Interrupt (read / write) */
++
++#define DCSR_EORIRQEN   (1 << 28)       /* End of Receive Interrupt Enable (R/W) */
++#define DCSR_EORJMPEN   (1 << 27)       /* Jump to next descriptor on EOR */
++#define DCSR_EORSTOPEN  (1 << 26)       /* STOP on an EOR */
++#define DCSR_SETCMPST   (1 << 25)       /* Set Descriptor Compare Status */
++#define DCSR_CLRCMPST   (1 << 24)       /* Clear Descriptor Compare Status */
++#define DCSR_CMPST      (1 << 10)       /* The Descriptor Compare Status */
++#define DCSR_EORINTR    (1 << 9)        /* The end of Receive */
++
++#define DRCMR_MAPVLD    (1 << 7)        /* Map Valid (read / write) */
++#define DRCMR_CHLNUM    0x1f            /* mask for Channel Number (read / write) */
++
++#define DDADR_DESCADDR  0xfffffff0      /* Address of next descriptor (mask) */
++#define DDADR_STOP      (1 << 0)        /* Stop (read / write) */
++
++#define DCMD_INCSRCADDR (1 << 31)       /* Source Address Increment Setting. */
++#define DCMD_INCTRGADDR (1 << 30)       /* Target Address Increment Setting. */
++#define DCMD_FLOWSRC    (1 << 29)       /* Flow Control by the source. */
++#define DCMD_FLOWTRG    (1 << 28)       /* Flow Control by the target. */
++#define DCMD_STARTIRQEN (1 << 22)       /* Start Interrupt Enable */
++#define DCMD_ENDIRQEN   (1 << 21)       /* End Interrupt Enable */
++#define DCMD_ENDIAN     (1 << 18)       /* Device Endian-ness. */
++#define DCMD_BURST8     (1 << 16)       /* 8 byte burst */
++#define DCMD_BURST16    (2 << 16)       /* 16 byte burst */
++#define DCMD_BURST32    (3 << 16)       /* 32 byte burst */
++#define DCMD_WIDTH1     (1 << 14)       /* 1 byte width */
++#define DCMD_WIDTH2     (2 << 14)       /* 2 byte width (HalfWord) */
++#define DCMD_WIDTH4     (3 << 14)       /* 4 byte width (Word) */
++#define DCMD_LENGTH     0x01fff         /* length mask (max = 8K - 1) */
++
++#define dma_alloc_coherent(...) 	NULL
+ #endif
+diff --git a/include/asm-arm/arch-pxa168/pxa3xx_nand.h b/include/asm-arm/arch-pxa168/pxa3xx_nand.h
+new file mode 100644
+index 0000000..33dc1fa
+--- /dev/null
++++ b/include/asm-arm/arch-pxa168/pxa3xx_nand.h
+@@ -0,0 +1,511 @@
++#ifndef __ASM_ARCH_PXA3XX_NAND_H
++#define __ASM_ARCH_PXA3XX_NAND_H
++
++#ifdef   __KERNEL__
++#include <linux/mtd/mtd.h>
++#include <linux/mtd/partitions.h>
++#endif
++
++struct pxa3xx_nand_timing {
++	unsigned int	tCH;  /* Enable signal hold time */
++	unsigned int	tCS;  /* Enable signal setup time */
++	unsigned int	tWH;  /* ND_nWE high duration */
++	unsigned int	tWP;  /* ND_nWE pulse time */
++	unsigned int	tRH;  /* ND_nRE high duration */
++	unsigned int	tRP;  /* ND_nRE pulse width */
++	unsigned int	tR;   /* ND_nWE high to ND_nRE low for read */
++	unsigned int	tWHR; /* ND_nWE high to ND_nRE low for status read */
++	unsigned int	tAR;  /* ND_ALE low to ND_nRE low delay */
++};
++
++struct pxa3xx_nand_cmdset {
++	uint16_t        read1;
++	uint16_t        read2;
++	uint16_t        program;
++	uint16_t        read_status;
++	uint16_t        read_id;
++	uint16_t        erase;
++	uint16_t        reset;
++	uint16_t        lock;
++	uint16_t        unlock;
++	uint16_t        lock_status;
++};
++
++struct pxa3xx_nand_flash {
++	const struct pxa3xx_nand_timing *timing; /* NAND Flash timing */
++	const struct pxa3xx_nand_cmdset *cmdset;
++
++	uint32_t page_per_block;/* Pages per block (PG_PER_BLK) */
++	uint32_t page_size;	/* Page size in bytes (PAGE_SZ) */
++	uint32_t flash_width;	/* Width of Flash memory (DWIDTH_M) */
++	uint32_t dfc_width;	/* Width of flash controller(DWIDTH_C) */
++	uint32_t num_blocks;	/* Number of physical blocks in Flash */
++	uint32_t chip_id;
++};
++
++static struct pxa3xx_nand_cmdset smallpage_cmdset = {
++	.read1          = 0x0000,
++	.read2          = 0x0050,
++	.program        = 0x1080,
++	.read_status    = 0x0070,
++	.read_id        = 0x0090,
++	.erase          = 0xD060,
++	.reset          = 0x00FF,
++	.lock           = 0x002A,
++	.unlock         = 0x2423,
++	.lock_status    = 0x007A,
++};
++
++static struct pxa3xx_nand_cmdset largepage_cmdset = {
++	.read1          = 0x3000,
++	.read2          = 0x0050,
++	.program        = 0x1080,
++	.read_status    = 0x0070,
++	.read_id        = 0x0090,
++	.erase          = 0xD060,
++	.reset          = 0x00FF,
++	.lock           = 0x002A,
++	.unlock         = 0x2423,
++	.lock_status    = 0x007A,
++};
++
++struct pxa3xx_nand_platform_data {
++
++	/* the data flash bus is shared between the Static Memory
++	 * Controller and the Data Flash Controller,  the arbiter
++	 * controls the ownership of the bus
++	 */
++	int	enable_arbiter;
++
++	const struct mtd_partition		*parts;
++	unsigned int				nr_parts;
++
++	const struct pxa3xx_nand_flash * 	flash;
++	size_t					num_flash;
++};
++
++extern void pxa3xx_set_nand_info(struct pxa3xx_nand_platform_data *info);
++
++
++/* registers and bit definitions */
++#define NDCR			(0x00) /* Control register */
++#define NDTR0CS0		(0x04) /* Timing Parameter 0 for CS0 */
++#define NDTR1CS0		(0x0C) /* Timing Parameter 1 for CS0 */
++#define NDSR			(0x14) /* Status Register */
++#define NDPCR			(0x18) /* Page Count Register */
++#define NDBBR0			(0x1C) /* Bad Block Register 0 */
++#define NDBBR1			(0x20) /* Bad Block Register 1 */
++#define NDREDEL			(0x24) /* Read Enable Return Delay Register */
++#define NDECCCTRL		(0x28) /* ECC Control Register */
++#define NDBZCNT			(0x2C) /* Timer for NDRnB0 and NDRnB1 */
++#define NDMUTEX			(0x30) /* Mutex Lock Register */
++#define NDCMDMAT0		(0x34) /* Partition Command Match Register 0 */
++#define NDCMDMAT1		(0x38) /* Partition Command Match Register 1 */
++#define NDCMDMAT2		(0x3C) /* Partition Command Match Register 2 */
++#define NDDB			(0x40) /* Data Buffer */
++#define NDCB0			(0x48) /* Command Buffer0 */
++#define NDCB1			(0x4C) /* Command Buffer1 */
++#define NDCB2			(0x50) /* Command Buffer2 */
++#define NDCB3			(0x50) /* Command Buffer3 */
++#define NDARBCR			(0x5C) /* DFI Arbitration Control Register */
++#define NDPTXCS0		(0x60) /* Partition Region Control Register 0 */
++#define NDPTXCS1		(0x64) /* Partition Region Control Register 1 */
++#define NDPTXCS2		(0x68) /* Partition Region Control Register 2 */
++#define NDPTXCS3		(0x6C) /* Partition Region Control Register 3 */
++#define NDPTXCS4		(0x70) /* Partition Region Control Register 4 */
++#define NDPTXCS5		(0x74) /* Partition Region Control Register 5 */
++#define NDPTXCS6		(0x78) /* Partition Region Control Register 6 */
++#define NDPTXCS7		(0x7C) /* Partition Region Control Register 7 */
++
++/* NDCR Register */
++#define NDCR_SPARE_EN		(0x1 << 31)
++#define NDCR_ECC_EN		(0x1 << 30)
++#define NDCR_DMA_EN		(0x1 << 29)
++#define NDCR_ND_RUN		(0x1 << 28)
++#define NDCR_DWIDTH_C		(0x1 << 27)
++#define NDCR_DWIDTH_M		(0x1 << 26)
++#define NDCR_PAGE_SZ_MASK	(0x3 << 24)
++#define NDCR_PAGE_SZ(x)		(((x) << 24) & NDCR_PAGE_SZ_MASK)
++#define NDCR_SEQ_DIS		(0x1 << 23)
++#define NDCR_ND_STOP		(0x1 << 22)
++#define NDCR_FORCE_CSX		(0x1 << 21)
++#define NDCR_CLR_PG_CNT		(0x1 << 20)
++#define NDCR_STOP_ON_UNCOR	(0x1 << 19)
++#define NDCR_RD_ID_CNT_MASK	(0x7 << 16)
++#define NDCR_RD_ID_CNT(x)	(((x) << 16) & NDCR_RD_ID_CNT_MASK)
++
++#define NDCR_RA_START		(0x1 << 15)
++#define NDCR_PG_PER_BLK_MASK	(0x3 << 13)
++#define NDCR_PG_PER_BLK(x)	(((x) << 13) & NDCR_PG_PER_BLK_MASK)
++#define NDCR_ND_ARB_EN		(0x1 << 12)
++#define NDCR_RDYM		(0x1 << 11)
++#define NDCR_CS0_PAGEDM		(0x1 << 10)
++#define NDCR_CS1_PAGEDM		(0x1 << 9)
++#define NDCR_CS0_CMDDM		(0x1 << 8)
++#define NDCR_CS1_CMDDM		(0x1 << 7)
++#define NDCR_CS0_BBDM		(0x1 << 6)
++#define NDCR_CS1_BBDM		(0x1 << 5)
++#define NDCR_UNCERRM		(0x1 << 4)
++#define NDCR_CORERRM		(0x1 << 3)
++#define NDCR_WRDREQM		(0x1 << 2)
++#define NDCR_RDDREQM		(0x1 << 1)
++#define NDCR_WRCMDREQM		(0x1)
++
++/* Data Controller Timing Paramter x Register For CSx */
++#define NDTR0_SELCNTR		(0x1 << 26)
++#define NDTR0_RD_CNT_DEL_MASK	(0xF << 22)
++#define NDTR0_RD_CNT_DEL(x)	(((x) << 22) & NDTR0_RD_CNT_DEL_MASK)
++#define NDTR0_tCH(c)		(min((c), 7) << 19)
++#define NDTR0_tCS(c)		(min((c), 7) << 16)
++#define NDTR0_tWH(c)		(min((c), 7) << 11)
++#define NDTR0_tWP(c)		(min((c), 7) << 8)
++#define NDTR0_ETRP		(0x1 << 6)
++#define NDTR0_tRH(c)		(min((c), 7) << 3)
++#define NDTR0_tRP(c)		(min((c), 7) << 0)
++
++#define NDTR1_tR(c)		(min((c), 65535) << 16)
++#define NDTR1_WAIT_MODE		(0x1 << 15)
++#define NDTR1_tWHR(c)		(min((c), 15) << 4)
++#define NDTR1_tAR(c)		(min((c), 15) << 0)
++
++/* NDSR Register */
++#define NDSR_ERR_CNT_MASK	(0x1F << 16)
++#define NDSR_ERR_CNT(x)		(((x) << 16) & NDSR_ERR_CNT_MASK)
++#define NDSR_TRUSTVIO		(0x1 << 15)
++#define NDSR_MASK		(0xFFFF)
++#define NDSR_RDY		(0x1 << 12)		
++#define NDSR_FLASH_RDY		(0x1 << 11)
++#define NDSR_CS0_PAGED		(0x1 << 10)
++#define NDSR_CS1_PAGED		(0x1 << 9)
++#define NDSR_CS0_CMDD		(0x1 << 8)
++#define NDSR_CS1_CMDD		(0x1 << 7)
++#define NDSR_CS0_BBD		(0x1 << 6)
++#define NDSR_CS1_BBD		(0x1 << 5)
++#define NDSR_DBERR		(0x1 << 4)
++#define NDSR_SBERR		(0x1 << 3)
++#define NDSR_WRDREQ		(0x1 << 2)
++#define NDSR_RDDREQ		(0x1 << 1)
++#define NDSR_WRCMDREQ		(0x1)
++
++/* NDPCR Register */
++#define NDPCR_PG_CNT_1_MASK	(0xFF << 16)
++#define NDPCR_PG_CNT_1(x)	(((x) << 16) & NDPCR_PG_CNT_1_MASK)
++#define NDPCR_PG_CNT_0_MASK	(0xFF)
++#define NDPCR_PG_CNT_0(x)	((x) & NDPCR_PG_CNT_0_MASK)
++
++/* READ Enable Return Delay Register */
++#define NDREDEL_ND_DIN_SEL	(0x1 << 25)
++#define NDREDEL_ND_DATA_D_MASK	(0x3 << 8)
++#define NDREDEL_ND_DATA_DLY(x)	(((x) << 8) & NDREDEL_ND_DATA_D_MASK)
++#define NDREDEL_ND_RECLK_D_MASK	(0xF << 4)
++#define NDREDEL_ND_RECLK_DLY(x)	(((x) << 4) & NDREDEL_ND_RECLK_D_MASK)
++#define NDREDEL_ND_RE_D_MASK	(0xF)
++#define NDREDEL_ND_RE_DLY(x)	((x) & NDREDEL_ND_RE_D_MASK)
++
++/* ECC Control Register */
++#define NDECCCTRL_ECC_SPARE_MSK	(0xFF << 7)
++#define NDECCCTRL_ECC_SPARE(x)	(((x) << 7) & NDECCCTRL_ECC_SPARE_MSK)
++#define NDECCCTRL_ECC_THR_MSK	(0x3F << 1)
++#define NDECCCTRL_ECC_THRESH(x)	(((x) << 1) & NDECCCTRL_ECC_THR_MSK)
++#define NDECCCTRL_BCH_EN	(0x1)
++
++/* Timer for ND_RnBx */
++#define NDBZCNT_MASK		(0xFFFF)
++#define NDBZCNT_ND_RNB_CNT1(x)	(((x & NDBZCNT_MASK) << 16)
++#define NDBZCNT_ND_RNB_CNT0(x)	(x & NDBZCNT_MASK)
++
++/* NAND Controller MUTEX Lock Register */
++#define NDMUTEX_MUTEX		(0x1)
++
++/* Partition Command Match Registers */
++#define NDCMDMAT_VALIDCNT_MASK	(0x3)
++#define NDCMDMAT_CMD_MASK	(0xFF)
++#define NDCMDMAT_VALIDCNT	((x & NDCMDMAT_VALIDCNT_MASK) << 30)
++#define NDCMDMAT_NAKEDDIS2	(0x1 << 29)
++#define NDCMDMAT_ROWADD2	(0x1 << 28)
++#define NDCMDMAT_CMD2(x)	((x & NDCMDMAT) << 20)
++#define NDCMDMAT_NAKEDDIS1	(0x1 << 29)
++#define NDCMDMAT_ROWADD1	(0x1 << 28)
++#define NDCMDMAT_CMD1(x)	((x & NDCMDMAT) << 20)
++#define NDCMDMAT_NAKEDDIS0	(0x1 << 29)
++#define NDCMDMAT_ROWADD0	(0x1 << 28)
++#define NDCMDMAT_CMD0(x)	((x & NDCMDMAT) << 20)
++
++/* NAND Controller Command Buffers */
++#define NDCB0_CMD_XTYPE_MASK	(0x7 << 29)
++#define NDCB0_CMD_XTYPE(x)	(((x) << 29) & NDCB0_CMD_XTYPE_MASK)
++#define NDCB0_LEN_OVRD		(0x1 << 28)
++#define NDCB0_RDY_BYP		(0x1 << 27)
++#define NDCB0_ST_ROW_EN		(0x1 << 26)
++#define NDCB0_AUTO_RS		(0x1 << 25)
++#define NDCB0_CSEL		(0x1 << 24)
++#define NDCB0_CMD_TYPE_MASK	(0x7 << 21)
++#define NDCB0_CMD_TYPE(x)	(((x) << 21) & NDCB0_CMD_TYPE_MASK)
++#define NDCB0_NC		(0x1 << 20)
++#define NDCB0_DBC		(0x1 << 19)
++#define NDCB0_ADDR_CYC_MASK	(0x7 << 16)
++#define NDCB0_ADDR_CYC(x)	(((x) << 16) & NDCB0_ADDR_CYC_MASK)
++#define NDCB0_CMD2_MASK		(0xff << 8)
++#define NDCB0_CMD1_MASK		(0xff)
++
++#define NDCB_MASK		(0xFF)
++#define NDCB1_ADDR4(x)		((x & NDCB_MASK) << 24)
++#define NDCB1_ADDR3(x)		((x & NDCB_MASK) << 16)
++#define NDCB1_ADDR2(x)		((x & NDCB_MASK) << 8)
++#define NDCB1_ADDR1(x)		(x & NDCB_MASK)
++
++#define NDCB2_ST_MASK(x)	((x & NDCB_MASK) << 24)
++#define NDCB2_ST_CMD(x)		((x & NDCB_MASK) << 16)
++#define NDCB2_PAGE_COUNT(x)	((x & NDCB_MASK) << 8)
++#define NDCB2_ADDR5(x)		(x & NDCB_MASK)
++
++#define NDCB3_ADDR7(x)		((x & NDCB_MASK) << 24)
++#define NDCB3_ADDR6(x)		((x & NDCB_MASK) << 16)
++#define NDCB3_NDLENCNT_MASK	(0xFFFF)
++#define NDCB3_NDLENCNT(x)	(x & NDCB3_NDLENCNT_MASK)
++
++/* DFI Arbitration Control Register */
++#define NDARBCR_MASK		(0xFFFF)
++#define NDARBCR_ARB_CNT(x)	(x & NDARBCR_MASK)
++
++/* Partition Region Control Registers for CSx */
++#define NDPTXCS_VALID		(0x1 << 31)
++#define NDPTXCS_LOCK		(0x1 << 30)
++#define NDPTXCS_TRUSTED		(0x1 << 29)
++#define NDPTXCS_BLOCKADD_MASK	(0xFFFFFF)
++#define NDPTXCS_BLOCKADD(x)	((x) & NDPTXCS_BLOCKADD_MASK)
++
++/* dma-able I/O address for the NAND data and commands */
++#define NDCB0_DMA_ADDR		(0x43100048)
++#define NDDB_DMA_ADDR		(0x43100040)
++
++/* macros for registers read/write */
++#define nand_writel(info, off, val)	\
++	__raw_writel((val), (info)->mmio_base + (off))
++
++#define nand_readl(info, off)		\
++	__raw_readl((info)->mmio_base + (off))
++
++/* error code and state */
++enum {
++	ERR_NONE	= 0,
++	ERR_DMABUSERR	= -1,
++	ERR_SENDCMD	= -2,
++	ERR_DBERR	= -3,
++	ERR_BBERR	= -4,
++};
++
++enum {
++	STATE_READY	= 0,
++	STATE_CMD_HANDLE,
++	STATE_CMD_WAITING,
++	STATE_DMA_READING,
++	STATE_DMA_WRITING,
++	STATE_DMA_DONE,
++	STATE_PIO_READING,
++	STATE_PIO_WRITING,
++};
++
++struct pxa3xx_nand_info {
++	struct nand_chip	nand_chip;
++
++	struct platform_device	 *pdev;
++	const struct pxa3xx_nand_flash *flash_info;
++
++	struct clk		*clk;
++	void __iomem		*mmio_base;
++
++	unsigned int 		buf_start;
++	unsigned int		buf_count;
++
++	/* DMA information */
++	int			drcmr_dat;
++	int			drcmr_cmd;
++
++	unsigned char		*data_buff;
++	dma_addr_t 		data_buff_phys;
++	size_t			data_buff_size;
++	int 			data_dma_ch;
++	struct pxa_dma_desc	*data_desc;
++	dma_addr_t 		data_desc_addr;
++
++	uint32_t		reg_ndcr;
++
++	/* saved column/page_addr during CMD_SEQIN */
++	int			seqin_column;
++	int			seqin_page_addr;
++
++	/* relate to the command */
++	unsigned int		state;
++
++	int			use_ecc;	/* use HW ECC ? */
++						/* 0:off, 1:Hammin ECC */
++						/* 2: BCH ECC */
++
++	int			use_dma;	/* use DMA ? */
++
++	int			chip_select;	/* use which chip_select ? */
++
++	size_t			data_size;	/* data size in FIFO */
++	int 			retcode;
++	struct completion 	cmd_complete;
++
++	/* generated NDCBx register values */
++	uint32_t		ndcb0;
++	uint32_t		ndcb1;
++	uint32_t		ndcb2;
++
++	/* calculated from pxa3xx_nand_flash data */
++	size_t		oob_size;
++	size_t		read_id_bytes;
++
++	unsigned int	col_addr_cycles;
++	unsigned int	row_addr_cycles;
++};
++
++static struct pxa3xx_nand_timing common_timing = {
++	.tCH	= 20,
++	.tCS	= 40,
++	.tWH	= 30,
++	.tWP	= 50,
++	.tRH	= 40,
++	.tRP	= 50,
++	.tR	= 30000,
++	.tWHR	= 200,
++	.tAR	= 20,
++};
++
++static struct pxa3xx_nand_timing samsung512MbX16_timing = {
++	.tCH	= 10,
++	.tCS	= 0,
++	.tWH	= 20,
++	.tWP	= 40,
++	.tRH	= 30,
++	.tRP	= 40,
++	.tR	= 11123,
++	.tWHR	= 110,
++	.tAR	= 10,
++};
++
++static struct pxa3xx_nand_timing samsung32GbX8_timing = {
++	.tCH = 5,
++	.tCS = 20,
++	.tWH = 10,
++	.tWP = 12,
++	.tRH = 15,
++	.tRP = 12,
++	.tR = 25000,
++	.tWHR = 60,
++	.tAR = 10,
++};
++
++static struct pxa3xx_nand_timing micron_timing = {
++	.tCH	= 10,
++	.tCS	= 25,
++	.tWH	= 15,
++	.tWP	= 25,
++	.tRH	= 15,
++	.tRP	= 25,
++	.tR	= 25000,
++	.tWHR	= 60,
++	.tAR	= 10,
++};
++
++static struct pxa3xx_nand_timing stm2GbX16_timing = {
++	.tCH = 10,
++	.tCS = 35,
++	.tWH = 15,
++	.tWP = 25,
++	.tRH = 15,
++	.tRP = 25,
++	.tR = 25000,
++	.tWHR = 60,
++	.tAR = 10,
++};
++
++struct pxa3xx_nand_flash nand_common = {
++	.timing		= &common_timing,
++	.cmdset         = &largepage_cmdset,
++	.page_per_block	= 64,
++	.page_size	= 2048,
++	.flash_width	= 8,
++	.dfc_width	= 8,
++};
++
++static struct pxa3xx_nand_flash samsung512MbX16 = {
++	.timing		= &samsung512MbX16_timing,
++	.cmdset		= &smallpage_cmdset,
++	.page_per_block	= 32,
++	.page_size	= 512,
++	.flash_width	= 16,
++	.dfc_width	= 16,
++	.num_blocks	= 4096,
++	.chip_id	= 0x46ec,
++};
++
++static struct pxa3xx_nand_flash samsung32GbX8 = {
++	.timing		= &samsung32GbX8_timing,
++	.cmdset         = &largepage_cmdset,
++	.page_per_block	= 128,
++	.page_size	= 4096,
++	.flash_width	= 8,
++	.dfc_width	= 8,
++	.num_blocks	= 8192,
++	.chip_id	= 0xd7ec,
++};
++
++static struct pxa3xx_nand_flash micron1GbX8 = {
++	.timing		= &micron_timing,
++	.cmdset         = &largepage_cmdset,
++	.page_per_block	= 64,
++	.page_size	= 2048,
++	.flash_width	= 8,
++	.dfc_width	= 8,
++	.num_blocks	= 1024,
++	.chip_id	= 0xa12c,
++};
++
++static struct pxa3xx_nand_flash micron1GbX16 = {
++	.timing		= &micron_timing,
++	.cmdset         = &largepage_cmdset,
++	.page_per_block	= 64,
++	.page_size	= 2048,
++	.flash_width	= 16,
++	.dfc_width	= 16,
++	.num_blocks	= 1024,
++	.chip_id	= 0xb12c,
++};
++
++static struct pxa3xx_nand_flash micron4GbX8 = {
++	.timing		= &micron_timing,
++	.cmdset         = &largepage_cmdset,
++	.page_per_block	= 64,
++	.page_size	= 2048,
++	.flash_width	= 8,
++	.dfc_width	= 8,
++	.num_blocks	= 4096,
++	.chip_id	= 0xdc2c,
++};
++
++static struct pxa3xx_nand_flash stm2GbX16 = {
++	.timing 	= &stm2GbX16_timing,
++	.cmdset         = &largepage_cmdset,
++	.page_per_block = 64,
++	.page_size 	= 2048,
++	.flash_width 	= 16,
++	.dfc_width 	= 16,
++	.num_blocks 	= 2048,
++	.chip_id 	= 0xba20,
++};
++
++static struct pxa3xx_nand_flash *builtin_flash_types[] = {
++	&nand_common,
++	&samsung512MbX16,
++	&samsung32GbX8,
++	&micron1GbX8,
++	&micron4GbX8,
++	&micron1GbX16,
++	&stm2GbX16,
++};
++
++#endif /* __ASM_ARCH_PXA3XX_NAND_H */
+-- 
+1.6.0.4
+

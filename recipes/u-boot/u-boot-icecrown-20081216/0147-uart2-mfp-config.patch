@@ -1,0 +1,32 @@
+From d9930f2b37490f37def3cba50ff6226ca1806ec9 Mon Sep 17 00:00:00 2001
+From: Lei Wen <leiwen@marvell.com>
+Date: Mon, 12 Oct 2009 13:13:41 +0800
+Subject: [PATCH] uart2 mfp config
+
+Signed-off-by: TonyTeng <ylteng@marvell.com>
+Signed-off-by: Lei Wen <leiwen@marvell.com>
+---
+ board/pxa/avengers/avenger_pxa168.c |    7 +++++++
+ 1 files changed, 7 insertions(+), 0 deletions(-)
+
+diff --git a/board/pxa/avengers/avenger_pxa168.c b/board/pxa/avengers/avenger_pxa168.c
+index dbce45b..58a4203 100644
+--- a/board/pxa/avengers/avenger_pxa168.c
++++ b/board/pxa/avengers/avenger_pxa168.c
+@@ -46,6 +46,13 @@ int board_init (void)
+     *(volatile unsigned int *)0xd4015008=0x1;
+     aspen_init();
+ 
++
++    /* uart2 mfp */
++    *(volatile unsigned int *)0xd401e160 = 0x842;//MFP88
++    *(volatile unsigned int *)0xd401e164 = 0x842;//MFP89
++
++
++
+     /* set SEL_MRVL_ID bit in MOHAWK_CPU_CONF register - Ning */
+     *(volatile unsigned int *)0xD4282c08 = *(volatile unsigned int *)0xD4282c08 | 0x100;
+     /* ensure L2 cache is not mapped as SRAM */
+-- 
+1.6.0.4
+

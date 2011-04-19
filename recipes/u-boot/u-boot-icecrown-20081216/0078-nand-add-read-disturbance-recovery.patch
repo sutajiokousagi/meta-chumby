@@ -1,0 +1,128 @@
+From 8f2214a09c446f86bfe4002037e95c9efb541c9a Mon Sep 17 00:00:00 2001
+From: Lei Wen <leiwen@marvell.com>
+Date: Fri, 5 Jun 2009 23:22:35 +0800
+Subject: [PATCH] nand: add read disturbance recovery
+
+Signed-off-by: Lei Wen <leiwen@marvell.com>
+---
+ drivers/mtd/nand/nand_util.c              |   55 +++++++++++++++++++++++++++--
+ drivers/mtd/nand/pxa3xx_nand.c            |    3 +-
+ include/asm-arm/arch-pxa168/pxa3xx_nand.h |    1 +
+ 3 files changed, 55 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/mtd/nand/nand_util.c b/drivers/mtd/nand/nand_util.c
+index 5eac5b6..7eb11ba 100644
+--- a/drivers/mtd/nand/nand_util.c
++++ b/drivers/mtd/nand/nand_util.c
+@@ -611,6 +611,7 @@ int nand_read_skip_bad(nand_info_t *nand, size_t offset, size_t *length,
+ 	size_t left_to_read = *length;
+ 	size_t len_incl_bad;
+ 	u_char *p_buffer = buffer;
++	void *buf;
+ 
+ 	len_incl_bad = get_len_incl_bad (nand, offset, *length);
+ 
+@@ -621,9 +622,34 @@ int nand_read_skip_bad(nand_info_t *nand, size_t offset, size_t *length,
+ 
+ 	if (len_incl_bad == *length) {
+ 		rval = nand_read (nand, offset, length, buffer);
+-		if (rval != 0)
+-			printf ("NAND read from offset %x failed %d\n",
+-				offset, rval);
++		if (rval != 0) {
++			/* recover from correctable read error */
++			if (rval == -EUCLEAN) {
++				size_t read_length;
++
++				printf("Attempting recover at offset %x, ", offset);
++				offset &= ~(nand->erasesize - 1);
++				buf = malloc(nand->erasesize + 1);
++				read_length = nand->erasesize;
++
++				rval = nand_read(nand, offset, &read_length, buf);
++				if (!rval || rval == -EUCLEAN)
++					rval = nand_erase (nand, offset, nand->erasesize);
++				if (!rval)
++					rval = nand_write (nand, offset, &read_length, p_buffer);
++				free (buf);
++
++				if (rval) {
++					printf ("Recovery failed!!\n");
++					return rval;
++				}
++
++				printf("successed.\n");
++			}
++			else
++				printf ("NAND read from offset %x failed %d\n",
++						offset, rval);
++		}
+ 
+ 		return rval;
+ 	}
+@@ -646,6 +672,29 @@ int nand_read_skip_bad(nand_info_t *nand, size_t offset, size_t *length,
+ 
+ 		rval = nand_read (nand, offset, &read_length, p_buffer);
+ 		if (rval != 0) {
++			/* recover from correctable read error */
++			if (rval == -EUCLEAN) {
++				printf("Attempting recover at offset %x, ", offset);
++				offset &= ~(nand->erasesize - 1);
++				buf = malloc(nand->erasesize + 1);
++				read_length = nand->erasesize;
++
++				rval = nand_read(nand, offset, &read_length, buf);
++				if (!rval || rval == -EUCLEAN)
++					rval = nand_erase (nand, offset, nand->erasesize);
++				if (!rval)
++					rval = nand_write (nand, offset, &read_length, p_buffer);
++				free (buf);
++
++				if (!rval) {
++					printf("successed.\n");
++					continue;
++				} else {
++					printf ("Recovery failed!!\n");
++					*length -= left_to_read;
++					return rval;
++				}
++			}
+ 			printf ("NAND read from offset %x failed %d\n",
+ 				offset, rval);
+ 			*length -= left_to_read;
+diff --git a/drivers/mtd/nand/pxa3xx_nand.c b/drivers/mtd/nand/pxa3xx_nand.c
+index 092e446..7f39a6f 100644
+--- a/drivers/mtd/nand/pxa3xx_nand.c
++++ b/drivers/mtd/nand/pxa3xx_nand.c
+@@ -595,6 +595,7 @@ static int prepare_command_poll(struct pxa3xx_nand *nand, int command,
+ 		break;
+ 	}
+ 
++	nand->use_ecc = info->use_ecc;
+ 	return exec_cmd;
+ }
+ 
+@@ -796,7 +797,7 @@ static int pxa3xx_nand_read_page_hwecc(struct mtd_info *mtd,
+ 	chip->read_buf(mtd, chip->oob_poi, mtd->oobsize);
+ 
+ 	if (nand->errcode & ERR_CORERR) {
+-		switch (info->use_ecc) {
++		switch (nand->use_ecc) {
+ 		case ECC_BCH:
+ 			if (nand->bad_count > BCH_THRESHOLD)
+ 				mtd->ecc_stats.corrected +=
+diff --git a/include/asm-arm/arch-pxa168/pxa3xx_nand.h b/include/asm-arm/arch-pxa168/pxa3xx_nand.h
+index 915528b..bdbc90b 100644
+--- a/include/asm-arm/arch-pxa168/pxa3xx_nand.h
++++ b/include/asm-arm/arch-pxa168/pxa3xx_nand.h
+@@ -104,6 +104,7 @@ struct pxa3xx_nand {
+ 	unsigned int		state;
+ 	unsigned int		is_write;
+ 	unsigned int		is_ready;
++	uint16_t		use_ecc;
+ 	unsigned int		bad_count;
+ 	unsigned int		errcode;
+ 	struct completion 	cmd_complete;
+-- 
+1.6.0.4
+

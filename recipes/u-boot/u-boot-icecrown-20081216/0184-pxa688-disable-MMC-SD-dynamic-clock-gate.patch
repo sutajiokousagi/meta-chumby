@@ -1,0 +1,40 @@
+From 34b54b3b557de83fba14c75d5a09dfddcba8afa3 Mon Sep 17 00:00:00 2001
+From: Mingliang Hu <mingliang.hu@marvell.com>
+Date: Wed, 3 Mar 2010 18:04:44 +0800
+Subject: [PATCH] pxa688: disable MMC/SD dynamic clock gate
+
+Signed-off-by: Mingliang Hu <mingliang.hu@marvell.com>
+---
+ drivers/mmc/pxa9xx_sdh.c |    3 +++
+ drivers/mmc/pxa9xx_sdh.h |    1 +
+ 2 files changed, 4 insertions(+), 0 deletions(-)
+
+diff --git a/drivers/mmc/pxa9xx_sdh.c b/drivers/mmc/pxa9xx_sdh.c
+index 40f1119..285f58d 100644
+--- a/drivers/mmc/pxa9xx_sdh.c
++++ b/drivers/mmc/pxa9xx_sdh.c
+@@ -296,6 +296,9 @@ int pxasdh_init(struct mmc *mmc)
+ 
+ 	//sdh_reset(mmc, MSWRST);
+ 
++	//disable dynamic clock gate
++	sdh_set_reg(mmc, MMC4_FIFO_PARAM, 0x70a);
++
+ 	// enable internal mmc clock
+ 	sdh_set_reg(mmc, MMC4_CNTL2, INTCLKEN);
+ 	while (!(sdh_get_reg(mmc, MMC4_CNTL2) & INTCLKSTB)) {
+diff --git a/drivers/mmc/pxa9xx_sdh.h b/drivers/mmc/pxa9xx_sdh.h
+index 64200b4..906fa87 100644
+--- a/drivers/mmc/pxa9xx_sdh.h
++++ b/drivers/mmc/pxa9xx_sdh.h
+@@ -37,6 +37,7 @@
+ #define MMC4_AMDA_ERSTS	0x0054	/* MMC4 ADMA Error Status */
+ #define MMC4_AMDA_ADDR1	0x0058	/* MMC4 ADMA Address[31:0] */
+ #define MMC4_AMDA_ADDR2	0x005C	/* MMC4 ADMA Address[63:32] */
++#define MMC4_FIFO_PARAM	0x00e0	/* MMC4 FIFO Parameters */
+ #define MMC4_VER	0x00FC	/* MMC4 controller version status */
+ 
+ /* MMC4_BLK_CNTL */
+-- 
+1.6.0.4
+

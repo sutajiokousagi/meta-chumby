@@ -1,0 +1,26 @@
+From 8707cb9f6c7d29b0fc34566ee3ab338a1fcb9690 Mon Sep 17 00:00:00 2001
+From: Gavin <gavin.gu@marvell.com>
+Date: Thu, 23 Apr 2009 22:34:12 +0800
+Subject: [PATCH] modify the uboot nand kernel image allocation for avengers lite platform
+
+Signed-off-by: Gavin <gavin.gu@marvell.com>
+---
+ include/configs/avengers.h |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/include/configs/avengers.h b/include/configs/avengers.h
+index 8557318..9b5c5c1 100644
+--- a/include/configs/avengers.h
++++ b/include/configs/avengers.h
+@@ -112,7 +112,7 @@
+ 
+ /* boot arguments" */
+ #define CONFIG_ONENANDBOOT	     	"onenand read 0x500000 0x920000 0x300000"
+-#define CONFIG_NANDBOOT 	     	"nand read 0x500000 0x920000 0x300000"
++#define CONFIG_NANDBOOT 	     	"nand read 0x500000 0x100000 0x300000"
+ #define CONFIG_BOOTCOMMAND      	"setenv autoboot boot; bootz 0x500000; setenv autoboot none"
+ #define CONFIG_ROOTPATH   		/tftpboot/rootfs_arm
+ 
+-- 
+1.6.0.4
+

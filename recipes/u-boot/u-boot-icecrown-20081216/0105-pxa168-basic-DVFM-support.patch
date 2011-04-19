@@ -1,0 +1,505 @@
+From f67bf973dc1c91fc115d1ce3153ee9f1ba9935aa Mon Sep 17 00:00:00 2001
+From: Ning Jiang <ning.jiang@marvell.com>
+Date: Thu, 7 May 2009 12:11:30 +0800
+Subject: [PATCH] pxa168: basic DVFM support
+
+Signed-off-by: Ning Jiang <ning.jiang@marvell.com>
+---
+ board/pxa/common/Makefile  |    7 +-
+ board/pxa/common/freq.c    |  319 +++++++++++++++++++++++++++++++++++++++++++-
+ board/pxa/common/freq_ll.S |   93 +++++++++++++
+ 3 files changed, 413 insertions(+), 6 deletions(-)
+ create mode 100644 board/pxa/common/freq_ll.S
+
+diff --git a/board/pxa/common/Makefile b/board/pxa/common/Makefile
+index 6eaf352..ae031dc 100644
+--- a/board/pxa/common/Makefile
++++ b/board/pxa/common/Makefile
+@@ -29,6 +29,8 @@ endif
+ 
+ LIB	= $(obj)lib$(VENDOR).a
+ 
++SOBJS-y				+= freq_ll.o
++
+ COBJS-y				+= common.o
+ COBJS-y				+= boot.o
+ COBJS-y				+= freq.o
+@@ -51,9 +53,8 @@ COBJS-${CONFIG_USB_ETH}		+= usbeth/mvUsbHsDevCncl.o
+ COBJS-${CONFIG_USB_ETH}		+= usbeth/mvUsbHsDevMain.o
+ COBJS-${CONFIG_USB_ETH}		+= usbeth/mvUsbHsDevUtl.o
+ 
+-SRCS	:= $(SOBJS:.o=.S) $(COBJS-y:.o=.c)
+-OBJS	:= $(addprefix $(obj),$(COBJS-y))
+-SOBJS	:= $(addprefix $(obj),$(SOBJS))
++SRCS	:= $(SOBJS-y:.o=.S) $(COBJS-y:.o=.c)
++OBJS	:= $(addprefix $(obj),$(SOBJS-y) $(COBJS-y))
+ 
+ $(LIB):	$(obj).depend $(OBJS)
+ 	$(AR) $(ARFLAGS) $@ $(OBJS)
+diff --git a/board/pxa/common/freq.c b/board/pxa/common/freq.c
+index 74c60f0..932f5d6 100644
+--- a/board/pxa/common/freq.c
++++ b/board/pxa/common/freq.c
+@@ -34,6 +34,7 @@
+ #define reg_read(x) (*(volatile u32_t *)(x))
+ #define reg_write(x,y) ((*(volatile u32_t *)(x)) = y )
+ 
++#if (defined(CONFIG_TAVOREVB) || defined(CONFIG_TTC_DKB))
+ static void PMUcore2_fc_seq (u32_t cp_pdiv, u32_t cp_bdiv, u32_t cp_mdiv, u32_t cp_xpdiv,
+ 		u32_t d_div, u32_t a_div)
+ {
+@@ -253,6 +254,265 @@ int do_op(cmd_tbl_t * cmdtp, int flag, int argc, char *argv[])
+ 	}
+ 	return 0;
+ }
++#elif (defined(CONFIG_ASPENITE) || defined(CONFIG_ZYLONITE2))
++static inline void ___delay(unsigned long loops)
++{
++	__asm__ __volatile__ ("1:\n" "subs %0, %1, #1\n"
++			"bne 1b":"=r" (loops):"0"(loops));
++}
++
++static int pll2_on(int pclk)
++{
++	// Disable PLL2
++	reg_write(PMUM_PLL2CR, reg_read(PMUM_PLL2CR) | 0x00000200);
++	reg_write(PMUM_PLL2CR, reg_read(PMUM_PLL2CR) & 0xFFFFFEFF);
++
++	if (pclk == 800) {
++		// Set up PLL2 freq based on 26MHz input clock
++		reg_write(PMUM_PLL2CR, (reg_read(PMUM_PLL2CR) & 0xFF0003FF) | 0x00096C00);
++	}
++
++	// Enable KVCO 0b0011 (700~900MHz), VCO_VRNG=0b010,
++	// post dividers SE VCO_DIV to 0b00 (div 1) and DIFF to 0b00 (div 1)
++	reg_write(0xd4050060, 0x90020364);
++
++	// Enable Differential Clock Output
++	reg_write(0xd4050064, reg_read(0xd4050064) | 0x00000040);
++
++	// Enable PLL2
++	reg_write(PMUM_PLL2CR, reg_read(PMUM_PLL2CR) | 0x00000300);
++
++	return pclk;
++}
++
++#define PMUA_CC_MOH_BUS_2_CLK_DIV_BASE 18
++
++void PMUcore2_fc_seq(uint32_t pclk, uint32_t dclk, uint32_t xpclk,
++	uint32_t baclk, uint32_t aclk, uint32_t aclk2)
++{
++	uint32_t cc_reg = 0, temp, fccr, pll_ap, pll_axi;
++
++	if (pclk == 156)
++		reg_write(PMUM_FCCR, 0x0000088e);
++	else if (pclk == 312)
++		reg_write(PMUM_FCCR, 0x0000088e);
++	else if (pclk == 624)
++		reg_write(PMUM_FCCR, 0x2000088e);
++	else if (pclk == 800)
++		reg_write(PMUM_FCCR, 0x4000088e);
++
++	fccr = reg_read(PMUM_FCCR);
++
++	temp = (fccr & PMUM_FCCR_MOHCLKSEL_MSK) >> PMUM_FCCR_MOHCLKSEL_BASE;
++	if (temp == 0x0)
++		pll_ap = 312;
++	else if (temp == 0x1)
++		pll_ap = 624;
++	else if (temp == 0x2)
++		pll_ap = pll2_on(pclk);
++
++	temp = (fccr & PMUM_FCCR_AXICLKSEL_MSK) >> PMUM_FCCR_AXICLKSEL_BASE;
++	if (temp == 0x0)
++		pll_axi = 312;
++	else if (temp == 0x1)
++		pll_axi = 624;
++	else if (temp == 0x2)
++		pll_axi = pll2_on(pclk);
++
++	/* pclk divider */
++	if (pclk != 0)
++		cc_reg |= (((pll_ap / pclk) - 1)
++				<< PMUA_CC_MOH_CORE_CLK_DIV_BASE);
++
++	/* D clock divider */
++	if (dclk != 0)
++		cc_reg |= (((pll_ap / dclk) - 1)
++				<< PMUA_CC_MOH_DDR_CLK_DIV_BASE);
++
++	/* xp clock divider */
++	if (xpclk != 0)
++		cc_reg |= (((pclk / xpclk) - 1)
++				<< PMUA_CC_MOH_XP_CLK_DIV_BASE);
++
++	/* bus interface clock divider */
++	if (baclk != 0)
++		cc_reg |= (((pclk / baclk) - 1)
++				<< PMUA_CC_MOH_BIU_CLK_DIV_BASE);
++
++	/* AXI clock clock divider : fabric clock, at present, AXI1 suppose to 156MHz */
++	if (aclk != 0)
++		cc_reg |= (((pll_axi / 156) - 1)
++				<< PMUA_CC_MOH_BUS_CLK_DIV_BASE);
++
++	/* AXI2 clock */
++	if (aclk2 != 0)
++		cc_reg |= (((pll_axi / aclk2 ) - 1)
++				<< PMUA_CC_MOH_BUS_2_CLK_DIV_BASE);
++
++	/* always set BUS_MC_CLK for S0 sillicon, do not set for R0 sillicon */
++	cc_reg |= 0x7 << PMUA_CC_MOH_BUS_MC_CLK_DIV_BASE;
++
++	/* The ASYNC3_1 (21) and ASYNC5 (23) bits are supposed to be set to 1 */
++	cc_reg |= ((1 << 21) | (1 << 22) | (1 << 23));
++
++	reg_write(PMUA_CC_MOH, cc_reg);
++}
++
++void core2freqchgcmd(int pclk, int dclk, int aclk)
++{
++	unsigned long freqchg,coremsk;
++
++	coremsk = reg_read(PMUA_MOH_IMR);
++	coremsk |= (PMUA_MOH_IMR_MOH_FC_INTR_MASK);
++	reg_write(PMUA_MOH_IMR, coremsk);
++
++	freqchg = reg_read(PMUA_CC_MOH);
++
++	freqchg &= ~(PMUA_CC_MOH_MOH_ALLOW_SPD_CHG |
++			PMUA_CC_MOH_BUS_FREQ_CHG_REQ |
++			PMUA_CC_MOH_DDR_FREQ_CHG_REQ |
++			PMUA_CC_MOH_MOH_FREQ_CHG_REQ);
++
++	reg_write(PMUA_CC_SEA, reg_read(PMUA_CC_SEA) | PMUA_CC_SEA_SEA_ALLOW_SPD_CHG);
++
++	if ( pclk || dclk || aclk )
++		freqchg |= (PMUA_CC_MOH_MOH_ALLOW_SPD_CHG);
++	if ( aclk )
++		freqchg |= (PMUA_CC_SEA_BUS_FREQ_CHG_REQ);
++	if ( dclk )
++		freqchg |= (PMUA_CC_SEA_DDR_FREQ_CHG_REQ);
++	if ( pclk )
++		freqchg |= (PMUA_CC_MOH_MOH_FREQ_CHG_REQ);
++
++	reg_write(PMUA_CC_MOH, freqchg);
++
++	/* Check 4 the cmd 2 go thru */
++	while (!(PMUA_MOH_ISR_MOH_FC_ISR & reg_read(PMUA_MOH_ISR)))
++		;
++
++	/* Clear the PMU ISR */
++	reg_write(PMUA_MOH_ISR, 0x0);
++
++	/* Check status register to make sure frequency has been changed */
++	while ((reg_read(PMUA_DM_CC_MOH) & 0x000fffff) != (freqchg & 0x000fffff))
++		;
++
++	freqchg |= PMUA_CC_MOH_MOH_RD_ST_CLEAR;
++
++	/* Clear the bits */
++	freqchg &= ~(	PMUA_CC_MOH_MOH_ALLOW_SPD_CHG |
++			PMUA_CC_MOH_BUS_FREQ_CHG_REQ |
++			PMUA_CC_MOH_DDR_FREQ_CHG_REQ |
++			PMUA_CC_MOH_MOH_FREQ_CHG_REQ);
++
++	/* clear the cmds bit */
++	reg_write(PMUA_CC_MOH, freqchg);
++}
++
++static void switch_op(int op)
++{
++	reg_write(0xd42A0030, reg_read(0xd42A0030) | 0x00000001);
++	reg_write(0xd4282C08, reg_read(0xd4282C08) | 0x00000010);
++
++	freq_init_sram(0xd1020000);
++	freq_chg_seq(0xd1020000, 0xd1022000, 0);
++}
++
++#if 0
++static void switch_op(int op)
++{
++	/* write 0x88.. to PMUA_CC_SEA */
++	reg_write(0xd4282800, reg_read(0xd4282800) | 0x88000000);
++	reg_write(0xd4050024, 0xffffffff);
++	reg_write(0xd4051024, 0xffffffff);
++
++	switch (op) {
++	case 0:
++		PMUcore2_fc_seq(156,156*2,156,156,156,156);
++		core2freqchgcmd(1,1,1);
++		printf("op 0 (156MHz)\n");
++		break;
++	case 1:
++		PMUcore2_fc_seq(312,156*2,156,156,156,156);
++		core2freqchgcmd(1,1,1);
++		printf("op 1 (312MHz)\n");
++		break;
++	case 2:
++		PMUcore2_fc_seq(624,312*2,312,156,156,156);
++		core2freqchgcmd(1,1,1);
++		printf("op 2 (624MHz)\n");
++		break;
++	case 3:
++		PMUcore2_fc_seq(800,400*2,400,200,156,156);
++		core2freqchgcmd(1,1,1);
++		printf("op 3 (800MHz)\n");
++		break;
++	default:
++		break;
++	}
++}
++
++static void switch_op(int op)
++{
++	reg_write(0xd4282800, reg_read(0xd4282800) | 0x88000000);
++	reg_write(0xd4051024, 0xFFFFFFFF);
++
++	if (op == 0) {
++		reg_write(0xd4050008, 0x0000888e);
++		reg_write(0xd4282898, reg_read(0xd4282898) | 0x0000003A);
++		reg_write(0xd4282804, (reg_read(0xd4282804) & 0xFFF00000) | 0x00048039);
++		reg_write(0xd4282804, (reg_read(0xd4282804) & 0x0FFFFFFF) | 0xF0000000);
++		reg_write(0xd4282804, (reg_read(0xd4282804) & 0xF0FFFFFF) | 0x0F000000);
++	}
++
++	if (op == 2) {
++		reg_write(0xd4050008, 0x2000888E);
++		reg_write(0xd4282898, reg_read(0xd4282898) | 0x0000003A);
++		reg_write(0xd4282804, (reg_read(0xd4282804) & 0xFFF00000) | 0x000482F8);
++		reg_write(0xd4282804, (reg_read(0xd4282804) & 0x0FFFFFFF) | 0xF0000000);
++		reg_write(0xd4282804, (reg_read(0xd4282804) & 0xF0FFFFFF) | 0x0F000000);
++	}
++
++	if (op == 3) {
++		reg_write(0xd4050008, 0x2000888E);
++		reg_write(0xd4282898, reg_read(0xd4282898) | 0x0000003A);
++		reg_write(0xd4282804, (reg_read(0xd4282804) & 0xFFF00000) | 0x000482F8);
++		reg_write(0xd4282804, (reg_read(0xd4282804) & 0x0FFFFFFF) | 0xB0000000);
++		reg_write(0xd4282804, (reg_read(0xd4282804) & 0xF0FFFFFF) | 0x0B000000);
++
++		reg_write(0xd4050034, reg_read(0xd4050034) | 0x00000200);
++		reg_write(0xd4050034, reg_read(0xd4050034) & 0xFFFFFEFF);
++		reg_write(0xd4050034, (reg_read(0xd4050034) & 0xFF0003FF) | 0x00096C00);
++		reg_write(0xd4050060, 0x90020364);
++		reg_write(0xd4050064, reg_read(0xd4050064) | 0x00000040);
++		reg_write(0xd4050034, reg_read(0xd4050034) | 0x00000300);
++
++		reg_write(0xd4050008, 0x4000888E);
++		reg_write(0xd4282898, reg_read(0xd4282898) | 0x0000003A);
++		reg_write(0xd4282804, (reg_read(0xd4282804) & 0xFFF00000) | 0x000482F8);
++		reg_write(0xd4282804, (reg_read(0xd4282804) & 0x0FFFFFFF) | 0xB0000000);
++		reg_write(0xd4282804, (reg_read(0xd4282804) & 0xF0FFFFFF) | 0x0B000000);
++	}
++}
++#endif
++
++int do_op(cmd_tbl_t * cmdtp, int flag, int argc, char *argv[])
++{
++	int op;
++
++	if (argc != 2) {
++		printf ("Usage:\n%s\n", cmdtp->usage);
++		return 1;
++	}
++
++	op = simple_strtoul(argv[1], NULL, 0);
++	switch_op(op);
++
++	return 0;
++}
++#else
++int do_op(cmd_tbl_t * cmdtp, int flag, int argc, char *argv[]) { return 0; }
++#endif
+ 
+ U_BOOT_CMD(
+ 		op,	6,	1,	do_op,
+@@ -328,6 +588,7 @@ U_BOOT_CMD(
+ #endif
+ 
+ #ifdef CONFIG_OPTEST
++#if (defined(CONFIG_TAVOREVB) || defined(CONFIG_TTC_DKB))
+ static void do_single_optest(unsigned int count)
+ {
+ 	unsigned int start, end, temp;
+@@ -499,6 +760,59 @@ int do_optest(cmd_tbl_t * cmdtp, int flag, int argc, char *argv[])
+ 	printf("\noptest done!\n\n");
+ 	return 0;
+ }
++#elif (defined(CONFIG_ASPENITE) || defined(CONFIG_ZYLONITE2))
++static void do_single_optest(unsigned int count)
++{
++	unsigned int start, end, temp;
++
++	temp = count;
++	printf("count: %u\n", count);
++	start = READ_TIMER;
++	start = READ_TIMER;
++	printf("start time: 0x%x\n", start);
++
++	while (temp-- > 0) {
++		switch_op(2);
++		switch_op(1);
++	}
++
++	end = READ_TIMER;
++	end = READ_TIMER;
++	printf("end time: 0x%x\n", end);
++	printf("duration: %d sec\n", (end-start)/3250000);
++	printf("ticks/op: %d\n", (end-start)/count/6);
++}
++
++int do_optest(cmd_tbl_t * cmdtp, int flag, int argc, char *argv[])
++{
++	ulong count1, count2, temp, loops_per_round;
++
++	if (argc != 2 && argc != 3) {
++		printf("usage: optest num\n");
++		return 0;
++	}
++
++	temp = simple_strtoul(argv[1], NULL, 0);
++	loops_per_round = 10000;
++	if (argc == 3)
++		loops_per_round = simple_strtoul(argv[2], NULL, 0);
++	/* loops_per_round needs to be less than 500000, or else timer will loop around */
++	loops_per_round %= 500000;
++	count1 = temp / loops_per_round;
++	count2 = temp % loops_per_round;
++
++	while (count1-- > 0)
++		do_single_optest(loops_per_round);
++
++	if (count2 > 0)
++		do_single_optest(count2);
++
++	printf("\noptest done!\n\n");
++	return 0;
++}
++#else
++int do_optest(cmd_tbl_t * cmdtp, int flag, int argc, char *argv[]) { return 0; }
++#endif
+ 
+ U_BOOT_CMD(
+ 		optest,	6,	1,	do_optest,
+@@ -510,8 +824,7 @@ U_BOOT_CMD(
+ #ifdef CONFIG_READ_WRITE
+ int do_read(cmd_tbl_t * cmdtp, int flag, int argc, char *argv[])
+ {
+-	ulong   addr, rc;
+-	int     rcode = 0;
++	ulong addr;
+ 	ulong value, length, start, end;
+ 
+ 	if (argc < 2) {
+@@ -528,7 +841,7 @@ int do_read(cmd_tbl_t * cmdtp, int flag, int argc, char *argv[])
+ 	end = addr + length;
+ 	for (;start < end;start += 4) {
+ 		value = *(unsigned int*)start;
+-		printf("0x%08x: 0x%08x\n", start, value);
++		printf("0x%08x: 0x%08x\n", (unsigned int)start, (unsigned int)value);
+ 	}
+ 
+ 	return 0;
+diff --git a/board/pxa/common/freq_ll.S b/board/pxa/common/freq_ll.S
+new file mode 100644
+index 0000000..ca72147
+--- /dev/null
++++ b/board/pxa/common/freq_ll.S
+@@ -0,0 +1,93 @@
++/*
++ * Low-level frequency change code
++ *
++ * Copyright (C) 2009, Marvell Semicondutor.
++ *
++ * This software program is licensed subject to the GNU General Public License
++ * (GPL).Version 2,June 1991, available at http://www.fsf.org/copyleft/gpl.html
++ */
++
++	.global freq_init_sram, freq_chg_seq
++
++@******************************************************************************
++@
++@ freq_init_sram
++@
++@ Copy frequency change code into ISRAM
++@
++@ Inputs:
++@	r0 = Start address of relocated program
++@
++@ Outputs:
++@	None
++@
++
++freq_init_sram:
++	stmfd	sp!, {r0 - r12, lr}
++	ldr	r3, =freq_sram_start
++	ldr	r4, =freq_sram_end
++	add	r4, r4, #0x20
++
++rel_ram:
++	ldmia	r3!, {r5 - r12}
++	stmia	r0!, {r5 - r12}
++	cmp	r3, r4
++	ble	rel_ram
++
++	ldmfd	sp!, {r0 - r12, pc}
++
++@******************************************************************************
++@
++@ freq_chg_seq
++@
++@ frequency change sequence
++@
++@ Inputs:
++@	r0 = Start address of relocated program
++@	r1 = Start address of relocated stack
++@	r2 = operating points
++@
++@ Outputs:
++@	None
++@
++
++#define PMUM_FCCR_OFF	0x0008
++#define PMUA_CC_AP_OFF	0x0004
++
++freq_chg_seq:
++
++	@ save registers on stack
++	stmfd	sp!, {r3 - r12, lr}
++
++	mov	r12, r0			@ save start address of program in r12
++	mov	r11, r1			@ save start address of stack in r11
++	mov	r10, sp			@ save sp in r10
++	mov	sp, r11			@ set up new stack address
++	stmfd	sp!, {lr}		@ store the return address
++
++	ldr	r4, =0xb0000000		@ DMEM base address
++	ldr	r5, =0xd4050000		@ PMUM base address
++	ldr	r6, =0xd4282800		@ PMUA base address
++
++	mov	pc, r0
++
++freq_sram_start:
++	b	1f
++	.align  5
++1:
++	@ frequency change sequence
++	ldr	r7, =0x2000088e
++	str	r7, [r5, #PMUM_FCCR_OFF]
++
++	ldr	r7, =0xf0e482f8
++	str	r7, [r6, #PMUA_CC_AP_OFF]
++
++	@ ddr caliberation
++
++	ldmfd	sp!, {lr}
++	mov	sp, r10				@ restore stack address
++
++        ldmfd   sp!, {r3 - r12, pc}
++
++freq_sram_end:
++	nop
+-- 
+1.6.0.4
+

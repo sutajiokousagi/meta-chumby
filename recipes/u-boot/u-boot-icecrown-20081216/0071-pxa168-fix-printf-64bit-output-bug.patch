@@ -1,0 +1,127 @@
+From 199734fab724d1e32bdfd490c65d15df4ceb8ab2 Mon Sep 17 00:00:00 2001
+From: Lei Wen <leiwen@marvell.com>
+Date: Mon, 1 Jun 2009 11:16:49 +0800
+Subject: [PATCH] pxa168: fix printf 64bit output bug
+
+Signed-off-by: Lei Wen <leiwen@marvell.com>
+---
+ drivers/mtd/nand/nand_util.c |    2 +-
+ include/configs/aspenite.h   |    1 +
+ include/configs/avengers.h   |    1 +
+ include/configs/tavorevb.h   |    1 +
+ include/configs/ttc_dkb.h    |    1 +
+ include/configs/zylonite2.h  |    1 +
+ lib_generic/vsprintf.c       |   17 +----------------
+ 7 files changed, 7 insertions(+), 17 deletions(-)
+
+diff --git a/drivers/mtd/nand/nand_util.c b/drivers/mtd/nand/nand_util.c
+index 3cff49e..5eac5b6 100644
+--- a/drivers/mtd/nand/nand_util.c
++++ b/drivers/mtd/nand/nand_util.c
+@@ -181,7 +181,7 @@ int nand_erase_opts(nand_info_t *meminfo, const nand_erase_options_t *opts)
+ 			if (percent != percent_complete) {
+ 				percent_complete = percent;
+ 
+-				printf("\rErasing at 0x%x -- %3d%% complete.",
++				printf("\rErasing at 0x%qx -- %3d%% complete.",
+ 				       erase.addr, percent);
+ 
+ 				if (opts->jffs2 && result == 0)
+diff --git a/include/configs/aspenite.h b/include/configs/aspenite.h
+index 9cbf401..bce7343 100644
+--- a/include/configs/aspenite.h
++++ b/include/configs/aspenite.h
+@@ -144,6 +144,7 @@
+ #define CONFIG_ENV_OVERWRITE    	/* allow to change env parameters */
+ #undef  CONFIG_INIT_CRITICAL
+ #define CONFIG_CMDLINE_EDITING
++#define CONFIG_SYS_64BIT_VSPRINTF
+ 
+ 
+ /*-----------------------------------------------------------------------
+diff --git a/include/configs/avengers.h b/include/configs/avengers.h
+index 9b5c5c1..dffc3af 100644
+--- a/include/configs/avengers.h
++++ b/include/configs/avengers.h
+@@ -145,6 +145,7 @@
+ #define CONFIG_ENV_OVERWRITE    	/* allow to change env parameters */
+ #undef  CONFIG_INIT_CRITICAL
+ #define CONFIG_CMDLINE_EDITING
++#define CONFIG_SYS_64BIT_VSPRINTF	/* enable 64bit output */
+ 
+ 
+ /*-----------------------------------------------------------------------
+diff --git a/include/configs/tavorevb.h b/include/configs/tavorevb.h
+index 6dfdeab..4524734 100644
+--- a/include/configs/tavorevb.h
++++ b/include/configs/tavorevb.h
+@@ -148,6 +148,7 @@
+ #define CONFIG_ENV_OVERWRITE    	/* allow to change env parameters */
+ #undef  CONFIG_INIT_CRITICAL
+ #define CONFIG_CMDLINE_EDITING
++#define CONFIG_SYS_64BIT_VSPRINTF
+ 
+ 
+ /*-----------------------------------------------------------------------
+diff --git a/include/configs/ttc_dkb.h b/include/configs/ttc_dkb.h
+index eca9d59..f8c38ef 100644
+--- a/include/configs/ttc_dkb.h
++++ b/include/configs/ttc_dkb.h
+@@ -149,6 +149,7 @@
+ #define CONFIG_CMDLINE_EDITING
+ #define CONFIG_COMMAND_HISTORY
+ #define CONFIG_COMMAND_EDIT
++#define CONFIG_SYS_64BIT_VSPRINTF
+ 
+ 
+ /*-----------------------------------------------------------------------
+diff --git a/include/configs/zylonite2.h b/include/configs/zylonite2.h
+index d0a3f32..9a1dca7 100644
+--- a/include/configs/zylonite2.h
++++ b/include/configs/zylonite2.h
+@@ -144,6 +144,7 @@
+ #define CONFIG_ENV_OVERWRITE    	/* allow to change env parameters */
+ #undef  CONFIG_INIT_CRITICAL
+ #define CONFIG_CMDLINE_EDITING
++#define CONFIG_SYS_64BIT_VSPRINTF
+ 
+ 
+ /*-----------------------------------------------------------------------
+diff --git a/lib_generic/vsprintf.c b/lib_generic/vsprintf.c
+index 767dde1..00219b8 100644
+--- a/lib_generic/vsprintf.c
++++ b/lib_generic/vsprintf.c
+@@ -13,6 +13,7 @@
+ #include <linux/types.h>
+ #include <linux/string.h>
+ #include <linux/ctype.h>
++#include <div64.h>
+ 
+ #include <common.h>
+ #if !defined (CONFIG_PANIC_HANG)
+@@ -129,22 +130,6 @@ static int skip_atoi(const char **s)
+ #define LARGE	64		/* use 'ABCDEF' instead of 'abcdef' */
+ 
+ #ifdef CONFIG_SYS_64BIT_VSPRINTF
+-#define do_div(n,base) ({ \
+-	unsigned int __res; \
+-	__res = ((unsigned long long) n) % base; \
+-	n = ((unsigned long long) n) / base; \
+-	__res; \
+-})
+-#else
+-#define do_div(n,base) ({ \
+-	int __res; \
+-	__res = ((unsigned long) n) % base; \
+-	n = ((unsigned long) n) / base; \
+-	__res; \
+-})
+-#endif
+-
+-#ifdef CONFIG_SYS_64BIT_VSPRINTF
+ static char * number(char * str, long long num, unsigned int base, int size, int precision ,int type)
+ #else
+ static char * number(char * str, long num, unsigned int base, int size, int precision ,int type)
+-- 
+1.6.0.4
+

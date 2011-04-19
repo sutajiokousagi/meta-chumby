@@ -1,0 +1,39 @@
+diff -ur BlueTune/Build/Targets/arm-chumby-linux/Config.scons src/BlueTune/Build/Targets/arm-chumby-linux/Config.scons
+--- BlueTune/Build/Targets/arm-chumby-linux/Config.scons	2010-10-13 15:56:49.482652752 +0000
++++ BlueTune/Build/Targets/arm-chumby-linux/Config.scons	2010-10-13 16:13:30.844345396 +0000
+@@ -1,7 +1,31 @@
+-env['BLT_RELAXED_ENV'] = env.Clone()
+-GCC_ARM_OPTIONS='-mcpu=arm9e -fdollars-in-identifiers -I/usr/arm-linux/include -L/usr/arm-linux/lib'
+-LoadTool('gcc-generic', env['BLT_RELAXED_ENV'], gcc_cross_prefix='arm-linux', gcc_strict=False, gcc_stop_on_warning=False, gcc_extra_options=GCC_ARM_OPTIONS)
+-LoadTool('gcc-generic', env, gcc_cross_prefix='arm-linux', gcc_extra_options=GCC_ARM_OPTIONS)
++import os
++import SCons.Util
++
++# Try to get Scons to play nicely with the environment.
++# See http://dev.gentoo.org/~vapier/scons-blows.txt
++if os.environ.has_key('PATH'):
++	env['ENV']['PATH'] = os.environ['PATH']
++if os.environ.has_key('AR'):
++	env['AR'] = os.environ['AR']
++if os.environ.has_key('AS'):
++	env['AS'] = os.environ['AS']
++if os.environ.has_key('RANLIB'):
++	env['RANLIB'] = os.environ['RANLIB']
++if os.environ.has_key('CPP'):
++	env['CXX'] = os.environ['CPP']
++if os.environ.has_key('CC'):
++	env['CC'] = os.environ['CC']
++if os.environ.has_key('CFLAGS'):
++	env['CCFLAGS'] += SCons.Util.CLVar(os.environ['CFLAGS'])
++if os.environ.has_key('CXX'):
++	env['CXX'] = os.environ['CXX']
++if os.environ.has_key('CXXFLAGS'):
++	env['CXXFLAGS'] += SCons.Util.CLVar(os.environ['CXXFLAGS'])
++if os.environ.has_key('LDFLAGS'):
++	env['LINKFLAGS'] += SCons.Util.CLVar(os.environ['LDFLAGS'])
++
++
++#env['BLT_RELAXED_ENV'] = env.Clone()
+ 
+ 
+ env['BLT_CPU_CONFIG_NO_FLOAT'] = True

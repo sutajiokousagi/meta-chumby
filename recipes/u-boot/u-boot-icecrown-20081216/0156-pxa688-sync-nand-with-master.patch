@@ -1,0 +1,422 @@
+From 21b9db1791f51a258924b085b32ce18180f216bf Mon Sep 17 00:00:00 2001
+From: Mingliang Hu <mingliang.hu@marvell.com>
+Date: Thu, 22 Oct 2009 15:49:21 +0800
+Subject: [PATCH] pxa688: sync nand with master
+
+Signed-off-by: Mingliang Hu <mingliang.hu@marvell.com>
+---
+ cpu/88SV581xV6/pxa688/mfp.c                  |   54 ++------------------------
+ drivers/mtd/nand/pxa3xx_nand.c               |   11 +++--
+ include/asm-arm/arch-pxa688/common.h         |    9 ++++-
+ include/asm-arm/arch-pxa688/nand_supported.h |   14 +++++++
+ include/asm-arm/arch-pxa688/pxa3xx_nand.h    |   36 +++--------------
+ include/configs/mmp2_flint.h                 |    1 +
+ include/configs/mmp2_jasper.h                |    1 +
+ 7 files changed, 41 insertions(+), 85 deletions(-)
+ mode change 100755 => 100644 include/asm-arm/arch-pxa688/nand_supported.h
+
+diff --git a/cpu/88SV581xV6/pxa688/mfp.c b/cpu/88SV581xV6/pxa688/mfp.c
+index 84ac83b..34abb8d 100644
+--- a/cpu/88SV581xV6/pxa688/mfp.c
++++ b/cpu/88SV581xV6/pxa688/mfp.c
+@@ -23,12 +23,6 @@
+ #include <asm/arch/common.h>
+ #include <asm/arch/mfp.h>
+ 
+-/* mfp_spin_lock is used to ensure that MFP register configuration
+- * (most likely a read-modify-write operation) is atomic, and that
+- * mfp_table[] is consistent
+- */
+-static DEFINE_SPINLOCK(mfp_spin_lock);
+-
+ static void __iomem *mfpr_mmio_base;
+ static struct pxa3xx_mfp_pin mfp_table[MFP_PIN_MAX];
+ 
+@@ -42,7 +36,7 @@ static struct pxa3xx_mfp_pin mfp_table[MFP_PIN_MAX];
+  * perform a read-back of any MFPR register to make sure the
+  * previous writings are finished
+  */
+-#define mfpr_sync()	(void)__raw_readl(mfpr_mmio_base + 0)
++#define mfpr_sync()	(void)__raw_readl(mfpr_mmio_base + 0x0204)
+ 
+ static inline void __mfp_config(int pin, unsigned long val)
+ {
+@@ -55,11 +49,9 @@ static inline void __mfp_config(int pin, unsigned long val)
+ void pxa3xx_mfp_config(mfp_cfg_t *mfp_cfgs, int num)
+ {
+ 	int i, pin;
+-	unsigned long val, flags;
++	unsigned long val;
+ 	mfp_cfg_t *mfp_cfg = mfp_cfgs;
+ 
+-	spin_lock_irqsave(&mfp_spin_lock, flags);
+-
+ 	for (i = 0; i < num; i++, mfp_cfg++) {
+ 		pin = MFP_CFG_PIN(*mfp_cfg);
+ 		val = MFP_CFG_VAL(*mfp_cfg);
+@@ -79,42 +71,30 @@ void pxa3xx_mfp_config(mfp_cfg_t *mfp_cfgs, int num)
+ 	}
+ 
+ 	mfpr_sync();
+-	spin_unlock_irqrestore(&mfp_spin_lock, flags);
+ }
+ 
+ unsigned long pxa3xx_mfp_read(int mfp)
+ {
+-	unsigned long val, flags;
++	unsigned long val;
+ 
+ 	BUG_ON(mfp >= MFP_PIN_MAX);
+-
+-	spin_lock_irqsave(&mfp_spin_lock, flags);
+ 	val = mfpr_readl(mfp_table[mfp].mfpr_off);
+-	spin_unlock_irqrestore(&mfp_spin_lock, flags);
+-
+ 	return val;
+ }
+ 
+ void pxa3xx_mfp_write(int mfp, unsigned long val)
+ {
+-	unsigned long flags;
+ 
+ 	BUG_ON(mfp >= MFP_PIN_MAX);
+-
+-	spin_lock_irqsave(&mfp_spin_lock, flags);
+ 	mfpr_writel(mfp_table[mfp].mfpr_off, val);
+ 	mfpr_sync();
+-	spin_unlock_irqrestore(&mfp_spin_lock, flags);
+ }
+ 
+ void pxa3xx_mfp_set_afds(int mfp, int af, int ds)
+ {
+ 	uint32_t mfpr_off, mfpr_val;
+-	unsigned long flags;
+ 
+ 	BUG_ON(mfp >= MFP_PIN_MAX);
+-
+-	spin_lock_irqsave(&mfp_spin_lock, flags);
+ 	mfpr_off = mfp_table[mfp].mfpr_off;
+ 
+ 	mfpr_val = mfpr_readl(mfpr_off);
+@@ -124,19 +104,14 @@ void pxa3xx_mfp_set_afds(int mfp, int af, int ds)
+ 
+ 	mfpr_writel(mfpr_off, mfpr_val);
+ 	mfpr_sync();
+-
+-	spin_unlock_irqrestore(&mfp_spin_lock, flags);
+ }
+ 
+ void pxa3xx_mfp_set_rdh(int mfp, int rdh)
+ {
+ 	uint32_t mfpr_off, mfpr_val;
+-	unsigned long flags;
+ 
+ 	BUG_ON(mfp >= MFP_PIN_MAX);
+ 
+-	spin_lock_irqsave(&mfp_spin_lock, flags);
+-
+ 	mfpr_off = mfp_table[mfp].mfpr_off;
+ 
+ 	mfpr_val = mfpr_readl(mfpr_off);
+@@ -147,19 +122,14 @@ void pxa3xx_mfp_set_rdh(int mfp, int rdh)
+ 
+ 	mfpr_writel(mfpr_off, mfpr_val);
+ 	mfpr_sync();
+-
+-	spin_unlock_irqrestore(&mfp_spin_lock, flags);
+ }
+ 
+ void pxa3xx_mfp_set_lpm(int mfp, int lpm)
+ {
+ 	uint32_t mfpr_off, mfpr_val;
+-	unsigned long flags;
+ 
+ 	BUG_ON(mfp >= MFP_PIN_MAX);
+ 
+-	spin_lock_irqsave(&mfp_spin_lock, flags);
+-
+ 	mfpr_off = mfp_table[mfp].mfpr_off;
+ 	mfpr_val = mfpr_readl(mfpr_off);
+ 	mfpr_val &= ~MFPR_LPM_MASK;
+@@ -172,19 +142,14 @@ void pxa3xx_mfp_set_lpm(int mfp, int lpm)
+ 
+ 	mfpr_writel(mfpr_off, mfpr_val);
+ 	mfpr_sync();
+-
+-	spin_unlock_irqrestore(&mfp_spin_lock, flags);
+ }
+ 
+ void pxa3xx_mfp_set_pull(int mfp, int pull)
+ {
+ 	uint32_t mfpr_off, mfpr_val;
+-	unsigned long flags;
+ 
+ 	BUG_ON(mfp >= MFP_PIN_MAX);
+ 
+-	spin_lock_irqsave(&mfp_spin_lock, flags);
+-
+ 	mfpr_off = mfp_table[mfp].mfpr_off;
+ 	mfpr_val = mfpr_readl(mfpr_off);
+ 	mfpr_val &= ~MFPR_PULL_MASK;
+@@ -192,19 +157,14 @@ void pxa3xx_mfp_set_pull(int mfp, int pull)
+ 
+ 	mfpr_writel(mfpr_off, mfpr_val);
+ 	mfpr_sync();
+-
+-	spin_unlock_irqrestore(&mfp_spin_lock, flags);
+ }
+ 
+ void pxa3xx_mfp_set_edge(int mfp, int edge)
+ {
+ 	uint32_t mfpr_off, mfpr_val;
+-	unsigned long flags;
+ 
+ 	BUG_ON(mfp >= MFP_PIN_MAX);
+ 
+-	spin_lock_irqsave(&mfp_spin_lock, flags);
+-
+ 	mfpr_off = mfp_table[mfp].mfpr_off;
+ 	mfpr_val = mfpr_readl(mfpr_off);
+ 
+@@ -214,18 +174,14 @@ void pxa3xx_mfp_set_edge(int mfp, int edge)
+ 
+ 	mfpr_writel(mfpr_off, mfpr_val);
+ 	mfpr_sync();
+-
+-	spin_unlock_irqrestore(&mfp_spin_lock, flags);
+ }
+ 
+ void __init pxa3xx_mfp_init_addr(struct pxa3xx_mfp_addr_map *map)
+ {
+ 	struct pxa3xx_mfp_addr_map *p;
+-	unsigned long offset, flags;
++	unsigned long offset;
+ 	int i;
+ 
+-	spin_lock_irqsave(&mfp_spin_lock, flags);
+-
+ 	for (p = map; p->start != MFP_PIN_INVALID; p++) {
+ 		offset = p->offset;
+ 		i = p->start;
+@@ -236,8 +192,6 @@ void __init pxa3xx_mfp_init_addr(struct pxa3xx_mfp_addr_map *map)
+ 			offset += 4; i++;
+ 		} while ((i <= p->end) && (p->end != -1));
+ 	}
+-
+-	spin_unlock_irqrestore(&mfp_spin_lock, flags);
+ }
+ 
+ void __init pxa3xx_init_mfp(void)
+diff --git a/drivers/mtd/nand/pxa3xx_nand.c b/drivers/mtd/nand/pxa3xx_nand.c
+index bb04c32..eb47af9 100644
+--- a/drivers/mtd/nand/pxa3xx_nand.c
++++ b/drivers/mtd/nand/pxa3xx_nand.c
+@@ -20,13 +20,16 @@
+ #ifdef CONFIG_CPU_MONAHANS
+ #include <asm/arch/pxa-regs.h>
+ #else
++#ifdef CONFIG_CPU_PXA688
++#include <asm/arch/regs-pxa688.h>
++#else
+ #include <asm/arch/regs-pxa168.h>
+ #endif
++#endif
+ 
+-#include <asm/arch-pxa168/pxa3xx_bbm.h>
+-#include <asm/arch-pxa168/pxa3xx_nand.h>
+-#include <asm/arch-pxa168/nand_supported.h>
+-
++#include <asm/arch/pxa3xx_bbm.h>
++#include <asm/arch/pxa3xx_nand.h>
++#include <asm/arch/nand_supported.h>
+ 
+ /* convert nano-seconds to nand flash controller clock cycles */
+ #define ns2cycle(ns, clk)	(int)(((ns) * (clk / 1000000) / 1000) + 1)
+diff --git a/include/asm-arm/arch-pxa688/common.h b/include/asm-arm/arch-pxa688/common.h
+index f788c62..9d4c1f1 100644
+--- a/include/asm-arm/arch-pxa688/common.h
++++ b/include/asm-arm/arch-pxa688/common.h
+@@ -43,6 +43,7 @@
+ 
+ #define __REG_PXA910(x)	(*((volatile u32 *)(x)))
+ #define BU_U32            unsigned int
++#define BU_REG_READ(x)    (*(volatile BU_U32 *)(x))
+ #define BU_REG_WRITE(x,y) ((*(volatile BU_U32 *)(x)) = y )
+ 
+ typedef int wait_queue_head_t; 
+@@ -56,7 +57,6 @@ typedef int spinlock_t;
+ #define clk_enable(...)	
+ #define clk_disable(...)
+ #define DEBUG(...)
+-#define del_mtd_device(...)
+ 
+ static inline int __decalare_return(void)
+ {
+@@ -408,6 +408,13 @@ unsigned long clk_get_rate(struct clk * clk);
+ 	 __cpu_is_pxa910_168(id);                        		\
+ 	 })
+ 
++#define cpu_is_pxa920_z2()                                 		\
++	({                                              		\
++	 unsigned int chip_id = __raw_readl(0xd4282c00);		\
++	 unsigned int id = read_cpuid(CPUID_ID); 			\
++	 __cpu_is_pxa910(id) && ((chip_id & 0x00fff000) == 0x0070c000);	\
++	 })
++
+ #define cpu_is_pxa688()                                     	\
+ 	({                                              		\
+ 	 unsigned int id = read_cpuid(CPUID_ID); 			\
+diff --git a/include/asm-arm/arch-pxa688/nand_supported.h b/include/asm-arm/arch-pxa688/nand_supported.h
+old mode 100755
+new mode 100644
+index 120e3a7..6d8d71f
+--- a/include/asm-arm/arch-pxa688/nand_supported.h
++++ b/include/asm-arm/arch-pxa688/nand_supported.h
+@@ -212,6 +212,19 @@ static struct pxa3xx_nand_flash micron2GbX16 = {
+ 	.ecc_type	= ECC_HAMMIN,
+ };
+ 
++static struct pxa3xx_nand_flash micron2GbX16_ba2c = {
++	.timing		= &micron_timing,
++	.cmdset         = &largepage_cmdset,
++	.name		= "Micron 2Gibx16",
++	.page_per_block	= 64,
++	.page_size	= 2048,
++	.flash_width	= 16,
++	.dfc_width	= 16,
++	.num_blocks	= 2048,
++	.chip_id	= 0xba2c,
++	.ecc_type	= ECC_HAMMIN,
++};
++
+ static struct pxa3xx_nand_flash micron4GbX8 = {
+ 	.timing		= &micron_timing,
+ 	.cmdset         = &largepage_cmdset,
+@@ -274,6 +287,7 @@ static struct pxa3xx_nand_flash *builtin_flash_types[] = {
+ 	&micron4GbX8,
+ 	&micron1GbX16,
+ 	&micron2GbX16,
++	&micron2GbX16_ba2c,
+ 	&micron4GbX16,
+ 	&micron8GbX8,
+ 	&stm2GbX16,
+diff --git a/include/asm-arm/arch-pxa688/pxa3xx_nand.h b/include/asm-arm/arch-pxa688/pxa3xx_nand.h
+index 8fd7d88..90460ee 100644
+--- a/include/asm-arm/arch-pxa688/pxa3xx_nand.h
++++ b/include/asm-arm/arch-pxa688/pxa3xx_nand.h
+@@ -1,13 +1,11 @@
+ #ifndef __ASM_ARCH_PXA3XX_NAND_H
+ #define __ASM_ARCH_PXA3XX_NAND_H
+ 
+-#ifdef   __KERNEL__
+ #include <linux/mtd/mtd.h>
+-#include <linux/mtd/partitions.h>
+-#endif
+ 
+-#define NUM_CHIP_SELECT		2
+-#define CMD_POLL_SIZE		5
++#define NUM_CHIP_SELECT		(2)
++#define CMD_POLL_SIZE		(5)
++#define NAND_DEF_CLOCK		(200 * 1000000)
+ 
+ struct pxa3xx_nand_timing {
+ 	unsigned int		tCH;  /* Enable signal hold time */
+@@ -59,11 +57,6 @@ struct pxa3xx_nand_info {
+ 	unsigned int 		buf_start;
+ 	unsigned int		buf_count;
+ 
+-	/* dma related */
+-	dma_addr_t 		data_buff_phys;
+-	dma_addr_t 		data_desc_addr;
+-	struct pxa_dma_desc	*data_desc;
+-
+ 	uint16_t		chip_select;
+ 	uint16_t		data_column;
+ 	uint16_t		oob_column;
+@@ -93,8 +86,7 @@ struct pxa3xx_nand_info {
+ };
+ 
+ struct pxa3xx_nand {
+-	struct clk		*clk;
+-	void __iomem		*mmio_base;
++	unsigned int		mmio_base;
+ 
+ 	/* 2 chipselects supported for the moment */
+ 	int			chip_select;
+@@ -111,14 +103,6 @@ struct pxa3xx_nand {
+ 	uint16_t		use_ecc;
+ 	unsigned int		bad_count;
+ 	unsigned int		errcode;
+-	struct completion 	cmd_complete;
+-
+-	/* DMA information */
+-	int			use_dma;
+-	int			drcmr_dat;
+-	int			drcmr_cmd;
+-	int 			data_dma_ch;
+-	size_t			data_buff_size;
+ };
+ 
+ struct pxa3xx_nand_platform_data {
+@@ -127,16 +111,11 @@ struct pxa3xx_nand_platform_data {
+ 	 * Controller and the Data Flash Controller,  the arbiter
+ 	 * controls the ownership of the bus
+ 	 */
++	unsigned int		mmio_base;
+ 	int			enable_arbiter;
+-	int			use_dma;	/* use DMA ? */
+ 	int			RD_CNT_DEL;
+-
+-	struct mtd_partition    *parts[NUM_CHIP_SELECT];
+-	unsigned int            nr_parts[NUM_CHIP_SELECT];
+ };
+ 
+-extern void pxa3xx_set_nand_info(struct pxa3xx_nand_platform_data *info);
+-
+ /* registers and bit definitions */
+ #define NDCR			(0x00) /* Control register */
+ #define NDTR0CS0		(0x04) /* Timing Parameter 0 for CS0 */
+@@ -326,10 +305,6 @@ extern void pxa3xx_set_nand_info(struct pxa3xx_nand_platform_data *info);
+ #define NDPTXCS_BLOCKADD_MASK	(0xFFFFFF)
+ #define NDPTXCS_BLOCKADD(x)	((x) & NDPTXCS_BLOCKADD_MASK)
+ 
+-/* dma-able I/O address for the NAND data and commands */
+-#define NDCB0_DMA_ADDR		(0xd4283048)
+-#define NDDB_DMA_ADDR		(0xd4283040)
+-
+ /* macros for registers read/write */
+ #define nand_writel(nand, off, val)	\
+ 	__raw_writel((val), (nand)->mmio_base + (off))
+@@ -363,4 +338,5 @@ enum {
+ 	STATE_READY,
+ };
+ 
++struct pxa3xx_nand *pxa3xx_nand_probe(struct pxa3xx_nand_platform_data *pdata);
+ #endif /* __ASM_ARCH_PXA3XX_NAND_H */
+diff --git a/include/configs/mmp2_flint.h b/include/configs/mmp2_flint.h
+index c9b65d9..fd7cb55 100644
+--- a/include/configs/mmp2_flint.h
++++ b/include/configs/mmp2_flint.h
+@@ -207,6 +207,7 @@
+ /*-----------------------------------------------------------------------
+  * NAND and DFC configuration
+  */
++#define CONFIG_NAND_PXA3XX
+ #define CONFIG_CMD_NAND 		1
+ #define CONFIG_SYS_MAX_NAND_DEVICE	1         /* Max number of NAND devices */
+ #define CONFIG_SYS_NAND_BASE		0xD4283000
+diff --git a/include/configs/mmp2_jasper.h b/include/configs/mmp2_jasper.h
+index 5fb2573..012dde8 100644
+--- a/include/configs/mmp2_jasper.h
++++ b/include/configs/mmp2_jasper.h
+@@ -207,6 +207,7 @@
+ /*-----------------------------------------------------------------------
+  * NAND and DFC configuration
+  */
++#define CONFIG_NAND_PXA3XX
+ #define CONFIG_CMD_NAND 		1
+ #define CONFIG_SYS_MAX_NAND_DEVICE	1         /* Max number of NAND devices */
+ #define CONFIG_SYS_NAND_BASE		0xD4283000
+-- 
+1.6.0.4
+

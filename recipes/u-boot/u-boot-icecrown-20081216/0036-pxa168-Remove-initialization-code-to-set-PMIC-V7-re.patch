@@ -1,0 +1,64 @@
+From f712e056a2decd803388a78f7301c4cbe820c421 Mon Sep 17 00:00:00 2001
+From: Kiran Vedere <kvedere@marvell.com>
+Date: Tue, 17 Feb 2009 13:07:26 -0500
+Subject: [PATCH] pxa168: Remove initialization code to set PMIC V7 regulator in aspen_init.S. This would fix the LCD Dimming issue.
+
+Signed-off-by: Kiran Vedere <kvedere@marvell.com>
+---
+ board/pxa/aspenite/aspen_init.S |   14 +++++++-------
+ 1 files changed, 7 insertions(+), 7 deletions(-)
+
+diff --git a/board/pxa/aspenite/aspen_init.S b/board/pxa/aspenite/aspen_init.S
+index c904ca0..16aa31b 100644
+--- a/board/pxa/aspenite/aspen_init.S
++++ b/board/pxa/aspenite/aspen_init.S
+@@ -96,10 +96,10 @@ aspen_init:
+ 	delay	r0
+ 
+ 	@ =========================================
+-	@ Enable PMIC V6 & V7 regulators - BEGIN
++	@ Enable PMIC V6 regulator - BEGIN
+ 	@ TODO:	JMC - Find a better "home" for this code!
+ 	@
+-	@ CODE SEQUENCE TO SET V6 AND V7 REGULATORS UP FOR 3V OUTPUT
++	@ CODE SEQUENCE TO SET V6 REGULATOR UP FOR 3V OUTPUT
+ 	@
+ 	@ 1) Program Slave Address (0x68) into IDBR with start bit
+ 	@
+@@ -121,10 +121,10 @@ aspen_init:
+ 	str	r1, [r0]
+ 	delay	r0
+ 
+-	@ 3) Data 0xCC, with a stop
++	@ 3) Data 0x0C, with a stop
+ 	@
+ 	ldr	r0, =0xD4025008
+-	mov	r1, #0xCC		@ data
++	mov	r1, #0x0C		@ data
+ 	str	r1, [r0]
+ 	ldr	r0, =0xD4025010
+ 	mov	r1, #0x6A
+@@ -153,17 +153,17 @@ aspen_init:
+ 	str	r1, [r0]
+ 	delay	r0
+ 
+-	@ 3) Data 0x06, with a stop
++	@ 3) Data 0x02, with a stop
+ 	@
+ 	ldr	r0, =0xD4025008
+-	mov	r1, #0x06		@ data
++	mov	r1, #0x02		@ data
+ 	str	r1, [r0]
+ 	ldr	r0, =0xD4025010
+ 	mov	r1, #0x6A
+ 	str	r1, [r0]
+ 	delay	r0
+ 
+-	@ Enable PMIC V6 & V7 regulators - END
++	@ Enable PMIC V6 regulator - END
+ 	@ =========================================
+ 
+ #if 0
+-- 
+1.6.0.4
+

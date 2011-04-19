@@ -1,0 +1,710 @@
+From 23e8a30ebb4b7b5adb9051ab6e6772459213f19b Mon Sep 17 00:00:00 2001
+From: Jing Xiang <jxiang@marvell.com>
+Date: Tue, 15 Sep 2009 14:55:13 +0800
+Subject: [PATCH] uboot: clean build warnings in usbeth code
+
+Signed-off-by: Jing Xiang <jxiang@marvell.com>
+---
+ board/pxa/common/usbeth/ether-mvu2o.c    |   36 +++++++-----------
+ board/pxa/common/usbeth/mvUsbHsDevMain.c |   12 +++---
+ board/pxa/common/usbeth/mvUsbTypes.h     |    2 +-
+ board/pxa/common/usbeth/mv_u2o_api.c     |   59 ++++++++++++++----------------
+ board/pxa/common/usbeth/mv_u2o_api.h     |    2 +-
+ board/pxa/common/usbeth/mv_u2o_ctl.c     |   20 +++++-----
+ board/pxa/common/usbeth/mv_u2o_ctl.h     |    2 +-
+ board/pxa/common/usbeth/mv_u2o_ep0.c     |    8 ++--
+ board/pxa/common/usbeth/mv_u2o_ep1.c     |   10 +----
+ board/pxa/common/usbeth/mv_u2o_ep2.c     |    9 ++---
+ 10 files changed, 69 insertions(+), 91 deletions(-)
+
+diff --git a/board/pxa/common/usbeth/ether-mvu2o.c b/board/pxa/common/usbeth/ether-mvu2o.c
+index 570dc89..5333d29 100644
+--- a/board/pxa/common/usbeth/ether-mvu2o.c
++++ b/board/pxa/common/usbeth/ether-mvu2o.c
+@@ -37,18 +37,15 @@
+ #include "pxa_usb.h"
+ #include "mv_u2o_ctl.h"
+ 
+-static int usb_rsize=64;
+-static int usb_wsize=64;
+-
+ /* cable connection */
++extern int req_pending;
+ extern int usb_connected;
+ extern int usb_speed;
+ 
+ /* receive buffer management */
+-static char rx_buf[2][ETH_BUF_SIZE];
++static volatile uchar rx_buf[2][ETH_BUF_SIZE];
+ static int  rx_size = 0;
+ static int  rx_done = 0 ;
+-static u16 rxIdx;		/* index of the current RX buffer */
+ 
+ /* transmit buffer management */
+ static int tx_done = 0 ;
+@@ -57,6 +54,7 @@ u16 usb_vendor_id = 0x8086;
+ u16 usb_product_id = 0x07d3;
+ 
+ extern void u2o_start(void);
++extern void u2o_int_hndlr(void);
+ 
+ static void usb_eth_tx_callback(int flag, int size)
+ {
+@@ -65,8 +63,6 @@ static void usb_eth_tx_callback(int flag, int size)
+ 
+ static void usb_eth_rx_callback(int flag, int size)
+ {
+-	int left, i;
+-
+ #ifdef DEBUG
+ 	printf("%s flag %d size %d left %d rx_done %d rx_size %d\n", 
+ 		__func__, flag, size, left, rx_done, rx_size); 
+@@ -84,10 +80,8 @@ static void usb_eth_rx_callback(int flag, int size)
+ 		rx_size = 0;
+ 	}
+ 
+-	memcpy(rx_buf[0], rx_buf[1], size);
++	memcpy((void *)rx_buf[0], (void *)rx_buf[1], size);
+ 	rx_size += size;
+-
+-done:
+ 	rx_done = 1;
+ 
+ #ifdef DEBUG
+@@ -100,7 +94,7 @@ done:
+ 	NetReceive(rx_buf[0], size);
+ 
+ 	/* setup to receive */
+-	ep2_recv(rx_buf[1], ETH_BUF_SIZE, usb_eth_rx_callback);
++	ep2_recv((char *)rx_buf[1], ETH_BUF_SIZE, usb_eth_rx_callback);
+ 
+ 	return;
+ }
+@@ -113,7 +107,7 @@ void usb_driver_speed(int speed)
+ 	ep_desc_t *ep;
+ 
+ 	cfg = (config_desc_t*) (pdesc->cdb);
+-	intf = (config_desc_t *)(cfg + 1);
++	intf = (intf_desc_t *)((config_desc_t *)(cfg + 1));
+ 	ep = (ep_desc_t *) (intf + 1);
+ 	
+ 	if( speed == USB_SPEED_HIGH ){
+@@ -192,7 +186,7 @@ void ep2_begin(void)
+ {
+ 	/* setup to receive */
+ 	if(usb_connected) {
+-		ep2_recv(rx_buf[1], ETH_BUF_SIZE, usb_eth_rx_callback);
++		ep2_recv((char *)rx_buf[1], ETH_BUF_SIZE, usb_eth_rx_callback);
+ 	}
+ }
+ 
+@@ -211,7 +205,7 @@ int check_usb_connection(int timeout)
+ 	start = get_ticks();
+ 	while (!usb_connected) {
+ 		//if ( __raw_readl(ICU_INT_STATUS_1) & (1<<(44-32)) ) {
+-			u2o_int_hndlr(0x11, 0);
++			u2o_int_hndlr();
+ 		//}
+ 
+ 		if (timeout && (start + timeout *CONFIG_SYS_HZ) < get_ticks()) {
+@@ -222,7 +216,7 @@ int check_usb_connection(int timeout)
+ 
+ 	while ( cnt < 0x1000) {
+ 		//if ( __raw_readl(ICU_INT_STATUS_1) & (1<<(44-32)) ) {
+-			u2o_int_hndlr(0x11, 0);
++			u2o_int_hndlr();
+ 		//	cnt = 0;
+ 		//}
+ 		cnt ++;
+@@ -256,19 +250,17 @@ static int usb_eth_init(struct eth_device *dev, bd_t *bd)
+ 			s = (*e) ? e + 1 : e;
+ 	}
+ 
++	v_mac = &v_env_mac[0];
+ 	memcpy (bd->bi_enetaddr, v_mac, 6);	/* update global address to match env (allows env changing) */
+ 	memcpy(dev->enetaddr, bd->bi_enetaddr, 6);
+ 
+ 	return 0;
+ }
+ 
+-static int usb_eth_halt(struct eth_device *dev, bd_t *bd)
++static void usb_eth_halt(struct eth_device *dev)
+ {
++	return;
+ }
+-static int loop=0;
+-
+-extern int req_pending;
+-void dump_buffer(char *buf, unsigned length);
+ 
+ static int usb_eth_rx(struct eth_device *dev)
+ {
+@@ -279,7 +271,7 @@ static int usb_eth_rx(struct eth_device *dev)
+ 
+ 	do{
+ 		//if ( __raw_readl(ICU_INT_STATUS_1) & (1<<(44-32)) ) {
+-			u2o_int_hndlr(0x11, 0);
++			u2o_int_hndlr();
+ 		//	i=0;
+ 		//}
+ 
+@@ -309,7 +301,7 @@ static int usb_eth_tx(struct eth_device *dev, volatile void *packet,
+ 
+ 	tx_done = 0;
+ 	do {
+-		ret = ep1_send(packet, length, usb_eth_tx_callback);
++		ret = ep1_send((char *)packet, length, usb_eth_tx_callback);
+ 	
+ 		i = 10000;
+ 		do {
+diff --git a/board/pxa/common/usbeth/mvUsbHsDevMain.c b/board/pxa/common/usbeth/mvUsbHsDevMain.c
+index 457fa09..4ffcecb 100644
+--- a/board/pxa/common/usbeth/mvUsbHsDevMain.c
++++ b/board/pxa/common/usbeth/mvUsbHsDevMain.c
+@@ -18,6 +18,7 @@ disclaimer.
+ 
+ *******************************************************************************/
+ 
++#include "common.h"
+ #include "mvUsbDevApi.h"
+ #include "mvUsbDevPrv.h"
+ 
+@@ -499,24 +500,24 @@ uint_8 _usb_dci_vusb20_add_dTD
+             uint_32 physAddr = USB_virt_to_phys((uint_8*)xd_ptr->WSTARTADDRESS + curr_offset);
+ 
+ #if 1 //xj for test
+-	    uint_32 virtAddr = (uint_8*)xd_ptr->WSTARTADDRESS + curr_offset;
++	    uint_32 virtAddr = (uint_32)((uint_8 *)xd_ptr->WSTARTADDRESS + curr_offset);
+             
+             dTD_ptr->BUFF_PTR0 = USB_32BIT_LE(physAddr);
+ 
+             virtAddr += 4096;
+-	    physAddr = USB_virt_to_phys(virtAddr);
++	    physAddr = (uint_32)USB_virt_to_phys(virtAddr);
+             dTD_ptr->BUFF_PTR1 = USB_32BIT_LE(physAddr);
+ 
+             virtAddr += 4096;
+-	    physAddr = USB_virt_to_phys(virtAddr);
++	    physAddr = (uint_32)USB_virt_to_phys(virtAddr);
+             dTD_ptr->BUFF_PTR2 = USB_32BIT_LE(physAddr);
+ 
+             virtAddr += 4096;
+-	    physAddr = USB_virt_to_phys(virtAddr);
++	    physAddr = (uint_32)USB_virt_to_phys(virtAddr);
+             dTD_ptr->BUFF_PTR3 = USB_32BIT_LE(physAddr);
+ 
+             virtAddr += 4096;
+-	    physAddr = USB_virt_to_phys(virtAddr);
++	    physAddr = (uint_32)USB_virt_to_phys(virtAddr);
+             dTD_ptr->BUFF_PTR4 = USB_32BIT_LE(physAddr);
+ #else
+             dTD_ptr->BUFF_PTR0 = USB_32BIT_LE(physAddr);
+@@ -849,7 +850,6 @@ void _usb_dci_vusb20_process_tr_complete
+                             ARC_DEBUG_CODE(ARC_DEBUG_FLAG_STATS, (usb_dev_ptr->STATS.usb_empty_complete_count++));
+                         }
+ 			if (direction == ARC_USB_SEND) {
+-				extern unsigned long temp_remove_count;
+ 				int count = 10000;
+ 					
+ 				while( (USB_32BIT_LE(dTD_ptr->SIZE_IOC_STS) & VUSBHS_TD_STATUS_ACTIVE) && count--);
+diff --git a/board/pxa/common/usbeth/mvUsbTypes.h b/board/pxa/common/usbeth/mvUsbTypes.h
+index d260b9f..d67392a 100644
+--- a/board/pxa/common/usbeth/mvUsbTypes.h
++++ b/board/pxa/common/usbeth/mvUsbTypes.h
+@@ -167,7 +167,7 @@ extern USB_IMPORT_FUNCS*            global_import_funcs;
+ 
+ 
+ #define USB_virt_to_phys(pVirt)     (global_import_funcs->bspVirtToPhys == NULL) ?      \
+-                                        (uint_32)(pVirt) : global_import_funcs->bspVirtToPhys(NULL, pVirt)
++					(uint_32)(pVirt) : global_import_funcs->bspVirtToPhys(NULL, (void *)pVirt)
+ 
+ #define USB_get_cap_reg_addr(dev)   global_import_funcs->bspGetCapRegAddr(dev)
+ 
+diff --git a/board/pxa/common/usbeth/mv_u2o_api.c b/board/pxa/common/usbeth/mv_u2o_api.c
+index a95f00d..2df751d 100644
+--- a/board/pxa/common/usbeth/mv_u2o_api.c
++++ b/board/pxa/common/usbeth/mv_u2o_api.c
+@@ -23,6 +23,7 @@
+  * BSP related functions
+  *****************************************************************************/
+ 
++#if 0
+ #define U2O_MEM_SIZE 0x20000 // 128KB memory
+ static unsigned char mem_base[U2O_MEM_SIZE];
+ static unsigned long mem_ptr = (unsigned long)&mem_base[0];
+@@ -30,21 +31,29 @@ static unsigned long mem_size = U2O_MEM_SIZE;
+ 
+ static unsigned long dma_base = 0;
+ static unsigned long dma_ptr = 0;
++#endif
+ static unsigned long dma_size = 0x10000;
+ 
+ static struct usb_request setup_req;
+ 
+ #undef U2O_MALLOC  /* cache flush/invalidate function fail, don't use malloc here */
+ 
++#ifdef DEBUG
+ #define PRINTF_BUFFER_LENGTH 1024
+ static char printf_buffer[PRINTF_BUFFER_LENGTH];
++#endif
+ 
++extern void usb_driver_speed(int speed);
++extern void ep2_begin(void);
++extern void mvUsbCh9SetConfig(_usb_device_handle handle,
++			boolean setup, SETUP_STRUCT *setup_ptr);
++extern int mv_usb_ep_enable(struct mv_usb_ep *usb_ep, ep_desc_t *ep_desc);
+ 
++#if 0
+ #define __raw_readl(addr) 	(*(volatile u32 *) (addr))
+ #define readl(addr) 		(*(volatile u32 *) (addr))
+ #define writel(b, addr)		((*(volatile u32 *) (addr)) = (b))
+ 
+-#if 0
+ static void mvOsPrintf(const char *fmt, ...)
+ {
+ 	va_list args;
+@@ -83,23 +92,23 @@ static void *u2o_dma_malloc(void *dev, uint_32 size, uint_32 align,
+ 	USB_printf("%s ptr %p size %x\n", __func__, ptr, (int)size);
+ #else
+ 	ptr = malloc(dma_size);
+-	*paddr = ptr;
++	*paddr = (unsigned long)ptr;
+ #endif
+ 	return ptr;
+ }
+ 
+-static void u2o_dma_free(void * ptr)
++static void u2o_dma_free(void *pDev, uint_32 size, unsigned long phyAddr, void *pVirtAddr)
+ {
+ #if 0
+ 	USB_printf("%s!!! ptr %p\n\n", __func__, ptr);
+ 	dma_ptr = dma_base;
+ 	memset((void*)dma_base, 0, sizeof(dma_base));
+ #else
+-	free(ptr);
++	free(pVirtAddr);
+ #endif
+ }
+ 
+-void *u2o_malloc(unsigned long size)
++void *u2o_malloc(unsigned int size)
+ {
+ #ifdef U2O_MALLOC
+ 	void *ptr = (void *)mem_ptr;
+@@ -116,7 +125,6 @@ void *u2o_malloc(unsigned long size)
+ 	printf("%s ptr %p size %x\n", __func__, ptr, (int)size);
+ 	return ptr;
+ #else
+-	int a;
+ 	return malloc(size);
+ #endif
+ }
+@@ -133,6 +141,7 @@ static void u2o_free(void * ptr)
+ #endif
+ }
+ 
++#if 0
+ static void dma_flush_range(unsigned start, unsigned end)
+ {
+ 	/* still has problem here, may cause data crupt */
+@@ -166,35 +175,38 @@ static void dma_inv_range(unsigned start, unsigned end)
+         "blo     1b \n\t" 
+         "mcr     p15, 0, r0, c7, c10, 4          @ data write barrier \n\t");
+ }
++#endif
+ 
+-static void u2o_cache_flush(void* dev, void* vaddr, int size)
++static unsigned long u2o_cache_flush(void *dev, void *vaddr, int size)
+ {
+-	unsigned start = (unsigned)vaddr, end = ((unsigned)vaddr + size);
+ #ifdef U2O_MALLOC
++	unsigned start = (unsigned)vaddr, end = ((unsigned)vaddr + size);
+ 	USB_printf("%s start %p size %d end %p\n\n", __func__, start, size, end);
+ 	dma_flush_range(start, end);
+ #endif
++	return 0;
+ }
+ 
+-static void u2o_cache_invalidate(void* dev, void* vaddr, int size)
++static unsigned long u2o_cache_invalidate(void *dev, void *vaddr, int size)
+ {
++#ifdef U2O_MALLOC
+ 	unsigned start = (unsigned)vaddr, end = (unsigned)vaddr + size;
+ 	
+-#ifdef U2O_MALLOC
+ 	USB_printf("%s start %p size %d end %p\n\n", __func__, start, size, end);
+ 	dma_inv_range(start, end);
+ #endif
++	return 0;
+ }
+ static unsigned long u2o_virt_to_phys(void* dev, void* vaddr)
+ {
+ 	return ((unsigned long)vaddr);
+ }
+ 
+-static unsigned int *u2o_get_caps_addr(int dev_num)
++static uint_32 u2o_get_caps_addr(int dev_num)
+ {
+ 	struct mv_usb_dev *mv_dev = &the_controller;
+ 	
+-	return (unsigned int*)(mv_dev->regbase + (0x100 >> 2));
++	return (unsigned int)(mv_dev->regbase + (0x100 >> 2));
+ }
+ 
+ static void u2o_reset_complete(int dev_num)
+@@ -290,7 +302,7 @@ void mv_usb_bus_reset_service(void*      handle,
+                                uint_8     error)
+ {
+     struct mv_usb_dev       *mv_dev = &the_controller;
+-    int                     i, dev_no = _usb_device_get_dev_num(handle);
++    int                     i;
+     struct mv_usb_ep        *mv_ep;
+ 
+     if(setup == 0)
+@@ -317,7 +329,7 @@ void mv_usb_bus_reset_service(void*      handle,
+         mv_usb_start_ep0(mv_dev);
+ 	
+         /* setup the ep0 receive buffer */
+-        setup_req.buf = u2o_dma_malloc(mv_dev, sizeof(usb_dev_request_t), 0x20, &i);
++        setup_req.buf = u2o_dma_malloc(mv_dev, sizeof(usb_dev_request_t), 0x20, (unsigned long *)&i);
+         setup_req.length = sizeof(usb_dev_request_t);
+         mv_usb_ep_queue(&mv_dev->ep[0], &setup_req);
+ 
+@@ -335,9 +347,6 @@ void mv_usb_speed_service(void*      handle,
+                            uint_32    length, 
+                            uint_8     error)
+ {
+-    int                     dev_no = _usb_device_get_dev_num(handle);
+-    struct mv_usb_dev       *mv_dev = &the_controller;
+-
+     DBGMSG("Speed = %s\n", (length == ARC_USB_SPEED_HIGH) ? "High" : "Full");
+ 
+     if(length == ARC_USB_SPEED_HIGH) 
+@@ -358,9 +367,6 @@ void mv_usb_suspend_service(void*      handle,
+                             uint_32    length, 
+                             uint_8     error)
+ {
+-    int                     dev_no = _usb_device_get_dev_num(handle);
+-    struct mv_usb_dev       *mv_dev = &the_controller;
+-
+ }
+ 
+ void mv_usb_resume_service(void*      handle, 
+@@ -371,9 +377,6 @@ void mv_usb_resume_service(void*      handle,
+                             uint_32    length, 
+                             uint_8     error)
+ {
+-    int                     dev_no = _usb_device_get_dev_num(handle);
+-    struct mv_usb_dev       *mv_dev = &the_controller;
+-
+     DBGMSG("%s\n", __FUNCTION__);
+ 
+     usbctl_next_state_on_event( kEvResume );
+@@ -388,7 +391,6 @@ void mv_usb_tr_complete_service(void*      handle,
+                                  uint_32    length, 
+                                  uint_8     error)
+ {
+-    int                     dev_no = _usb_device_get_dev_num(handle);
+     struct mv_usb_dev       *mv_dev = &the_controller;
+     struct mv_usb_ep        *mv_ep;
+     struct usb_request      usb_req;
+@@ -420,7 +422,6 @@ void mv_usb_ep0_complete_service(void*      handle,
+                                  uint_32    length, 
+                                  uint_8     error)
+ { /* Body */
+-    int                     dev_no = _usb_device_get_dev_num(handle);
+     struct mv_usb_dev       *mv_dev = &the_controller;
+     struct mv_usb_ep        *mv_ep;
+     struct usb_request      usb_req;
+@@ -488,14 +489,13 @@ void mv_usb_ep0_complete_service(void*      handle,
+ 
+             case REQ_SET_CONFIGURATION:
+ 		if (setup) {
+-			extern void ep2_begin();
+ 			desc_t * pdesc = pxa_usb_get_descriptor_ptr();
+ 		        config_desc_t *cfg;
+ 		        intf_desc_t *intf;
+ 		        ep_desc_t *ep;
+ 		
+ 		        cfg = (config_desc_t*) (pdesc->cdb);
+-		        intf = (config_desc_t *)(cfg + 1);
++			intf = (intf_desc_t *)((config_desc_t *)(cfg + 1));
+ 		        ep = (ep_desc_t *) (intf + 1);
+ 
+ 			USB_printf("\t\tSET_CONFIGURATION\n");
+@@ -576,7 +576,6 @@ void mv_usb_ep0_complete_service(void*      handle,
+ int      mv_usb_ep_queue (struct mv_usb_ep *usb_ep, struct usb_request *_req) 
+ {
+     struct mv_usb_dev* usb_dev =  &the_controller;
+-    unsigned long       flags = 0;
+     uint_8              error;
+ 
+     DBGMSG("%s: num=%d-%s, _req=%p, buf=%p, length=%d is_enabled %d\n", 
+@@ -620,7 +619,6 @@ int  mv_usb_ep_enable(struct mv_usb_ep *usb_ep, ep_desc_t *ep_desc)
+     struct mv_usb_dev* usb_dev = &the_controller;
+     __u16             maxSize;
+     uint_8              epType; 
+-    unsigned long       flags = 0;
+ 
+     if(usb_ep->is_enabled)
+     {
+@@ -657,7 +655,6 @@ USB_IMPORT_FUNCS    usbImportFuncs =
+ #ifdef DEBUG
+ //	.bspPrintf =            mvOsPrintf,
+ #endif
+-	.bspSprintf =           NULL, 
+ 	.bspUncachedMalloc = 	u2o_dma_malloc,
+ 	.bspUncachedFree = 	u2o_dma_free,
+ 	.bspMalloc =            u2o_malloc,
+@@ -667,8 +664,6 @@ USB_IMPORT_FUNCS    usbImportFuncs =
+ 	.bspCacheFlush = 	u2o_cache_flush,
+ 	.bspCacheInv =		u2o_cache_invalidate,
+ 	.bspVirtToPhys =	u2o_virt_to_phys,
+-	.bspLock =              NULL,
+-	.bspUnlock =            NULL,
+ 	.bspGetCapRegAddr =     u2o_get_caps_addr,
+ 	.bspResetComplete =     u2o_reset_complete
+ };
+diff --git a/board/pxa/common/usbeth/mv_u2o_api.h b/board/pxa/common/usbeth/mv_u2o_api.h
+index c69d29e..c247b21 100644
+--- a/board/pxa/common/usbeth/mv_u2o_api.h
++++ b/board/pxa/common/usbeth/mv_u2o_api.h
+@@ -9,7 +9,7 @@
+ //#define mvOsPrintf(fmt,args...)	 printf( fmt, ## args)
+ #define mvOsPrintf	printf
+ #else
+-#define mvOsPrintf
++#define mvOsPrintf(frmt, x...)
+ #endif
+ 
+ 
+diff --git a/board/pxa/common/usbeth/mv_u2o_ctl.c b/board/pxa/common/usbeth/mv_u2o_ctl.c
+index ad0f5d6..7d13f0d 100644
+--- a/board/pxa/common/usbeth/mv_u2o_ctl.c
++++ b/board/pxa/common/usbeth/mv_u2o_ctl.c
+@@ -54,12 +54,13 @@ static unsigned int usb_debug = DEBUG;
+ #define usb_debug 0     /* gcc will remove all the debug code for us */
+ #endif
+ 
+-static int u2o_info();
++static int u2o_info(void);
+ 
+ struct mv_usb_dev       the_controller;
+ 
+ extern USB_IMPORT_FUNCS    usbImportFuncs;
+ void usb_driver_reset(void);
++extern void *u2o_malloc(unsigned long size);
+ 
+ //////////////////////////////////////////////////////////////////////////////
+ // Prototypes
+@@ -170,8 +171,7 @@ static int sm_state = kStateZombie;
+  * so using '|=' isn't safe as it may ack an interrupt.
+  */
+ 
+-void
+-u2o_int_hndlr(int irq, void *dev_id)
++void u2o_int_hndlr(void)
+ {
+ 	struct mv_usb_dev *mv_dev = &the_controller;
+ 
+@@ -302,8 +302,6 @@ static void u2o_phy_init(unsigned *base)
+ #else
+ static void u2o_phy_init(unsigned *base)
+ {
+-	int count;
+-
+ 	if (usb_debug)
+ 		printf("init phy\n\n");
+ 
+@@ -647,11 +645,13 @@ u2o_disable(void)
+ }
+ 
+ /*-------------------------------------------------------------------------*/
++#if 0
+ static void u2o_soft_dis(int enable)
+ {
+ 	if (usb_debug)
+ 		printf("%s enable %d\n\n", __func__, enable);
+ }
++#endif
+ 
+ /* CHIP ID: 
+  * 	Z0: 0x00a0c910
+@@ -697,7 +697,7 @@ int u2o_enable(void)
+ 	mv_dev->regbase = (unsigned *)U2O_REG_BASE; 
+ 	mv_dev->phybase = (unsigned *)U2O_PHY_BASE;
+ 	if (usb_debug)
+-		printf("%s PMUA_USB_CLK_RES_CTRL 0x%x regbase %x phybase %x\n", __func__, 
++		printf("%s PMUA_USB_CLK_RES_CTRL 0x%x regbase %p phybase %p\n", __func__,
+ 		  __raw_readl(PMUA_USB_CLK_RES_CTRL), mv_dev->regbase, mv_dev->phybase);
+ 	/* init the UTMI transceiver */
+ 	u2o_phy_init(mv_dev->phybase);
+@@ -786,9 +786,9 @@ void u2o_start(void)
+ {
+ 	struct mv_usb_dev *mv_dev = &the_controller;
+ 	
+-	ep0_send_buf = u2o_malloc(0x1000);
+-	ep1_buf = u2o_malloc(0x1000);
+-	ep2_buf = u2o_malloc(0x1000);
++	ep0_send_buf = (int *)u2o_malloc(0x1000);
++	ep1_buf = (int *)u2o_malloc(0x1000);
++	ep2_buf = (int *)u2o_malloc(0x1000);
+ 
+ 	if (usb_debug)
+ 		printf("ep1_buf %p ep2_buf %p ep0_send_buf %p\n", 
+@@ -804,7 +804,7 @@ static void u2o_dump_info(void)
+ 	mv_usb_dump();
+ }
+ 
+-static int u2o_info(int argc, char *argv[])
++static int u2o_info(void)
+ {
+ 	struct mv_usb_dev *mv_dev = &the_controller;
+ 
+diff --git a/board/pxa/common/usbeth/mv_u2o_ctl.h b/board/pxa/common/usbeth/mv_u2o_ctl.h
+index 12e5b9b..e8386f8 100644
+--- a/board/pxa/common/usbeth/mv_u2o_ctl.h
++++ b/board/pxa/common/usbeth/mv_u2o_ctl.h
+@@ -246,7 +246,7 @@
+ #ifdef DEBUG
+ #define DBGMSG printf
+ #else
+-#define DBGMSG
++#define DBGMSG(ffmt, x...)
+ #endif
+ 
+ #define DELAY(ns) 	udelay(ns)
+diff --git a/board/pxa/common/usbeth/mv_u2o_ep0.c b/board/pxa/common/usbeth/mv_u2o_ep0.c
+index 50bdd2b..bd5eefe 100644
+--- a/board/pxa/common/usbeth/mv_u2o_ep0.c
++++ b/board/pxa/common/usbeth/mv_u2o_ep0.c
+@@ -58,6 +58,8 @@ static void write_fifo( void );
+ static void get_descriptor( usb_dev_request_t * pReq );
+ static void queue_and_start_write( void * p, int req, int act );
+ 
++extern int mv_usb_ep_queue (struct mv_usb_ep *usb_ep, struct usb_request *_req);
++extern void usb_driver_speed(int speed);
+ /***************************************************************************
+   Inline Helpers
+  ***************************************************************************/
+@@ -167,7 +169,7 @@ static int sh_setup_begin(struct usb_request *usb_req)
+ 		printf("\n");
+ 	}
+ 	/* read the setup request */
+-	n = memcpy((void*)&req, usb_req->buf, sizeof(usb_dev_request_t));
++	n = (unsigned)memcpy((void *)&req, usb_req->buf, sizeof(usb_dev_request_t));
+ 
+ 	/* Is it a standard request? (not vendor or class request) */
+ 	request_type = type_code_from_request( req.bmRequestType );
+@@ -274,7 +276,7 @@ static void write_fifo( void )
+ 	if (usb_debug) printf("%s  data=0x%p len %d\n", 
+ 		__FUNCTION__, data, usb_req.length);
+ 	if (usb_debug) {
+-		char *ptr = data;
++		char *ptr = (char *)data;
+ 		int i;
+ 		for (i=0;i<usb_req.length;i++) {
+ 			printf(" %x", *ptr++);
+@@ -305,8 +307,6 @@ static void write_fifo( void )
+ static void get_descriptor( usb_dev_request_t * pReq )
+ {
+ 	string_desc_t * pString;
+-	ep_desc_t * pEndpoint = 0;
+-	config_desc_t *pcfg = 0;
+ 
+ 	desc_t * pDesc = pxa_usb_get_descriptor_ptr();
+ 	int type = pReq->wValue >> 8;
+diff --git a/board/pxa/common/usbeth/mv_u2o_ep1.c b/board/pxa/common/usbeth/mv_u2o_ep1.c
+index ca7113f..7d190af 100644
+--- a/board/pxa/common/usbeth/mv_u2o_ep1.c
++++ b/board/pxa/common/usbeth/mv_u2o_ep1.c
+@@ -48,10 +48,8 @@ static int   ep1_len;
+ static int   ep1_remain;
+ static int   ep1_retries = 0;
+ static usb_callback_t ep1_callback;
+-static int tx_pktsize;
+ 
+ static void ep1_done(int flag);
+-static int u2d_info();
+ 
+ void dump_buffer(char *buf, unsigned length)
+ {
+@@ -85,7 +83,6 @@ ep1_stall( void )
+ static void ep1_send_packet(void)
+ {
+ 	struct mv_usb_dev *mv_dev = &the_controller;
+-	int i, count=100, complete = 0;
+ 	struct usb_request ep1_req;
+ 	
+ 	/* init the params for transfer */
+@@ -102,7 +99,7 @@ static void ep1_send_packet(void)
+ 	}
+ 
+ 	if (usb_debug) {
+-		printf("%s: exit, buf %x len %d\n", 
++		printf("%s: exit, buf %p len %d\n",
+ 			__FUNCTION__, ep1_buf, ep1_len);
+ 	}
+ }
+@@ -147,7 +144,7 @@ void ep1_int_hndlr(struct usb_request *usb_req)
+ 	ep1_remain = ep1_len - usb_req->length;
+ 
+ 	if (usb_debug)
+-		printf("%s send finisned buf %x len %d remain %d\n", 
++		printf("%s send finisned buf %p len %d remain %d\n",
+ 			__func__, usb_req->buf, usb_req->length, ep1_remain);
+ 
+ 	if (ep1_remain != 0) {
+@@ -162,9 +159,6 @@ void ep1_int_hndlr(struct usb_request *usb_req)
+ int
+ ep1_send(char *buf, int len, usb_callback_t callback)
+ {
+-	int i=0;
+-	int flags;
+-
+ 	if (usb_debug) printf( "\npxa_usb_send: "
+ 		"data len=%d state=%d blen=%d\n", 
+ 		len, usbd_info.state, ep1_len);
+diff --git a/board/pxa/common/usbeth/mv_u2o_ep2.c b/board/pxa/common/usbeth/mv_u2o_ep2.c
+index 5409877..e3fc138 100644
+--- a/board/pxa/common/usbeth/mv_u2o_ep2.c
++++ b/board/pxa/common/usbeth/mv_u2o_ep2.c
+@@ -49,9 +49,10 @@ extern char *ep2_buf;
+ #endif
+ static int   ep2_len;
+ static int   ep2_remain;
+-static struct usb_request ep2_req;
+ static usb_callback_t ep2_callback;
+ 
++extern int mv_usb_ep_queue (struct mv_usb_ep *usb_ep, struct usb_request *_req);
++
+ static void ep2_start(void)
+ {
+ 	struct mv_usb_dev *mv_usb = &the_controller;
+@@ -110,13 +111,11 @@ extern int usb_connected;
+ 
+ void ep2_int_hndlr(struct usb_request *usb_req)
+ {
+-	unsigned int desc_num, length, i, count;
+-
+ 	ep2_remain = ep2_len - usb_req->length;
+ 
+ 	ep2_done(0);
+ 	if( usb_debug) 
+-		printf("ep2_int_hndlr end: ep2_remain %d buf %d, len %d\n",
++		printf("ep2_int_hndlr end: ep2_remain %d buf %p, len %d\n",
+ 			ep2_remain, usb_req->buf, usb_req->length);
+ 
+ 	return;
+@@ -124,8 +123,6 @@ void ep2_int_hndlr(struct usb_request *usb_req)
+ 
+ int ep2_recv(char *buf, int len, usb_callback_t callback)
+ {
+-	int flags;
+-
+ 	if (ep2_len){
+ 		printf("%s, busy, ep2_len %d\n", __FUNCTION__, ep2_len);
+ 		return -EBUSY;
+-- 
+1.6.0.4
+

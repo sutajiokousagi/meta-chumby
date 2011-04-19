@@ -1,0 +1,52 @@
+From 86bde17184457d5046ac944225a66c7e3035402f Mon Sep 17 00:00:00 2001
+From: Lei Wen <leiwen@marvell.com>
+Date: Mon, 8 Jun 2009 16:24:21 +0800
+Subject: [PATCH] nand: sync with kernel
+
+Signed-off-by: Lei Wen <leiwen@marvell.com>
+---
+ drivers/mtd/nand/pxa3xx_nand.c            |    5 +++--
+ include/asm-arm/arch-pxa168/pxa3xx_nand.h |   10 +++++-----
+ 2 files changed, 8 insertions(+), 7 deletions(-)
+
+diff --git a/drivers/mtd/nand/pxa3xx_nand.c b/drivers/mtd/nand/pxa3xx_nand.c
+index 7f39a6f..758c7ec 100644
+--- a/drivers/mtd/nand/pxa3xx_nand.c
++++ b/drivers/mtd/nand/pxa3xx_nand.c
+@@ -1294,8 +1294,9 @@ static int pxa3xx_nand_probe(struct platform_device *pdev)
+ 			bbm->show(mtd);
+ 			printk("\n");
+ 
+-			add_mtd_partitions(mtd, pdata->parts,    \
+-					pdata->nr_parts);
++			mtd->size -= bbm->max_reloc_entry << bbm->erase_shift;
++			add_mtd_partitions(mtd, pdata->parts[i],    \
++					pdata->nr_parts[i]);
+ 		}
+ 	}
+ 
+diff --git a/include/asm-arm/arch-pxa168/pxa3xx_nand.h b/include/asm-arm/arch-pxa168/pxa3xx_nand.h
+index bdbc90b..06a6f58 100644
+--- a/include/asm-arm/arch-pxa168/pxa3xx_nand.h
++++ b/include/asm-arm/arch-pxa168/pxa3xx_nand.h
+@@ -126,12 +126,12 @@ struct pxa3xx_nand_platform_data {
+ 	 * Controller and the Data Flash Controller,  the arbiter
+ 	 * controls the ownership of the bus
+ 	 */
+-	int					enable_arbiter;
+-	int					use_dma;	/* use DMA ? */
+-	int					RD_CNT_DEL;
++	int			enable_arbiter;
++	int			use_dma;	/* use DMA ? */
++	int			RD_CNT_DEL;
+ 
+-	const struct mtd_partition		*parts;
+-	unsigned int				nr_parts;
++	struct mtd_partition    *parts[NUM_CHIP_SELECT];
++	unsigned int            nr_parts[NUM_CHIP_SELECT];
+ };
+ 
+ extern void pxa3xx_set_nand_info(struct pxa3xx_nand_platform_data *info);
+-- 
+1.6.0.4
+

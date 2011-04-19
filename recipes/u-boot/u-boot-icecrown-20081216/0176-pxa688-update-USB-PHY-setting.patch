@@ -1,0 +1,325 @@
+From 8b95d317927e3b6016169d75ac65d3f9b863a8bf Mon Sep 17 00:00:00 2001
+From: Mingliang Hu <mingliang.hu@marvell.com>
+Date: Tue, 9 Feb 2010 19:50:17 +0800
+Subject: [PATCH] pxa688: update USB PHY setting
+
+Signed-off-by: Mingliang Hu <mingliang.hu@marvell.com>
+---
+ board/pxa/common/usbeth/ether-mvu2o.c    |    6 +
+ board/pxa/common/usbeth/mvUsbHsDevMain.c |    2 +
+ board/pxa/common/usbeth/mv_u2o_ctl.c     |  147 ++++++++++++++++++++----------
+ board/pxa/common/usbeth/mv_u2o_ctl.h     |   55 ++++++++++-
+ 4 files changed, 159 insertions(+), 51 deletions(-)
+
+diff --git a/board/pxa/common/usbeth/ether-mvu2o.c b/board/pxa/common/usbeth/ether-mvu2o.c
+index 5333d29..160945c 100644
+--- a/board/pxa/common/usbeth/ether-mvu2o.c
++++ b/board/pxa/common/usbeth/ether-mvu2o.c
+@@ -18,12 +18,18 @@
+ #ifdef   CONFIG_TTC_DKB
+ #include <configs/ttc_dkb.h>
+ #endif
++#ifdef   CONFIG_GENERIC_DKB
++#include <configs/generic_dkb.h>
++#endif
+ #ifdef	 CONFIG_ZYLONITE2
+ #include <configs/zylonite2.h>
+ #endif
+ #ifdef  CONFIG_ASPENITE
+ #include <configs/aspenite.h>
+ #endif
++#ifdef  CONFIG_WAYLAND
++#include <configs/wayland.h>
++#endif
+ 
+ #include <linux/types.h>
+ #include <asm/errno.h>
+diff --git a/board/pxa/common/usbeth/mvUsbHsDevMain.c b/board/pxa/common/usbeth/mvUsbHsDevMain.c
+index 005aaf0..c18df2d 100644
+--- a/board/pxa/common/usbeth/mvUsbHsDevMain.c
++++ b/board/pxa/common/usbeth/mvUsbHsDevMain.c
+@@ -280,8 +280,10 @@ void _usb_dci_vusb20_chip_initialize
+        port_control |= EHCI_PORTSCX_FORCE_FULL_SPEED_CONNECT;
+ #endif
+    }
++#ifdef CONFIG_CPU_PXA910_168
+    if(cpu_is_pxa920_z2())
+ 	   port_control |= EHCI_PORTSCX_FORCE_FULL_SPEED_CONNECT;
++#endif
+    dev_ptr->REGISTERS.OPERATIONAL_DEVICE_REGISTERS.PORTSCX[0] = USB_32BIT_LE(port_control);
+    port_control = USB_32BIT_LE(dev_ptr->REGISTERS.OPERATIONAL_DEVICE_REGISTERS.PORTSCX[0]);
+  //  USB_printf("PORTSCX[0]===========%x\n", port_control);
+diff --git a/board/pxa/common/usbeth/mv_u2o_ctl.c b/board/pxa/common/usbeth/mv_u2o_ctl.c
+index 7d13f0d..8bb9f55 100644
+--- a/board/pxa/common/usbeth/mv_u2o_ctl.c
++++ b/board/pxa/common/usbeth/mv_u2o_ctl.c
+@@ -222,21 +222,42 @@ void u2o_write(unsigned *base, unsigned offset, unsigned value)
+ 
+ static void u2o_phy_dump(unsigned *base)
+ {
+-#if 0
+-	printf(" U2PPLL   0x%x\n", u2o_get(base,  U2PCTL )); 
+-	printf(" U2PTX    0x%x\n", u2o_get(base,  U2PTX  ));
+-	printf(" U2PRX    0x%x\n", u2o_get(base,  U2PRX  ));
+-	printf(" U2IVREF  0x%x\n", u2o_get(base,  U2IVREF));  
+-	printf(" U2PT0    0x%x\n", u2o_get(base,  U2PT0  ));
+-	printf(" U2PT1    0x%x\n", u2o_get(base,  U2PT1  ));
+-	printf(" U2PT2    0x%x\n", u2o_get(base,  U2PT2  ));  
+-	printf(" U2PT3    0x%x\n", u2o_get(base,  U2PT3  ));	
+-	printf(" U2PT4    0x%x\n", u2o_get(base,  U2PT4  ));  
+-	printf(" U2PT5    0x%x\n", u2o_get(base,  U2PT5  ));	
+-	printf(" U2PID    0x%x\n", u2o_get(base,  U2PID  ));	
+-	printf(" U2PRS    0x%x\n", u2o_get(base,  U2PRS  ));	
+-	printf(" U2PMN    0x%x\n", u2o_get(base,  U2PMN  ));	
+-	printf(" U2OCG    0x%x\n", u2o_get(base,  U2OCG  ));	
++#ifndef CONFIG_CPU_MONAHANS
++	if (cpu_is_pxa910_168()) {
++		printf(" UTMI_REVISION   0x%x\n", u2o_get(base,  UTMI_REVISION  ));
++		printf(" UTMI_CTRL       0x%x\n", u2o_get(base,  UTMI_CTRL      ));
++		printf(" UTMI_PLL        0x%x\n", u2o_get(base,  UTMI_PLL       ));
++		printf(" UTMI_TX         0x%x\n", u2o_get(base,  UTMI_TX        ));
++		printf(" UTMI_RX         0x%x\n", u2o_get(base,  UTMI_RX        ));
++		printf(" UTMI_IVREF      0x%x\n", u2o_get(base,  UTMI_IVREF     ));
++		printf(" UTMI_T0         0x%x\n", u2o_get(base,  UTMI_T0        ));
++		printf(" UTMI_T1         0x%x\n", u2o_get(base,  UTMI_T1        ));
++		printf(" UTMI_T2         0x%x\n", u2o_get(base,  UTMI_T2        ));
++		printf(" UTMI_T3         0x%x\n", u2o_get(base,  UTMI_T3        ));
++		printf(" UTMI_T4         0x%x\n", u2o_get(base,  UTMI_T4        ));
++		printf(" UTMI_T5         0x%x\n", u2o_get(base,  UTMI_T5        ));
++		printf(" UTMI_RESERVE    0x%x\n", u2o_get(base,  UTMI_RESERVE   ));
++		printf(" UTMI_USB_INT    0x%x\n", u2o_get(base,  UTMI_USB_INT   ));
++		printf(" UTMI_DBG_CTL    0x%x\n", u2o_get(base,  UTMI_DBG_CTL   ));
++		printf(" UTMI_OTG_ADDON  0x%x\n", u2o_get(base,  UTMI_OTG_ADDON ));
++	} else {
++		printf(" U2PRSRVD  0x%x\n", u2o_get(base,  U2PRSRVD  ));
++		printf(" U2PCTRL   0x%x\n", u2o_get(base,  U2PCTRL   ));
++		printf(" U2PPLL    0x%x\n", u2o_get(base,  U2PPLL    ));
++		printf(" U2PTX     0x%x\n", u2o_get(base,  U2PTX     ));
++		printf(" U2PRX     0x%x\n", u2o_get(base,  U2PRX     ));
++		printf(" U2PIVREF  0x%x\n", u2o_get(base,  U2PIVREF  ));
++		printf(" U2PT0     0x%x\n", u2o_get(base,  U2PT0     ));
++		printf(" U2PT1     0x%x\n", u2o_get(base,  U2PT1     ));
++		printf(" U2PT2     0x%x\n", u2o_get(base,  U2PT2     ));
++		printf(" U2PID     0x%x\n", u2o_get(base,  U2PID     ));
++		printf(" U2PINT    0x%x\n", u2o_get(base,  U2PINT    ));
++		printf(" U2PDBGCTL 0x%x\n", u2o_get(base,  U2PDBGCTL ));
++		printf(" U2PCTL1   0x%x\n", u2o_get(base,  U2PCTL1   ));
++		printf(" U2PT3     0x%x\n", u2o_get(base,  U2PT3     ));
++		printf(" U2PT4     0x%x\n", u2o_get(base,  U2PT4     ));
++		printf(" U2PT5     0x%x\n", u2o_get(base,  U2PT5     ));
++	}
+ #endif
+ }
+ 
+@@ -302,54 +323,86 @@ static void u2o_phy_init(unsigned *base)
+ #else
+ static void u2o_phy_init(unsigned *base)
+ {
++	int count;
++
+ 	if (usb_debug)
+ 		printf("init phy\n\n");
+ 
+-#if 0
+-        /* Initialize the USB PHY */
+-        u2o_set(base, U2PCTRL, 0x3); // enable PU_PLL & PU
+-        u2o_clear(base, U2PT0, 0x8000); // disable FIFO_SQ_RST
+-        u2o_write(base, U2PPLL, 0xabc26eeb); // setup parameters
+-        u2o_set(base, U2PTX, 0x80000);
+-        u2o_write(base, U2PRX, 0x631c82a3);
+-        u2o_write(base, U2PIVREF, 0x0000043a);
+-        printf("%s: ctrl %x t0 %x pll %x tx %x rx %x ivref %x\n", __func__,
+-                u2o_get(base, U2PCTRL), u2o_get(base, U2PT0), u2o_get(base, U2PPLL),
+-                u2o_get(base, U2PTX), u2o_get(base, U2PRX), u2o_get(base, U2PIVREF));
+-#else
+-	u2o_set(base, U2PCTRL, 1<<UTMI_CTRL_INPKT_DELAY_SOF_SHIFT);
+-	u2o_set(base, U2PCTRL, 1<<UTMI_CTRL_PLL_PWR_UP_SHIFT);
+-	udelay(1000);
+-	u2o_set(base, U2PCTRL, 1<<UTMI_CTRL_PWR_UP_SHIFT);
+ 
+-	/* aspen specific*/
++	/* Initialize the USB PHY power */
++	if (cpu_is_pxa910_910() || cpu_is_pxa688()) {
++		u2o_set(base, UTMI_CTRL, (1<<UTMI_CTRL_INPKT_DELAY_SOF_SHIFT)
++				| (1<<UTMI_CTRL_PU_REF_SHIFT));
++	}
++
++	u2o_set(base, UTMI_CTRL, 1<<UTMI_CTRL_PLL_PWR_UP_SHIFT);
++	u2o_set(base, UTMI_CTRL, 1<<UTMI_CTRL_PWR_UP_SHIFT);
++
++	/* UTMI_PLL settings */
++	u2o_clear(base, UTMI_PLL, UTMI_PLL_PLLVDD18_MASK
++			| UTMI_PLL_PLLVDD12_MASK | UTMI_PLL_PLLCALI12_MASK
++			| UTMI_PLL_FBDIV_MASK | UTMI_PLL_REFDIV_MASK
++			| UTMI_PLL_ICP_MASK | UTMI_PLL_KVCO_MASK);
++
++	u2o_set(base, UTMI_PLL, 0xee<<UTMI_PLL_FBDIV_SHIFT
++			| 0xb<<UTMI_PLL_REFDIV_SHIFT | 3<<UTMI_PLL_PLLVDD18_SHIFT
++			| 3<<UTMI_PLL_PLLVDD12_SHIFT | 3<<UTMI_PLL_PLLCALI12_SHIFT
++			| 2<<UTMI_PLL_ICP_SHIFT | 3<<UTMI_PLL_KVCO_SHIFT);
++
++	/* UTMI_TX */
++	u2o_clear(base, UTMI_TX, UTMI_TX_TXVDD12_MASK
++			| UTMI_TX_CK60_PHSEL_MASK | UTMI_TX_IMPCAL_VTH_MASK);
++	u2o_set(base, UTMI_TX, 3<<UTMI_TX_TXVDD12_SHIFT
++			| 4<<UTMI_TX_CK60_PHSEL_SHIFT | 5<<UTMI_TX_IMPCAL_VTH_SHIFT);
++
++	/* UTMI_RX */
++	u2o_clear(base, UTMI_RX, UTMI_RX_SQ_THRESH_MASK
++			| UTMI_REG_SQ_LENGTH_MASK);
+ 	if (cpu_is_pxa910_168())
+-		u2o_write(base, 0x3C, 1);  /* Turn on UTMI PHY OTG extension */
++		u2o_set(base, UTMI_RX, 7<<UTMI_RX_SQ_THRESH_SHIFT
++				| 2<<UTMI_REG_SQ_LENGTH_SHIFT);
++	else
++		u2o_set(base, UTMI_RX, 0xa<<UTMI_RX_SQ_THRESH_SHIFT
++				| 2<<UTMI_REG_SQ_LENGTH_SHIFT);
+ 
+-	u2o_clear(base, U2PPLL, UTMI_PLL_FBDIV_MASK | UTMI_PLL_REFDIV_MASK);
+-	u2o_set(base, U2PPLL, 0xee<<UTMI_PLL_FBDIV_SHIFT | 0xb<<UTMI_PLL_REFDIV_SHIFT);
+-	u2o_set(base, U2PTX, 0x80000);
++	/* UTMI_IVREF */
++	if (cpu_is_pxa910_168())
++		/* fixing Microsoft Altair board interface with NEC hub issue -
++		 * Set UTMI_IVREF from 0x4a3 to 0x4bf */
++		u2o_write(base, UTMI_IVREF, 0x4bf);
+ 
+ 	/* calibrate */
+-	while((u2o_get(base, U2PPLL) & PLL_READY) == 0);
++	count = 10000;
++	while(((u2o_get(base, UTMI_PLL) & PLL_READY)==0) && count--);
++	if (count <= 0) printf("%s %d: calibrate timeout, UTMI_PLL %x\n",
++		__func__, __LINE__, u2o_get(base, UTMI_PLL));
+ 
+-	/* toggle VCOCAL_START bit of U2PPLL */
++	/* toggle VCOCAL_START bit of UTMI_PLL */
+ 	udelay(200);
+-	u2o_set(base, U2PPLL, VCOCAL_START);
++	u2o_set(base, UTMI_PLL, VCOCAL_START);
+ 	udelay(40);
+-	u2o_clear(base, U2PPLL, VCOCAL_START);
++	u2o_clear(base, UTMI_PLL, VCOCAL_START);
+ 
+-	/* toggle REG_RCAL_START bit of U2PTX */
++	/* toggle REG_RCAL_START bit of UTMI_TX */
++	udelay(200);
++	u2o_set(base, UTMI_TX, REG_RCAL_START);
++	udelay(40);
++	u2o_clear(base, UTMI_TX, REG_RCAL_START);
+ 	udelay(200);
+-	u2o_set(base, U2PTX, REG_RCAL_START);
+-	udelay(400);
+-	u2o_clear(base, U2PTX, REG_RCAL_START);
+ 
+ 	/* make sure phy is ready */
+-	while((u2o_get(base, U2PPLL) & PLL_READY) == 0);
+-#endif
++	count = 1000;
++	while(((u2o_get(base, UTMI_PLL) & PLL_READY)==0) && count--);
++	if (count <= 0) printf("%s %d: calibrate timeout, UTMI_PLL %x\n",
++		__func__, __LINE__, u2o_get(base, UTMI_PLL));
++
++	if (cpu_is_pxa910_168()) {
++		u2o_set(base, UTMI_RESERVE, 1<<5);
++		u2o_write(base, UTMI_OTG_ADDON, 1);  /* Turn on UTMI PHY OTG extension */
++	}
+ 
+-	if (usb_debug) u2o_phy_dump(base);
++	if (usb_debug)
++		u2o_phy_dump(base);
+ }
+ #endif
+ 
+diff --git a/board/pxa/common/usbeth/mv_u2o_ctl.h b/board/pxa/common/usbeth/mv_u2o_ctl.h
+index e8386f8..88a11c2 100644
+--- a/board/pxa/common/usbeth/mv_u2o_ctl.h
++++ b/board/pxa/common/usbeth/mv_u2o_ctl.h
+@@ -124,6 +124,25 @@
+ #define U2PMN		(0x030)       /* U2O PHY Monitor Register */
+ #define U2OCG		(0x108)       /* U2O Clock Gate Register */
+ #else
++/* ASPEN */
++#define UTMI_REVISION           0x0
++#define UTMI_CTRL               0x4
++#define UTMI_PLL                0x8
++#define UTMI_TX                 0xc
++#define UTMI_RX                 0x10
++#define UTMI_IVREF              0x14
++#define UTMI_T0                 0x18
++#define UTMI_T1                 0x1c
++#define UTMI_T2                 0x20
++#define UTMI_T3                 0x24
++#define UTMI_T4                 0x28
++#define UTMI_T5                 0x2c
++#define UTMI_RESERVE            0x30
++#define UTMI_USB_INT            0x34
++#define UTMI_DBG_CTL            0x38
++#define UTMI_OTG_ADDON          0x3c
++
++/* TTC/TD */
+ #define U2PRSRVD        0x0
+ #define U2PCTRL         0x4
+ #define U2PPLL          0x8
+@@ -141,27 +160,55 @@
+ #define U2PT4           0x38
+ #define U2PT5           0x3c
+ 
+-// For UTMICTRL Register
++/* For UTMICTRL Register */
++#define UTMI_CTRL_USB_CLK_EN                    (1<<31)
++/* pxa168 */
++#define UTMI_CTRL_SUSPEND_SET1                  (1<<30)
++#define UTMI_CTRL_SUSPEND_SET2                  (1<<29)
++#define UTMI_CTRL_RXBUF_PDWN                    (1<<24)
++#define UTMI_CTRL_TXBUF_PDWN                    (1<<11)
++
+ #define UTMI_CTRL_INPKT_DELAY_SHIFT             30
+ #define UTMI_CTRL_INPKT_DELAY_SOF_SHIFT 	28
++#define UTMI_CTRL_PU_REF_SHIFT			20
+ #define UTMI_CTRL_ARC_PULLDN_SHIFT              12
+ #define UTMI_CTRL_PLL_PWR_UP_SHIFT              1
+ #define UTMI_CTRL_PWR_UP_SHIFT                  0
+-// For UTMI_PLL Register
++/* For UTMI_PLL Register */
+ #define UTMI_PLL_CLK_BLK_EN_SHIFT               24
+ #define UTMI_PLL_FBDIV_SHIFT                    4
+ #define UTMI_PLL_REFDIV_SHIFT                   0
+ #define UTMI_PLL_FBDIV_MASK                     0x00000FF0
+ #define UTMI_PLL_REFDIV_MASK                    0x0000000F
+-// For UTMI_TX Register
++#define UTMI_PLL_ICP_MASK                       0x00007000
++#define UTMI_PLL_KVCO_MASK                      0x00031000
++#define UTMI_PLL_PLLCALI12_SHIFT		29
++#define UTMI_PLL_PLLCALI12_MASK			(0x3<<29)
++#define UTMI_PLL_PLLVDD18_SHIFT			27
++#define UTMI_PLL_PLLVDD18_MASK			(0x3<<27)
++#define UTMI_PLL_PLLVDD12_SHIFT			25
++#define UTMI_PLL_PLLVDD12_MASK			(0x3<<25)
++#define UTMI_PLL_KVCO_SHIFT			15
++#define UTMI_PLL_ICP_SHIFT			12
++/* For UTMI_TX Register */
+ #define UTMI_TX_LOW_VDD_EN_SHIFT                11
++#define UTMI_TX_IMPCAL_VTH_SHIFT                14
++#define UTMI_TX_IMPCAL_VTH_MASK                 (0x7<<14)
++#define UTMI_TX_CK60_PHSEL_SHIFT                17
++#define UTMI_TX_CK60_PHSEL_MASK                 (0xf<<17)
++#define UTMI_TX_TXVDD12_SHIFT                   22
++#define UTMI_TX_TXVDD12_MASK                    (0x3<<22)
++/* For UTMI_RX Register */
++#define UTMI_RX_SQ_THRESH_SHIFT                 4
++#define UTMI_RX_SQ_THRESH_MASK                  (0xf<<4)
++#define UTMI_REG_SQ_LENGTH_SHIFT                15
++#define UTMI_REG_SQ_LENGTH_MASK                 (0x3<<15)
+ 
+ #define REG_RCAL_START                          0x00001000
+ #define VCOCAL_START                            0x00200000
+ #define KVCO_EXT                                0x00400000
+ #define PLL_READY                               0x00800000
+ #define CLK_BLK_EN                              0x01000000
+-
+ #endif
+ 
+ #define U2P480		__REG(0x42404078)         /* U2O PHY 480Mhz Control */
+-- 
+1.6.0.4
+

@@ -1,0 +1,828 @@
+From e661a6651881bfc3849a4c49f5d21ef1b8cfe357 Mon Sep 17 00:00:00 2001
+From: Wen Lei <leiwen@marvell.com>
+Date: Fri, 27 Feb 2009 15:07:21 +0800
+Subject: [PATCH] pxa168: add avengers board support
+
+Signed-off-by: Wen Lei <leiwen@marvell.com>
+---
+ Makefile                            |    4 +-
+ board/pxa/avengers/Makefile         |   49 ++++++
+ board/pxa/avengers/aspen_init.S     |  288 +++++++++++++++++++++++++++++++++++
+ board/pxa/avengers/avenger_pxa168.c |  164 ++++++++++++++++++++
+ board/pxa/avengers/config.mk        |    9 +
+ board/pxa/avengers/u-boot.lds       |   50 ++++++
+ include/configs/avengers.h          |  187 +++++++++++++++++++++++
+ 7 files changed, 750 insertions(+), 1 deletions(-)
+ create mode 100644 board/pxa/avengers/Makefile
+ create mode 100644 board/pxa/avengers/aspen_init.S
+ create mode 100644 board/pxa/avengers/avenger_pxa168.c
+ create mode 100644 board/pxa/avengers/config.mk
+ create mode 100644 board/pxa/avengers/u-boot.lds
+ create mode 100644 include/configs/avengers.h
+
+diff --git a/Makefile b/Makefile
+index 4781e99..e18321c 100644
+--- a/Makefile
++++ b/Makefile
+@@ -2561,12 +2561,14 @@ shannon_config	:	unconfig
+ tavorevb_config :       unconfig
+ 	@$(MKCONFIG) $(@:_config=) arm 88SV331xV5 tavorEVB  pxa pxa168
+ 
+-aspenite_config:       unconfig
++aspenite_config:	unconfig
+ 	@$(MKCONFIG) $(@:_config=) arm 88SV331xV5 aspenite  pxa pxa168
+ 
+ zylonite2_config:       unconfig
+ 	@$(MKCONFIG) $(@:_config=) arm 88SV331xV5 aspenite  pxa pxa168
+ 
++avengers_config:	unconfig
++	@$(MKCONFIG) $(@:_config=) arm 88SV331xV5 avengers  pxa pxa168
+ 
+ #########################################################################
+ ## ARM92xT Systems
+diff --git a/board/pxa/avengers/Makefile b/board/pxa/avengers/Makefile
+new file mode 100644
+index 0000000..e9ce385
+--- /dev/null
++++ b/board/pxa/avengers/Makefile
+@@ -0,0 +1,49 @@
++#
++# (C) Copyright 2008
++# Marvell Inc.
++# Lei Wen, <leiwen@marvell.com>
++#
++# See file CREDITS for list of people who contributed to this
++# project.
++#
++# This program is free software; you can redistribute it and/or
++# modify it under the terms of the GNU General Public License as
++# published by the Free Software Foundation; either version 2 of
++# the License, or (at your option) any later version.
++#
++# This program is distributed in the hope that it will be useful,
++# but WITHOUT ANY WARRANTY; without even the implied warranty of
++# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++# GNU General Public License for more details.
++#
++# You should have received a copy of the GNU General Public License
++# along with this program; if not, write to the Free Software
++# Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++# MA 02111-1307 USA
++#
++
++include $(TOPDIR)/config.mk
++
++LIB	= $(obj)lib$(BOARD).a
++
++COBJS	:= aspen_init.o avenger_pxa168.o
++
++OBJS	:= $(addprefix $(obj),$(COBJS))
++
++$(LIB):	$(obj).depend $(OBJS)
++	$(AR) $(ARFLAGS) $@ $(OBJS) $(SOBJS)
++
++clean:
++	rm -f $(OBJS)
++
++distclean:	clean
++	rm -f $(LIB) core *.bak $(obj).depend
++
++#########################################################################
++
++# defines $(obj).depend target
++include $(SRCTREE)/rules.mk
++ 
++sinclude $(obj).depend
++
++#########################################################################
+diff --git a/board/pxa/avengers/aspen_init.S b/board/pxa/avengers/aspen_init.S
+new file mode 100644
+index 0000000..d181033
+--- /dev/null
++++ b/board/pxa/avengers/aspen_init.S
+@@ -0,0 +1,288 @@
++/*
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License version 2 as
++ * published by the Free Software Foundation.
++ *
++ */
++
++@
++@       Standard XLLI setup is to configure pins for the lowest power
++@       setting.
++@
++@       MFPR defs
++@
++@       The NO_UPDATE value uses RESERVED bit 3 to indicate to the xlli code
++@       that this MFPR is NOT to be updated when the MFPRs are configured.
++@
++
++
++#define NO_UPDATE         0x0008  @ Do not update this MFPR
++#define PULL_UP           0xC000  @ Enable pull up resistor
++#define PULL_DN           0xA000  @ Enable pull down resistor
++#define DRV_SLOW          0x0800  @ Use slow drive strength
++#define DRV_MED           0x1000  @ Use medium drive strength
++#define DRV_FAST          0x1800  @ Use fast drive strength
++#define EDGE_DISABLED     0x0040  @ Edge Detect disabled
++
++@
++@       Note: Bit 7 should always be set so it is taken care of here
++@
++#define AF0               0x0080  @ Alternate function 0
++#define AF1               0x0081  @ Alternate function 1
++#define AF2               0x0082  @ Alternate function 2
++#define AF3               0x0083  @ Alternate function 3
++#define AF4               0x0084  @ Alternate function 4
++#define AF5               0x0085  @ Alternate function 5
++#define AF6               0x0086  @ Alternate function 6
++#define AF7               0x0087  @ Alternate function 7
++
++
++#define DRV_FAST__EDGE_DISABLED__AF1 0x18C1
++#define DRV_FAST__EDGE_DISABLED__AF2 0x18C2
++#define DRV_FAST__EDGE_DISABLED__AF3 0x18C3
++#define DRV_FAST__EDGE_DISABLED__AF4 0x18C4
++#define DRV_FAST__EDGE_DISABLED__AF5 0x18C5
++#define DRV_FAST__EDGE_DISABLED__AF6 0x18C6
++#define DRV_FAST__EDGE_DISABLED__AF7 0x18C7
++
++#define DRV_SLOW__EDGE_DISABLED__AF1 0x08C1
++#define PULL_UP__DRV_FAST__EDGE_DISABLED__AF2 0xD8C2
++#define PULL_DN__DRV_SLOW__EDGE_DISABLED__AF7 0xA8C7
++#define DRV_SLOW__EDGE_DISABLED__AF7 0x08C7
++#define PULL_DN__DRV_FAST__EDGE_DISABLED__AF1  0xB8C1
++#define PULL_DN__DRV_FAST__EDGE_DISABLED__AF2  0xB8C2
++#define PULL_DN__DRV_FAST__EDGE_DISABLED__AF6  0xB8C6
++ 
++#define PULL_UP__DRV_FAST__EDGE_DISABLED__AF1  0xD8C1
++#define PULL_UP__DRV_FAST__EDGE_DISABLED__AF6  0xD8C6
++
++.text
++
++.macro	delay, counter
++	mov	\counter,#(1024*4)	@ Initialize counter
++1:	subs	\counter, \counter, #1	@ Decrement counter
++	bne	1b			@ No, then loop again
++.endm
++
++@@@@ - JMC - Begin
++.globl aspen_init
++       .type   aspen_init, %function
++aspen_init:
++	stmfd   sp!,    {r1-r2, lr}             @ Save r1, r2 and link register on the stack
++
++	@ Initialize MFPR registers
++	bl	xlli_MFPR_init
++
++	mov	r2, #0
++	ldmfd   sp!,    {r1-r2, pc} @ Restore r1, r2 and return to caller
++	mov     pc, lr
++
++@@@@ - JMC - End
++
++@@@ JMC - Begin
++	
++	.type	xlli_MFPR_init, %function
++xlli_MFPR_init:	
++@
++@ Since MFPR offsets are not in a linear sequence, an offset lookup table (below)
++@ is used. An entry of 0xFF indicated an unused MFPR offset and a value of 0xF
++@ marks the end of the table.
++@
++        ldr     r0, =0xD401E000             @ MFPR base address
++        add	r2, pc, #(xlli_MFPR_offset-(.+8)) @ Address of MFPR offset table
++        add     r4, pc, #(xlli_MFPR_data-(.+8))   @ Address of data for MFPR settings 
++
++xlli_m0:
++	ldrh    r3,     [r2],   #2      @ Get next offset value
++        cmp     r3,     #0xFF           @ Is this MFPR address UNDEFINED?
++        addeq   r4,     r4,     #2      @ Yes - skip entry in MFPR settings table
++        beq     xlli_m0			@ ...and get the next table entry
++        cmp     r3,     #0xF            @ At end of MFPR offset table?
++        beq     xlli_m1                 @ YES - take this exit path
++@
++@ Code continues here if valid MFPR offset was found. If the MFPR value
++@ is equal to NO_UPDATE, the MFPR contents are not altered.
++@
++        ldrh    r1,     [r4],   #2      @ Fetch MFPR data from user table (below)
++        cmp     r1,     #NO_UPDATE      @ Update this MFPR?
++        beq     xlli_m0			@ DO NOT UPDATE  - process the next MFPR
++        str     r1,     [r0, r3]        @ UPDATE - Write MFPR data to the MFPR offset
++        ldr     r1,     [r0, r3]        @ Read back to insure write is complete
++        b       xlli_m0                 @ Process the next MFPR        
++@
++@       Exit Path
++@
++xlli_m1:
++	mov	pc, lr
++.ltorg
++
++.align
++	.type xlli_MFPR_offset, %object
++xlli_MFPR_offset:
++@
++@       NOTE: MFPRs 0-15, 17, 19, 21-25, 27-33, and  87-88 default to non-GPIO
++@             functions at boot time but may be configured as GPIOs by using
++@             alternate function 5.
++@
++@       NOTE: MFPRs 123-127 default to non-GPIO functions at boot time but
++@             may be configured as GPIOs by using alternate function 6.
++@
++@       NOTE: GPIOs 64-67 are listed at 0x2xx offsets in spreadsheet but appear that they
++@             should be at 0x1xx offsets (the 0x2xx offsets are defined elsewhere)
++@
++@                        ***** PXA168 *****     ***** PXA168 *****              @   GPIOs
++        .hword     0x04C,  0x050,  0x054,  0x058,  0x05C,  0x060,  0x064,  0x068   @ MFPRs   0->7
++        .hword     0x06C,  0x070,  0x074,  0x078,  0x07C,  0x080,  0x084,  0x088   @ MFPRs   8->15
++        .hword     0x08C,  0x090,  0x094,  0x098,  0x09C,  0x0A0,  0x0A4,  0x0A8   @ MFPRs  16->23
++        .hword     0x0AC,  0x0B0,  0x0B4,  0x0B8,  0x0BC,  0x0C0,  0x0C4,  0x0C8   @ MFPRs  24->31
++        .hword     0x0CC,  0x0D0,  0x0D4,  0x0D8,  0x0DC,  0x000,  0x004,  0x008   @ MFPRs  32->39
++        .hword     0x00C,  0x010,  0x014,  0x018,  0x01C,  0x020,  0x024,  0x028   @ MFPRs  40->47
++        .hword     0x02C,  0x030,  0x034,  0x038,  0x03C,  0x040,  0x044,  0x048   @ MFPRs  48->55
++        .hword     0x0E0,  0x0E4,  0x0E8,  0x0EC,  0x0F0,  0x0F4,  0x0F8,  0x0FC   @ MFPRs  56->63
++        .hword     0x100,  0x104,  0x108,  0x10C,  0x110,  0x114,  0x118,  0x11C   @ MFPRs  64->71
++        .hword     0x120,  0x124,  0x128,  0x12C,  0x130,  0x134,  0x138,  0x13C   @ MFPRs  72->79
++        .hword     0x140,  0x144,  0x148,  0x14C,  0x150,  0x154,  0x158,  0x15C   @ MFPRs  80->87
++        .hword     0x160,  0x164,  0x168,  0x16C,  0x170,  0x174,  0x178,  0x17C   @ MFPRs  88->95
++        .hword     0x180,  0x184,  0x188,  0x18C,  0x190,  0x194,  0x198,  0x19C   @ MFPRs  96->103
++        .hword     0x1A0,  0x1A4,  0x1A8,  0x1AC,  0x1B0,  0x1B4,  0x1B8,  0x1BC   @ MFPRs 104->111
++        .hword     0x1C0,  0x1C4,  0x1C8,  0x1CC,  0x1D0,  0x1D4,  0x1D8,  0x1DC   @ MFPRs 112->119
++        .hword     0x1E0,  0x1E4,  0x1E8,  0x1F4,  0x1F8,  0x1FC,  0x200,  0x204   @ MFPRs 120->127
++        .hword     0x00F                           @ Marks the end of the table
++
++
++
++.align
++	.type xlli_MFPR_data, %object
++xlli_MFPR_data:
++        .hword     NO_UPDATE       @ GPIO_0   - DFI_D15 (no MFPR update required)
++        .hword     NO_UPDATE       @ GPIO_1   - DFI_D14 (no MFPR update required)
++        .hword     NO_UPDATE       @ GPIO_2   - DFI_D13 (no MFPR update required)
++        .hword     NO_UPDATE       @ GPIO_3   - DFI_D12 (no MFPR update required)
++        .hword     NO_UPDATE       @ GPIO_4   - DFI_D11 (no MFPR update required)
++        .hword     NO_UPDATE       @ GPIO_5   - DFI_D10 (no MFPR update required)
++        .hword     NO_UPDATE       @ GPIO_6   - DFI_D9  (no MFPR update required)
++        .hword     NO_UPDATE       @ GPIO_7   - DFI_D8  (no MFPR update required)
++        .hword     NO_UPDATE       @ GPIO_8   - DFI_D7  (no MFPR update required)
++        .hword     NO_UPDATE       @ GPIO_9   - DFI_D6  (no MFPR update required)
++        .hword     NO_UPDATE       @ GPIO_10  - DFI_D5  (no MFPR update required)
++        .hword     NO_UPDATE       @ GPIO_11  - DFI_D4  (no MFPR update required)
++        .hword     NO_UPDATE       @ GPIO_12  - DFI_D3  (no MFPR update required)
++        .hword     NO_UPDATE       @ GPIO_13  - DFI_D2  (no MFPR update required)
++        .hword     NO_UPDATE       @ GPIO_14  - DFI_D1  (no MFPR update required)
++        .hword     NO_UPDATE       @ GPIO_15  - DFI_D0  (no MFPR update required)
++        .hword     DRV_FAST__EDGE_DISABLED__AF1        @ GPIO_16  - ND_nCS0
++        .hword     NO_UPDATE       @ GPIO_17  - 
++        .hword     DRV_FAST__EDGE_DISABLED__AF1        @ GPIO_18  - ND_nCS1
++        .hword     DRV_FAST__EDGE_DISABLED__AF5        @ GPIO_19  - GPIO_19
++        .hword     NO_UPDATE       @ GPIO_20  -
++        .hword     NO_UPDATE       @ GPIO_21  - 
++        .hword     NO_UPDATE       @ GPIO_22  -
++        .hword     DRV_FAST__EDGE_DISABLED__AF5        @ GPIO_23  - GPIO_23
++        .hword     NO_UPDATE       @ GPIO_24  -
++        .hword     DRV_FAST__EDGE_DISABLED__AF5        @ GPIO_25  - GPIO_25
++        .hword     DRV_FAST__EDGE_DISABLED__AF1        @ GPIO_26  - ND_RnB1
++        .hword     DRV_FAST__EDGE_DISABLED__AF1        @ GPIO_27  - ND_RnB2
++        .hword     DRV_FAST__EDGE_DISABLED__AF1        @ GPIO_28  - MMC4_CMD
++        .hword     DRV_FAST__EDGE_DISABLED__AF1        @ GPIO_29  - MMC4_CLK
++        .hword     DRV_FAST__EDGE_DISABLED__AF1        @ GPIO_30  - MMC4_DAT0
++        .hword     DRV_FAST__EDGE_DISABLED__AF1        @ GPIO_31  - MMC4_DAT1
++        .hword     DRV_FAST__EDGE_DISABLED__AF1        @ GPIO_32  - MMC4_DAT2
++        .hword     DRV_FAST__EDGE_DISABLED__AF1        @ GPIO_33  - MMC4_DAT3
++        .hword     NO_UPDATE       @ GPIO_34  - 
++        .hword     NO_UPDATE       @ GPIO_35  - 
++        .hword     NO_UPDATE       @ GPIO_36  - 
++        .hword     DRV_FAST__EDGE_DISABLED__AF1        @ GPIO_37  - MMC1_DAT7
++        .hword     DRV_FAST__EDGE_DISABLED__AF1        @ GPIO_38  - MMC1_DAT6
++        .hword     NO_UPDATE       @ GPIO_39  - 
++        .hword     DRV_FAST__EDGE_DISABLED__AF1        @ GPIO_40  - MMC1_DAT1
++        .hword     DRV_FAST__EDGE_DISABLED__AF1        @ GPIO_41  - MMC1_DAT0
++        .hword     NO_UPDATE       @ GPIO_42  -
++        .hword     DRV_FAST__EDGE_DISABLED__AF1        @ GPIO_43  - MMC1_CLK
++        .hword     NO_UPDATE       @ GPIO_44  -
++        .hword     NO_UPDATE       @ GPIO_45  -
++        .hword     DRV_FAST__EDGE_DISABLED__AF1        @ GPIO_46  - MMC1_WP
++        .hword     NO_UPDATE       @ GPIO_47  -
++        .hword     DRV_FAST__EDGE_DISABLED__AF1        @ GPIO_48  - MMC1_DAT4
++        .hword     DRV_FAST__EDGE_DISABLED__AF1        @ GPIO_49  - MMC1_CMD
++        .hword     NO_UPDATE       @ GPIO_50  -
++        .hword     DRV_FAST__EDGE_DISABLED__AF1        @ GPIO_51  - MMC1_DAT3
++        .hword     DRV_FAST__EDGE_DISABLED__AF1        @ GPIO_52  - MMC1_DAT2
++        .hword     DRV_FAST__EDGE_DISABLED__AF1        @ GPIO_53  - MMC1_DETECT
++        .hword     DRV_FAST__EDGE_DISABLED__AF1        @ GPIO_54  - MMC1_DAT5
++        .hword     NO_UPDATE       @ GPIO_55  - 
++        .hword     DRV_FAST__EDGE_DISABLED__AF1        @ GPIO_56 - LCD_FCLK_RD
++        .hword     DRV_FAST__EDGE_DISABLED__AF1        @ GPIO_57 - LCD_LCLK_A0
++        .hword     DRV_FAST__EDGE_DISABLED__AF1        @ GPIO_58 - LCD_PCLK_WR
++        .hword     NO_UPDATE        @ GPIO_59 - LCD_DENA_BIAS
++        .hword     DRV_FAST__EDGE_DISABLED__AF1        @ GPIO_60 - LCD_DD0
++        .hword     DRV_FAST__EDGE_DISABLED__AF1        @ GPIO_61 - LCD_DD1
++        .hword     DRV_FAST__EDGE_DISABLED__AF1        @ GPIO_62 - LCD_DD2
++        .hword     DRV_FAST__EDGE_DISABLED__AF1        @ GPIO_63 - LCD_DD3
++        .hword     DRV_FAST__EDGE_DISABLED__AF1        @ GPIO_64 - LCD_DD4
++        .hword     DRV_FAST__EDGE_DISABLED__AF1        @ GPIO_65 - LCD_DD5
++        .hword     DRV_FAST__EDGE_DISABLED__AF1        @ GPIO_66 - LCD_DD6
++        .hword     DRV_FAST__EDGE_DISABLED__AF1        @ GPIO_67 - LCD_DD7
++        .hword     DRV_FAST__EDGE_DISABLED__AF1        @ GPIO_68 - LCD_DD8
++        .hword     DRV_FAST__EDGE_DISABLED__AF1        @ GPIO_69 - LCD_DD9
++        .hword     DRV_FAST__EDGE_DISABLED__AF1        @ GPIO_70 - LCD_DD10
++        .hword     DRV_FAST__EDGE_DISABLED__AF1        @ GPIO_71 - LCD_DD11
++        .hword     DRV_FAST__EDGE_DISABLED__AF1        @ GPIO_72 - LCD_DD12
++        .hword     DRV_FAST__EDGE_DISABLED__AF1        @ GPIO_73 - LCD_DD13
++        .hword     DRV_FAST__EDGE_DISABLED__AF1        @ GPIO_74 - LCD_DD14
++        .hword     DRV_FAST__EDGE_DISABLED__AF1        @ GPIO_75 - LCD_DD15
++        .hword     DRV_FAST__EDGE_DISABLED__AF1        @ GPIO_76 - LCD_DD16
++        .hword     DRV_FAST__EDGE_DISABLED__AF1        @ GPIO_77 - LCD_DD17
++        .hword     NO_UPDATE       @ GPIO_78 -
++        .hword     NO_UPDATE       @ GPIO_79 -
++        .hword     NO_UPDATE       @ GPIO_80 -
++        .hword     NO_UPDATE       @ GPIO_81 -
++        .hword     NO_UPDATE       @ GPIO_82 -
++        .hword     NO_UPDATE       @ GPIO_83 -
++        .hword     DRV_FAST__EDGE_DISABLED__AF4        @ GPIO_84  - PWM1
++        .hword     DRV_FAST__EDGE_DISABLED__AF7        @ GPIO_85  - USBHPEN
++        .hword     DRV_FAST__EDGE_DISABLED__AF7        @ GPIO_86  - SSP5_RXD
++        .hword     DRV_FAST__EDGE_DISABLED__AF7        @ GPIO_87  - SSP5_TXD
++        .hword     DRV_FAST__EDGE_DISABLED__AF7        @ GPIO_88  - SSP5_CLK
++        .hword     DRV_FAST__EDGE_DISABLED__AF7        @ GPIO_89  - SSP5_FRM
++        .hword     NO_UPDATE       @ GPIO_90  -
++        .hword     NO_UPDATE       @ GPIO_91  -
++        .hword     NO_UPDATE       @ GPIO_92  -
++        .hword     NO_UPDATE       @ GPIO_93  -
++        .hword     NO_UPDATE       @ GPIO_94  -
++        .hword     NO_UPDATE       @ GPIO_95  -
++        .hword     DRV_FAST__EDGE_DISABLED__AF1       @ GPIO_96  - PWM3
++        .hword     NO_UPDATE       @ GPIO_97  - 
++        .hword     DRV_FAST__EDGE_DISABLED__AF2       @ GPIO_98  - UART3_TXD
++        .hword     DRV_FAST__EDGE_DISABLED__AF2       @ GPIO_99  - UART3_RXD
++        .hword     NO_UPDATE       @ GPIO_100 - 
++        .hword     NO_UPDATE       @ GPIO_101 -
++        .hword     DRV_FAST__EDGE_DISABLED__AF1       @ GPIO_102 - I2C_SDA
++        .hword     DRV_FAST__EDGE_DISABLED__AF1       @ GPIO_103 - I2C_SCL
++        .hword     NO_UPDATE       @ GPIO_104 - 
++        .hword     NO_UPDATE       @ GPIO_105 -
++        .hword     NO_UPDATE       @ GPIO_106 -
++        .hword     DRV_FAST__EDGE_DISABLED__AF2       @ GPIO_107 - UART1_RXD
++        .hword     DRV_FAST__EDGE_DISABLED__AF2       @ GPIO_108 - UART1_TXD
++        .hword     NO_UPDATE       @ GPIO_109 -
++        .hword     NO_UPDATE       @ GPIO_110 -
++        .hword     NO_UPDATE       @ GPIO_111 -
++        .hword     NO_UPDATE       @ GPIO_112 -
++        .hword     DRV_FAST__EDGE_DISABLED__AF6       @ GPIO_113 - ?
++        .hword     DRV_FAST__EDGE_DISABLED__AF6       @ GPIO_114 - ?
++        .hword     DRV_FAST__EDGE_DISABLED__AF6       @ GPIO_115 - ?
++        .hword     DRV_FAST__EDGE_DISABLED__AF6       @ GPIO_116 - ?
++        .hword     DRV_FAST__EDGE_DISABLED__AF6       @ GPIO_117 - ?
++        .hword     NO_UPDATE       @ GPIO_118 - 
++        .hword     NO_UPDATE       @ GPIO_119 - 
++        .hword     NO_UPDATE       @ GPIO_120 - 
++        .hword     NO_UPDATE       @ GPIO_121 -
++        .hword     NO_UPDATE       @ GPIO_122 - 
++        .hword     NO_UPDATE       @ GPIO_123 - 
++        .hword     NO_UPDATE       @ GPIO_124 - 
++        .hword     NO_UPDATE       @ GPIO_125 - 
++        .hword     NO_UPDATE       @ GPIO_126 - 
++        .hword     NO_UPDATE       @ GPIO_127 - 
++
++.ltorg
++
++@@@ JMC - End
+diff --git a/board/pxa/avengers/avenger_pxa168.c b/board/pxa/avengers/avenger_pxa168.c
+new file mode 100644
+index 0000000..33f8a01
+--- /dev/null
++++ b/board/pxa/avengers/avenger_pxa168.c
+@@ -0,0 +1,164 @@
++/*
++ * (C) Copyright 2005
++ * Marvell Semiconductors Ltd. <www.marvell.com>
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++#include <common.h>
++#include <asm/arch/common.h>
++#include <asm/arch/mfp.h>
++#include <asm/arch/mfp-pxa168.h>
++
++extern void aspen_init();
++
++void
++dummy_delay(unsigned  int delay)
++{
++    volatile unsigned int i;
++    for(i = 0; i < delay; i++);
++}
++
++unsigned long initdram (int board_type)
++{
++    return (PHYS_SDRAM_SIZE_DEC*1024*1024);
++}
++
++int board_init (void)
++{
++    DECLARE_GLOBAL_DATA_PTR;
++    volatile unsigned int reg;
++
++    aspen_init();
++
++    gd->bd->bi_dram[0].start = PHYS_SDRAM_1;
++    gd->bd->bi_dram[0].size  = PHYS_SDRAM_1_SIZE;
++
++    /* arch number of Avengers lite Board */
++    gd->bd->bi_arch_number = 2104;  // MACH_AVENGERS_LITE
++
++    /* adress of boot parameters */
++    gd->bd->bi_boot_params = 0x00000100;
++    gd->baudrate = CONFIG_BAUDRATE;
++    icache_enable ();
++
++    return 0;
++}
++
++int misc_init_r (void)
++{
++        char *env;
++                                                                                                                                               
++        /* primary network interface */
++        env = getenv("ethprime");
++        if(!env)
++               setenv("ethprime","eth0");
++
++        /* default usb mode */
++	env = getenv("usbMode");
++        if(!env)
++               setenv("usbMode","host");
++
++        /* linux boot arguments */
++   	env = getenv("default_load_addr");
++   	if(!env)
++      		setenv("default_load_addr",CONFIG_SYS_DEF_LOAD_ADDR);
++ 
++        env = getenv("image_name");
++        if(!env)
++                setenv("image_name",CONFIG_SYS_IMG_NAME);
++
++        env = getenv("bootfile");
++        if(!env)
++                setenv("bootfile",CONFIG_SYS_IMG_NAME);
++                
++   	env = getenv("initrd_name");
++       	if(!env)
++                setenv("initrd_name",CONFIG_SYS_INITRD_NAME);
++ 
++   	env = getenv("initrd_load_addr");
++       	if(!env)
++               	setenv("initrd_load_addr",CONFIG_SYS_INITRD_LOAD_ADDR);
++
++   	env = getenv("initrd_size");
++        if(!env)
++                setenv("initrd_size",CONFIG_SYS_INITRD_SIZE);
++ 
++        env = getenv("standalone_mtd");
++        if(!env)
++                setenv("standalone_mtd","fsload $(default_load_addr) $(image_name);setenv bootargs $(bootargs) root=/dev/mtdblock0 rw rootfstype=jffs2 ip=$(ipaddr):$(serverip)$(bootargs_end);bootm $(default_load_addr);");
++
++        env = getenv("standalone_initrd");
++        if(!env)
++                setenv("standalone_initrd","fsload $(default_load_addr) $(image_name);fsload $(initrd_load_addr) $(initrd_name);setenv bootargs $(bootargs) root=/dev/ram0 rw initrd=0x$(initrd_load_addr),0x$(initrd_size) ip=$(ipaddr):$(serverip)$(bootargs_end); bootm $(default_load_addr);");
++        
++        /* MAC addresses */
++        env = getenv("ethaddr");
++        if(!env)
++                setenv("ethaddr",ETHADDR);
++
++	return 0;
++}
++
++
++int dram_init (void)
++{
++	return 0;
++}
++
++#define CPU_SYS_SOFT_RST_REG         0x90009034
++#define CPU_SYS_SOFT_RST_BIT         0x00010000 	/* bit 16 in little endian */
++void reset_cpu(ulong addr)
++{  
++   int i;
++
++   *(volatile unsigned int*)(CPU_SYS_SOFT_RST_REG) = CPU_SYS_SOFT_RST_BIT;
++   
++   for(i=0; i<0x10000; )
++     i++;
++
++   *(volatile unsigned int*)(CPU_SYS_SOFT_RST_REG) = 0x0;
++}
++
++int checkboard (void)
++{
++	return display_marvell_banner();
++}
++
++int display_marvell_banner (void)
++{
++   printf("\n");
++   printf(" __  __                      _ _\n");
++   printf("|  \\/  | __ _ _ ____   _____| | |\n");
++   printf("| |\\/| |/ _` | '__\\ \\ / / _ \\ | |\n");
++   printf("| |  | | (_| | |   \\ V /  __/ | |\n");
++   printf("|_|  |_|\\__,_|_|    \\_/ \\___|_|_|\n");
++   printf(" _   _     ____              _\n");
++   printf("| | | |   | __ )  ___   ___ | |_ \n");
++   printf("| | | |___|  _ \\ / _ \\ / _ \\| __| \n");
++   printf("| |_| |___| |_) | (_) | (_) | |_ \n");
++   printf(" \\___/    |____/ \\___/ \\___/ \\__| ");
++   printf("\n\nMARVELL PXAXXX series.");
++   printf("\nBased on 88SV331xV5 Core with ARM926 LE CPU."); 
++   printf("\nCode original base is u-boot-arm 2009.01-rc1.\n\n");
++
++   return 0;
++}
++
++void lowlevel_init()
++{
++	return;
++}
+diff --git a/board/pxa/avengers/config.mk b/board/pxa/avengers/config.mk
+new file mode 100644
+index 0000000..fd101dc
+--- /dev/null
++++ b/board/pxa/avengers/config.mk
+@@ -0,0 +1,9 @@
++#
++# image should be loaded at 0x00F00000
++#
++# UBOOT relocate at 0x00F00000
++# and we could safely download to 0x1000000
++# For UBOOT less than 0x100000 = (512K)
++#
++
++TEXT_BASE = 0x0F00000
+diff --git a/board/pxa/avengers/u-boot.lds b/board/pxa/avengers/u-boot.lds
+new file mode 100644
+index 0000000..49681de
+--- /dev/null
++++ b/board/pxa/avengers/u-boot.lds
+@@ -0,0 +1,50 @@
++/*
++ * (C) Copyright 2002
++ * Gary Jennejohn, DENX Software Engineering, <gj@denx.de>
++ *
++ * See file CREDITS for list of people who contributed to this
++ * project.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++OUTPUT_FORMAT("elf32-littlearm", "elf32-littlearm", "elf32-littlearm")
++OUTPUT_ARCH(arm)
++ENTRY(_start)
++SECTIONS
++{
++	. = 0x00000000;
++	. = ALIGN(4);
++	.text	:
++	{
++	  cpu/88SV331xV5/start.o	(.text)	  
++	  *(.text)
++	}
++	.rodata : { *(.rodata) }
++	. = ALIGN(4);
++	.data : { *(.data) }
++	. = ALIGN(4);
++	.got : { *(.got) }
++	. = ALIGN(4);
++	__u_boot_cmd_start = .;
++	.u_boot_cmd : { *(.u_boot_cmd) }
++	__u_boot_cmd_end = .;
++
++	. = ALIGN(4);
++	__bss_start = .;
++	.bss : { *(.bss) }
++	_end = .;
++}
+diff --git a/include/configs/avengers.h b/include/configs/avengers.h
+new file mode 100644
+index 0000000..d8233fa
+--- /dev/null
++++ b/include/configs/avengers.h
+@@ -0,0 +1,187 @@
++/*
++ * (C) Copyright 2008
++ * Marvell Semiconductors Ltd. Shanghai, China.
++ *
++ * Configuration for Tavor EVB board.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.    See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++#ifndef __CONFIG_H
++#define __CONFIG_H
++
++/************/
++/* VERSIONS */
++/************/
++#define CONFIG_IDENT_STRING   		"\nMarvell version: 1.1.1.1 PXAxxx"
++
++/* version number passing when loading Kernel */
++#define VER_NUM 			0x01010101	/* 1.1.1.18 */
++/*
++ * High Level Configuration Options
++ * (easy to change)
++ */
++#define CONFIG_CPU_PXA910		1 /* This is an pxa910 core*/
++#define CONFIG_CPU_PXA910_168		1 /* pxa168 SOC */
++#define CONFIG_PXAXXX      		1 /*  pxa family */
++#define CONFIG_AVENGERS			1
++
++#define CONFIG_SYS_BOARD_NAME		"88SV331xV5 based PXAxxx"
++#define CONFIG_SYS_VENDOR_NAME     	"MARVELL"
++
++#define CONFIG_SYS_MEMTEST_START      	0x00100000
++#define CONFIG_SYS_MEMTEST_END        	0x00F00000
++
++#define CONFIG_SYS_HZ   		(6240000)      /* KV - Timer 0 is clocked at 3.25 MHz */
++#define CONFIG_SYS_TIMERBASE 		0xD4014000 
++#define CONFIG_DISPLAY_BOARDINFO
++
++#define CONFIG_MISC_INIT_R         	1   /* call misc_init_r during start up */
++
++/*
++ * Size of malloc() pool
++ */
++#define CONFIG_SYS_MALLOC_LEN      	(CONFIG_SYS_ENV_SIZE + 512*1024)
++#define CONFIG_SYS_GBL_DATA_SIZE   	128   /* size in bytes reserved for initial data */
++
++/*
++ *  Configuration
++ */
++#define CONFIG_AUTO_COMPLETE
++#define CONFIG_CONS_INDEX     		1
++#undef  CONFIG_SERIAL_SOFTWARE_FIFO
++#define CONFIG_SYS_NS16550
++#define CONFIG_SYS_NS16550_SERIAL
++#define CONFIG_SYS_NS16550_REG_SIZE   	-4
++#define CONFIG_SYS_NS16550_CLK        	14745600
++#define CONFIG_BAUDRATE        		115200
++#define CONFIG_SYS_BAUDRATE_TABLE     	{ 9600, 19200, 38400, 57600, 115200 }
++#define CONFIG_SYS_NS16550_COM1       	0xD4017000
++
++#define CONFIG_SHOW_BOOT_PROGRESS
++
++#define CONFIG_CMD_PING
++#define CONFIG_CMD_NET
++#define CONFIG_NET_MULTI
++#define MV_ETH_DEVS 			1
++
++#define CONFIG_IPADDR      		192.168.1.101
++
++#define CONFIG_SERVERIP    		192.168.1.100
++
++#define ETHADDR            		"00:00:5A:9F:6D:82"
++
++/* enable passing of ATAGs  */
++#define CONFIG_CMDLINE_TAG       	1
++#define CONFIG_SETUP_MEMORY_TAGS 	1
++#define CONFIG_SYS_TCLK         	0 /* not in use */
++#define CONFIG_SYS_BUS_CLK         	0 /* not in use */
++#define CONFIG_ENV_SIZE		 	0x4000
++#define CONFIG_ENV_OFFSET        	0x40000
++
++/***************************************/
++/* LINUX BOOT and other ENV PARAMETERS */
++/***************************************/
++#define CONFIG_SYS_BOOTARGS_END     	":::AVENGERS:eth0:none"
++#define CONFIG_SYS_BOOTARGS_ROOT    	"root=/dev/nfs rw init=/linuxrc"
++#define CONFIG_ZERO_BOOTDELAY_CHECK
++#define CONFIG_SYS_LOAD_ADDR        	0x00500000   /* default load address   */
++#define CONFIG_SYS_DEF_LOAD_ADDR    	"0x00500000"
++#define CONFIG_SYS_IMG_NAME		"zImage"
++#define CONFIG_SYS_INITRD_NAME      	"ramdisk.image.gz"
++#define CONFIG_SYS_INITRD_LOAD_ADDR 	"800000"
++#define CONFIG_SYS_INITRD_SIZE      	"400000"
++#undef  CONFIG_BOOTARGS
++
++#define CONFIG_BOOTDELAY        	3
++
++#if (CONFIG_BOOTDELAY >= 0)
++
++/* boot arguments" */
++#define CONFIG_BOOTCOMMAND      	"bootz 0x500000"
++#define CONFIG_ROOTPATH   		/tftpboot/rootfs_arm
++
++#endif /* #if (CONFIG_BOOTDELAY >= 0) */
++
++#define CONFIG_SYS_BARGSIZE   		CONFIG_SYS_CBSIZE   /* Boot Argument Buffer Size   */
++
++/*
++ * For booting Linux, the board info and command line data
++ * have to be in the first 8 MB of memory, since this is
++ * the maximum mapped by the Linux kernel during initialization.
++ */
++#define CONFIG_SYS_BOOTMAPSZ      	(8<<20)   /* Initial Memory map for Linux */
++
++/*
++ * Miscellaneous configurable options
++ */
++#define CONFIG_SYS_LONGHELP        	/* undef to save memory     */
++#define CONFIG_SYS_PROMPT         	"Avengers>> "   /* Monitor Command Prompt   */
++#define CONFIG_SYS_PROMPT_HUSH_PS2     	"> "
++/* Console I/O Buffer Size  */
++#define CONFIG_SYS_CBSIZE         	512
++/* Print Buffer Size */
++#define CONFIG_SYS_PBSIZE         	(CONFIG_SYS_CBSIZE+sizeof(CONFIG_SYS_PROMPT)+16)
++/* max number of command args   */
++#define CONFIG_SYS_MAXARGS        	16
++/* Boot Argument Buffer Size    */
++#define CONFIG_SYS_BARGSIZE       	CONFIG_SYS_CBSIZE
++#undef  CONFIG_SYS_CLKS_IN_HZ         	/* everything, incl board info, in Hz */
++#define CONFIG_ENV_OVERWRITE    	/* allow to change env parameters */
++#undef  CONFIG_INIT_CRITICAL
++#define CONFIG_CMDLINE_EDITING
++
++
++/*-----------------------------------------------------------------------
++ * Stack sizes
++ *
++ * The stack sizes are set up in start.S using the settings below
++ */
++#define CONFIG_STACKSIZE       		(128*1024)   /* regular stack */
++#ifdef  CONFIG_USE_IRQ
++#define CONFIG_STACKSIZE_IRQ   		(4*1024)   /* IRQ stack */
++#define CONFIG_STACKSIZE_FIQ   		(4*1024)   /* FIQ stack */
++#endif
++
++/*-----------------------------------------------------------------------
++ * Physical Memory Map
++ */
++#define CONFIG_NR_DRAM_BANKS    	1   /* we have 1 bank of DRAM */
++#define PHYS_SDRAM_1            	0x00000000   /* SDRAM Bank #1 */
++#define PHYS_SDRAM_1_SIZE       	0x08000000   /* 128 MB */
++#define PHYS_SDRAM_SIZE_DEC     	128
++#define CONFIG_SYS_ENV_SIZE            	0x10000   /* Total Size of Environment Sector */
++#define	CONFIG_ENV_IS_NOWHERE		1
++#define CONFIG_SYS_NO_FLASH		1
++#define CONFIG_BBM			1
++
++/*-----------------------------------------------------------------------
++ * NAND and DFC configuration
++ */
++#define CONFIG_CMD_NAND 		1
++#define CONFIG_SYS_MAX_NAND_DEVICE	1         /* Max number of NAND devices */
++#define CONFIG_SYS_NAND_BASE		0x0
++
++/*-----------------------------------------------------------------------
++ * ONENAND configuration
++ */
++#define CONFIG_CMD_ONENAND 		1
++#define CONFIG_SYS_ONENAND_BASE 	0x80000000  /* configure for ttc */
++#define CONFIG_USB_ETH
++#define CONFIG_NET_RETRY_COUNT 		10000
++
++#endif
++/* __CONFIG_H */
+-- 
+1.6.0.4
+

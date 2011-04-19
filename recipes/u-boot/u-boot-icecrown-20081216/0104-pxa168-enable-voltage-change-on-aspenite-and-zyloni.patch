@@ -1,0 +1,299 @@
+From 83847e8d71ab2944c6e02f03a8d7fed05d9ea1df Mon Sep 17 00:00:00 2001
+From: Ning Jiang <ning.jiang@marvell.com>
+Date: Thu, 23 Apr 2009 13:45:37 +0800
+Subject: [PATCH] pxa168: enable voltage change on aspenite and zylonite2
+
+Signed-off-by: Ning Jiang <ning.jiang@marvell.com>
+---
+ board/pxa/common/freq.c |  176 ++++++++++++++++++++++++++++++++++++-----------
+ 1 files changed, 135 insertions(+), 41 deletions(-)
+
+diff --git a/board/pxa/common/freq.c b/board/pxa/common/freq.c
+index b23ac4e..74c60f0 100644
+--- a/board/pxa/common/freq.c
++++ b/board/pxa/common/freq.c
+@@ -27,22 +27,26 @@
+ #define CONFIG_SETVOL
+ #define CONFIG_WFI
+ 
+-#define reg_read(x) (*(volatile unsigned int *)(x))
+-#define reg_write(x,y) ((*(volatile unsigned int *)(x)) = y )
++#define u32_t	unsigned int
++#define u16_t	unsigned short
++#define u8_t	unsigned char
+ 
+-static void PMUcore2_fc_seq (unsigned int cp_pdiv, unsigned int cp_bdiv, unsigned int cp_mdiv, unsigned int cp_xpdiv,
+-		unsigned int d_div, unsigned int a_div)
++#define reg_read(x) (*(volatile u32_t *)(x))
++#define reg_write(x,y) ((*(volatile u32_t *)(x)) = y )
++
++static void PMUcore2_fc_seq (u32_t cp_pdiv, u32_t cp_bdiv, u32_t cp_mdiv, u32_t cp_xpdiv,
++		u32_t d_div, u32_t a_div)
+ {
+-	volatile unsigned int cc_reg,temp,fccr;
+-	volatile unsigned int rdata_core1,rdata_core2,pll_da,pll_ap,pll_cp;
+-	volatile unsigned int temp_ap,temp_cp,temp_a,temp_d;
++	volatile u32_t cc_reg,temp,fccr;
++	volatile u32_t rdata_core1,rdata_core2,pll_da,pll_ap,pll_cp;
++	volatile u32_t temp_ap,temp_cp,temp_a,temp_d;
+ 
+ 	cc_reg = 0;
+ 
+ 	/* Change the AP freq clk while CP is at reset */
+-	temp = *(volatile unsigned int *)0xd4282888;
++	temp = *(volatile u32_t *)0xd4282888;
+ 	temp |= 0x9;
+-	*(volatile unsigned int *)0xd4282888 = temp;
++	*(volatile u32_t *)0xd4282888 = temp;
+ 
+ 	/* clear MOH_RD_ST_CLEAR so that reading PMUA_DM_CC_MOH will set MOH_RD_STATUS */
+ 	reg_write(PMUA_CC_MOH, reg_read(PMUA_CC_MOH) & ~0x80000000);
+@@ -158,9 +162,9 @@ static void PMUcore2_fc_seq (unsigned int cp_pdiv, unsigned int cp_bdiv, unsigne
+ 	reg_write(PMUA_CC_MOH,cc_reg);
+ }
+ 
+-static void core2freqchgcmd(unsigned int pclk,unsigned int dclk,unsigned int aclk)
++static void core2freqchgcmd(u32_t pclk,u32_t dclk,u32_t aclk)
+ {
+-	volatile unsigned int freqchg,coremsk;
++	volatile u32_t freqchg,coremsk;
+ 
+ 	coremsk = reg_read(PMUA_MOH_IMR);
+ 	coremsk |= (PMUA_MOH_IMR_MOH_FC_INTR_MASK);
+@@ -612,11 +616,20 @@ U_BOOT_CMD(
+ 
+ #ifdef CONFIG_SETVOL
+ 
++#if (defined(CONFIG_TAVOREVB) || defined(CONFIG_TTC_DKB))
+ #define MFP_I2C_SCL	0xd401e1b0	/* GPIO53 */
+ #define MFP_I2C_SDA	0xd401e1b4	/* GPIO54 */
+ #define TWSI_CLK	0xd401502c
++#endif
+ 
++#if (defined(CONFIG_TAVOREVB) || defined(CONFIG_TTC_DKB))
+ #define I2C_BASE	0xd4011000
++#elif (defined(CONFIG_ASPENITE) || defined(CONFIG_ZYLONITE2))
++#define I2C_BASE	0xd4025000
++#else
++#error please define I2C_BASE for your platform!
++#endif
++
+ #define IBMR		*(unsigned int*)(I2C_BASE+0x00)
+ #define IDBR		*(unsigned int*)(I2C_BASE+0x08)
+ #define ICR		*(unsigned int*)(I2C_BASE+0x10)
+@@ -660,63 +673,65 @@ U_BOOT_CMD(
+ 
+ /*  bus monitor register */
+ #define	IBMR_SDA		BIT_0  /* reflects the status of SDA pin */
+-#define	IBMR_SCL		BIT_1 /* reflects the status of SCL pin */
++#define	IBMR_SCL		BIT_1  /* reflects the status of SCL pin */
+ 
+ /* data buffer regiter mask */
+ #define	IDBR_ADDR		0xFF;  /*buffer for I2C bus send/receive data */
+-#define	IDBR_MODE		BIT_0	
++#define	IDBR_MODE		BIT_0
+ /* Control Register */
+-#define	ICR_START		BIT_0 /* 1:send a Start condition to the I2C when in master mode */
+-#define	ICR_STOP		BIT_1 /* 1:send a Stop condition after next data byte transferred on I2C bus in master mode */
+-#define	ICR_ACKNACK	BIT_2  /* Ack/Nack control: 1:Nack, 0:Ack (negative or positive pulse) */
++#define	ICR_START		BIT_0  /* 1:send a Start condition to the I2C when in master mode */
++#define	ICR_STOP		BIT_1  /* 1:send a Stop condition after next data byte transferred on I2C bus in master mode */
++#define	ICR_ACKNACK		BIT_2  /* Ack/Nack control: 1:Nack, 0:Ack (negative or positive pulse) */
+ #define	ICR_TB			BIT_3  /* 1:send/receive byte, 0:cleared by I2C unit when done */
+ #define	ICR_MA			BIT_4  /* 1:I2C sends STOP w/out data permission, 0:ICR bit used only */
+ #define	ICR_SCLEA		BIT_5  /* I2C clock output: 1:Enabled, 0:Disabled. ICCR configured before ! */
+-#define	ICR_UIE		BIT_6 /* I2C unit: 1:Enabled, 0:Disabled */
+-#define	ICR_GCD		BIT_7  /* General Call: 1:Disabled, 0:Enabled */
++#define	ICR_UIE			BIT_6  /* I2C unit: 1:Enabled, 0:Disabled */
++#define	ICR_GCD			BIT_7  /* General Call: 1:Disabled, 0:Enabled */
+ #define	ICR_ITEIE		BIT_8  /* 1: IDBR Transmit Empty Interrupt Enable */
+ #define	ICR_DRFIE		BIT_9  /* 1: IDBR Receive Full Interrupt Enable */
+-#define	ICR_BEIE		BIT_10  /* 1: Bus Error Interrupt Enable */
++#define	ICR_BEIE		BIT_10 /* 1: Bus Error Interrupt Enable */
+ #define	ICR_SSDIE		BIT_11 /* 1: Slave Stop Detected Interrupt Enable */
+-#define	ICR_ALDIE		BIT_12  /* 1: Arbitration Loss Detected Interrupt Enable */
+-#define	ICR_SADIE		BIT_13  /* 1: Slave Address Detected Interrupt Enable */
+-#define	ICR_UR			BIT_14  /* 1: I2C unit reset */
++#define	ICR_ALDIE		BIT_12 /* 1: Arbitration Loss Detected Interrupt Enable */
++#define	ICR_SADIE		BIT_13 /* 1: Slave Address Detected Interrupt Enable */
++#define	ICR_UR			BIT_14 /* 1: I2C unit reset */
+ #define ICR_FM   		BIT_15 /* 1: Fast mode - 400 KBit/sec. operation. Default is 100 KBit/sec */
+ 
+ /* Status Register */
+-#define	ISR_RWM		BIT_0  /* 1: I2C in master receive = slave transmit mode */
+-#define	ISR_ACKNACK	BIT_1  /* 1: I2C received/sent a Nack, 0: Ack */
++#define	ISR_RWM			BIT_0  /* 1: I2C in master receive = slave transmit mode */
++#define	ISR_ACKNACK		BIT_1  /* 1: I2C received/sent a Nack, 0: Ack */
+ #define	ISR_UB			BIT_2  /* 1: Processor's I2C unit busy */
+-#define	ISR_IBB		BIT_3  /* 1: I2C bus busy. Processor's I2C unit not involved */
+-#define	ISR_SSD		BIT_4  /* 1: Slave Stop detected (when in slave mode: receive or transmit) */
+-#define	ISR_ALD		BIT_5  /* 1: Arbitration Loss Detected */
+-#define	ISR_ITE		BIT_6  /* 1: Transfer finished on I2C bus. If enabled in ICR, interrupt signaled */
+-#define	ISR_IRF		BIT_7  /* 1: IDBR received new byte from I2C bus. If ICR, interrupt signaled */
++#define	ISR_IBB			BIT_3  /* 1: I2C bus busy. Processor's I2C unit not involved */
++#define	ISR_SSD			BIT_4  /* 1: Slave Stop detected (when in slave mode: receive or transmit) */
++#define	ISR_ALD			BIT_5  /* 1: Arbitration Loss Detected */
++#define	ISR_ITE			BIT_6  /* 1: Transfer finished on I2C bus. If enabled in ICR, interrupt signaled */
++#define	ISR_IRF			BIT_7  /* 1: IDBR received new byte from I2C bus. If ICR, interrupt signaled */
+ #define	ISR_GCAD		BIT_8  /* 1: I2C unit received a General Call address */
+-#define	ISR_SAD		BIT_9  /* 1: I2C unit detected a 7-bit address matching the general call or ISAR */
+-#define	ISR_BED		BIT_10  /* Bit set by unit when a Bus Error detected */
++#define	ISR_SAD			BIT_9  /* 1: I2C unit detected a 7-bit address matching the general call or ISAR */
++#define	ISR_BED			BIT_10 /* Bit set by unit when a Bus Error detected */
+ 
+ /*  slave address mask */
+-#define	ISAR_ADDR		0x7F;	/*  7-bit(6:0) add to which I2C unit responses to in slave/receive mode*/
++#define	ISAR_ADDR		0x7F;  /*  7-bit(6:0) add to which I2C unit responses to in slave/receive mode*/
+ 
+-#define ICR_INIT_VALUE (ICR_UIE|ICR_SCLEA)
++#define ICR_INIT_VALUE		(ICR_UIE|ICR_SCLEA)
+ 
+-#define I2C_NO_STOP     0    /* Don't issue stop bit */
+-#define I2C_STOP        1    /* Issue stop bit */
++#define I2C_NO_STOP		0      /* Don't issue stop bit */
++#define I2C_STOP		1      /* Issue stop bit */
+ 
+ /* Processor I2C Device ID */
+-#define I2C_SLAVE_ID 0x4E  /* 0100_111x */ /* The Phillips spec says it must be a value between 0001_000xB and 1110_111xB */
++#define I2C_SLAVE_ID		0x4E   /* 0100_111x */ /* The Phillips spec says it must be a value between 0001_000xB and 1110_111xB */
+ 
+ int i2c_init(unsigned int dev_id) 
+ {
+ 	int re;
+ 
++#if (defined(CONFIG_TAVOREVB) || defined(CONFIG_TTC_DKB))
+ 	/* setup MFPRs for I2C */
+ 	reg_write(MFP_I2C_SCL, 0xa842);
+ 	reg_write(MFP_I2C_SDA, 0xa842);
+ 
+ 	/* enable i2c clock */
+-	reg_write(TWSI_CLK, 0x3);		/* enable i2c clock */
++	reg_write(TWSI_CLK, 0x3);
++#endif
+ 
+ 	ICR = 0;
+ 	/* Setup I2C slave address */ 
+@@ -879,16 +894,80 @@ int i2c_readb(unsigned int slave_addr, unsigned char reg, unsigned char *pval)
+ 				((x < 800) ? (x / 25 + 0x20) :	\
+ 				((x < 1525) ? ((x - 800) / 25)	\
+ 				: -1)))
++#elif (defined(CONFIG_ASPENITE) || defined(CONFIG_ZYLONITE2))
++	#define VBUCK1_CNT(x)	((x < 0) ? -1 :			\
++				((x < 1825) ? ((x - 725) / 25)	\
++				: -1))
+ #else
+ 	#define VBUCK1_CNT(x)	(-1)
+ #endif
+ 
+-int set_volt(unsigned int vol)
++static int aspen_eco11[][3] = {
++	/* cnt,  in,   out */
++	{ 0x00,  725,  379 },
++	{ 0x01,  750,  408 },
++	{ 0x02,  775,  436 },
++	{ 0x03,  800,  464 },
++	{ 0x04,  825,  493 },
++	{ 0x05,  850,  521 },
++	{ 0x06,  875,  550 },
++	{ 0x07,  900,  578 },
++	{ 0x08,  925,  606 },
++	{ 0x09,  950,  635 },
++	{ 0x0A,  975,  663 },
++	{ 0x0B, 1000,  691 },
++	{ 0x0C, 1025,  720 },
++	{ 0x0D, 1050,  748 },
++	{ 0x0E, 1075,  776 },
++	{ 0x0F, 1100,  805 },
++	{ 0x10, 1125,  833 },
++	{ 0x11, 1150,  861 },
++	{ 0x12, 1175,  890 },
++	{ 0x13, 1200,  918 },
++	{ 0x14, 1225,  947 },
++	{ 0x15, 1250,  975 },
++	{ 0x16, 1275, 1003 },
++	{ 0x17, 1300, 1032 },
++	{ 0x18, 1325, 1060 },
++	{ 0x19, 1350, 1088 },
++	{ 0x1A, 1375, 1117 },
++	{ 0x1B, 1400, 1145 },
++	{ 0x1C, 1425, 1173 },
++	{ 0x1D, 1450, 1202 },
++	{ 0x1E, 1475, 1230 },
++	{ 0x1F, 1500, 1258 },
++	{ 0x20, 1525, 1287 },
++	{ 0x21, 1550, 1315 },
++	{ 0x22, 1575, 1343 },
++	{ 0x23, 1600, 1372 },
++	{ 0x24, 1625, 1400 },
++	{ 0x25, 1650, 1429 },
++	{ 0x26, 1675, 1457 },
++	{ 0x27, 1700, 1485 },
++	{ 0x28, 1725, 1514 },
++	{ 0x29, 1750, 1542 },
++	{ 0x2A, 1775, 1570 },
++	{ 0x2B, 1800, 1599 },
++};
++
++#define ASPEN_ECO11_SIZE (sizeof(aspen_eco11)/sizeof(aspen_eco11[0]))
++
++int set_volt(u32 vol)
+ {
+-	int cnt;
++	int cnt = -1 , i;
+ 	static int first_time = 1;
+ 
++#if (defined(CONFIG_TAVOREVB) || defined(CONFIG_TTC_DKB))
+ 	cnt = VBUCK1_CNT(vol);
++#elif (defined(CONFIG_ASPENITE) || defined(CONFIG_ZYLONITE2))
++	for (i = 0; i < ASPEN_ECO11_SIZE; i++)
++		if (aspen_eco11[i][1] == vol)
++			cnt = aspen_eco11[i][0];
++
++	for (i = 0; i < ASPEN_ECO11_SIZE; i++)
++		if (aspen_eco11[i][2] == vol)
++			cnt = aspen_eco11[i][0];
++#endif
+ 	if (cnt < 0)
+ 		return -1;
+ 
+@@ -905,20 +984,35 @@ int set_volt(unsigned int vol)
+ 	i2c_writeb(0x30, 0x40, 0x0);	/* enable GI2C access to BUCK1_SET */
+ 	i2c_writeb(0x30, 0x24, cnt);	/* set BUCK1 voltage */
+ 	i2c_writeb(0x30, 0x20, 0x01);	/* let it go ramping */
++#elif CONFIG_ASPENITE
++	i2c_writeb(0x34, 0x24, cnt);	/* set V3 voltage in ADTV2 */
++	i2c_writeb(0x34, 0x20, 0x03);	/* select ADTV2 and let it go ramping */
+ #endif
+ 	return 0;
+ }
+ 
+ int do_setvol(cmd_tbl_t * cmdtp, int flag, int argc, char *argv[])
+ {
+-	unsigned int vol;
++	u32 vol;
+ 
+-	if (argc != 2)
++	if ((argc < 1) || (argc > 2))
+ 		return -1;
+ 
++	if (argc == 1) {
++		printf( "usage: setvol xxxx\n"
++			"for tavorevb and ttd_dkb, xxxx can be 725..1500, step 25\n"
++			"for aspenite and zylonite2, xxxx can be\n"
++			"493  521  550  578  606  635  663  691  720  748  776\n"
++			"805  833  861  890  918  947  975  1003 1032 1060 1088\n"
++			"1117 1145 1173 1202 1230 1258 1287 1315 1343 1372 1400\n"
++			"1429 1457 1485 1514 1542 1570 1599\n");
++		return 0;
++	}
++
+ 	vol = simple_strtoul(argv[1], NULL, 10);
+ 	if (set_volt(vol) < 0)
+ 		return -1;
++	printf("voltage change successfully\n");
+ 	return 0;
+ }
+ 
+-- 
+1.6.0.4
+

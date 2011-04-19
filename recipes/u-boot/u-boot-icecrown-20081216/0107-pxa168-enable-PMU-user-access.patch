@@ -1,0 +1,31 @@
+From 9af5a9c12b9244e827960e319349bfb93a6c7031 Mon Sep 17 00:00:00 2001
+From: Ning Jiang <ning.jiang@marvell.com>
+Date: Tue, 16 Jun 2009 18:22:58 +0800
+Subject: [PATCH] pxa168: enable PMU user access
+
+Signed-off-by: Ning Jiang <ning.jiang@marvell.com>
+---
+ board/pxa/aspenite/aspenite_pxa168.c |    7 +++++++
+ 1 files changed, 7 insertions(+), 0 deletions(-)
+
+diff --git a/board/pxa/aspenite/aspenite_pxa168.c b/board/pxa/aspenite/aspenite_pxa168.c
+index 7abdd75..eac148a 100644
+--- a/board/pxa/aspenite/aspenite_pxa168.c
++++ b/board/pxa/aspenite/aspenite_pxa168.c
+@@ -111,6 +111,13 @@ int board_init (void)
+     /* enable UART2 clock */
+     *(unsigned int *)0xD4015000 = 0x13;
+ 
++    /* enable PMU user access */
++    __asm__ __volatile__ (
++           "mcr     p15, 0, %0, c15, c9, 0\n\t"
++           :
++           : "r"(0x1)
++    );
++
+     gd->bd->bi_dram[0].start = PHYS_SDRAM_1;
+     gd->bd->bi_dram[0].size  = PHYS_SDRAM_1_SIZE;
+ 
+-- 
+1.6.0.4
+

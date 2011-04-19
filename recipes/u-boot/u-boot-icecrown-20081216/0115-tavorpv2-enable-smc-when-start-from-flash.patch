@@ -1,0 +1,139 @@
+From c215b23aba0d923158066a999fa6095342712abf Mon Sep 17 00:00:00 2001
+From: Lei Wen <leiwen@marvell.com>
+Date: Thu, 16 Jul 2009 17:14:48 +0800
+Subject: [PATCH] tavorpv2: enable smc when start from flash
+
+Signed-off-by: Lei Wen <leiwen@marvell.com>
+---
+ board/pxa/tavorevb3/tavorevb3.c     |   12 ++++++
+ include/asm-arm/arch-pxa/pxa-regs.h |   75 ++++++++++++++++++-----------------
+ 2 files changed, 50 insertions(+), 37 deletions(-)
+
+diff --git a/board/pxa/tavorevb3/tavorevb3.c b/board/pxa/tavorevb3/tavorevb3.c
+index a087cb9..16c7bb9 100644
+--- a/board/pxa/tavorevb3/tavorevb3.c
++++ b/board/pxa/tavorevb3/tavorevb3.c
+@@ -26,6 +26,7 @@
+  */
+ 
+ #include <common.h>
++#include <asm/arch/pxa-regs.h>
+ 
+ DECLARE_GLOBAL_DATA_PTR;
+ 
+@@ -100,6 +101,17 @@ int board_init (void)
+ 	/* adress of boot parameters */
+ 	gd->bd->bi_boot_params = 0;
+ 
++	/* initialize SMC */
++	MSC0 = 0x72297229;
++	MSC1 = 0x002c0000 | (MSC1 & 0xffff);
++	MECR = 0x00000002;
++	SXCNFG = 0x00040004;
++	CSADRCFG0 = 0x00320919;
++	CSADRCFG1 = 0x00320919;
++	CSADRCFG2 = 0x00320919;
++	CSADRCFG3 = 0x0012c80b;
++	OSCC = 0xE502E9E5;
++
+ 	DfcSetGPIO();
+ 
+ 	return 0;
+diff --git a/include/asm-arm/arch-pxa/pxa-regs.h b/include/asm-arm/arch-pxa/pxa-regs.h
+index 94e775e..6c7d6ef 100644
+--- a/include/asm-arm/arch-pxa/pxa-regs.h
++++ b/include/asm-arm/arch-pxa/pxa-regs.h
+@@ -1716,6 +1716,7 @@ typedef void		(*ExcpHndlr) (void) ;
+ #define AC97_DIV	__REG(0x41340014)  /* AC97 clock divisor value register */
+ #define ACCR1           __REG(0x41340020)       /* Application Subsystem Clock Configuration Register 1 */
+ #define CKENC           __REG(0x41340024)       /* C Clock Enable Register */
++#define OSCC            __REG(0x41350000)  /* Oscillator Configuration Register */
+ 
+ #define ACCR1_DIS_DRX           (1 << 31)       /* Disable DRX */
+ #define ACCR1_PU_OTG            (1 << 12)       /* USB 2.0 PHY OTG power up */
+@@ -2028,45 +2029,45 @@ typedef void		(*ExcpHndlr) (void) ;
+ 
+ #ifdef CONFIG_CPU_MONAHANS
+ /* Static Memory Controller Registers */
+-#define MSC0		__REG_2(0x4A000008)  /* Static Memory Control Register 0 */
+-#define MSC1		__REG_2(0x4A00000C)  /* Static Memory Control Register 1 */
+-#define MECR		__REG_2(0x4A000014)  /* Expansion Memory (PCMCIA/Compact Flash) Bus Configuration */
+-#define SXCNFG		__REG_2(0x4A00001C)  /* Synchronous Static Memory Control Register */
+-#define MCMEM0		__REG_2(0x4A000028)  /* Card interface Common Memory Space Socket 0 Timing */
+-#define MCATT0		__REG_2(0x4A000030)  /* Card interface Attribute Space Socket 0 Timing Configuration */
+-#define MCIO0		__REG_2(0x4A000038)  /* Card interface I/O Space Socket 0 Timing Configuration */
+-#define MEMCLKCFG	__REG_2(0x4A000068)  /* SCLK speed configuration */
+-#define CSADRCFG0	__REG_2(0x4A000080)  /* Address Configuration for chip select 0 */
+-#define CSADRCFG1	__REG_2(0x4A000084)  /* Address Configuration for chip select 1 */
+-#define CSADRCFG2	__REG_2(0x4A000088)  /* Address Configuration for chip select 2 */
+-#define CSADRCFG3	__REG_2(0x4A00008C)  /* Address Configuration for chip select 3 */
+-#define CSADRCFG_P	__REG_2(0x4A000090)  /* Address Configuration for pcmcia card interface */
+-#define CSMSADRCFG	__REG_2(0x4A0000A0)  /* Master Address Configuration Register */
+-#define CLK_RET_DEL	__REG_2(0x4A0000B0)  /* Delay line and mux selects for return data latching for sync. flash */
+-#define ADV_RET_DEL	__REG_2(0x4A0000B4)  /* Delay line and mux selects for return data latching for sync. flash */
++#define MSC0		__REG(0x4A000008)  /* Static Memory Control Register 0 */
++#define MSC1		__REG(0x4A00000C)  /* Static Memory Control Register 1 */
++#define MECR		__REG(0x4A000014)  /* Expansion Memory (PCMCIA/Compact Flash) Bus Configuration */
++#define SXCNFG		__REG(0x4A00001C)  /* Synchronous Static Memory Control Register */
++#define MCMEM0		__REG(0x4A000028)  /* Card interface Common Memory Space Socket 0 Timing */
++#define MCATT0		__REG(0x4A000030)  /* Card interface Attribute Space Socket 0 Timing Configuration */
++#define MCIO0		__REG(0x4A000038)  /* Card interface I/O Space Socket 0 Timing Configuration */
++#define MEMCLKCFG	__REG(0x4A000068)  /* SCLK speed configuration */
++#define CSADRCFG0	__REG(0x4A000080)  /* Address Configuration for chip select 0 */
++#define CSADRCFG1	__REG(0x4A000084)  /* Address Configuration for chip select 1 */
++#define CSADRCFG2	__REG(0x4A000088)  /* Address Configuration for chip select 2 */
++#define CSADRCFG3	__REG(0x4A00008C)  /* Address Configuration for chip select 3 */
++#define CSADRCFG_P	__REG(0x4A000090)  /* Address Configuration for pcmcia card interface */
++#define CSMSADRCFG	__REG(0x4A0000A0)  /* Master Address Configuration Register */
++#define CLK_RET_DEL	__REG(0x4A0000B0)  /* Delay line and mux selects for return data latching for sync. flash */
++#define ADV_RET_DEL	__REG(0x4A0000B4)  /* Delay line and mux selects for return data latching for sync. flash */
+ 
+ /* Dynamic Memory Controller Registers */
+-#define MDCNFG		__REG_2(0x48100000)  /* SDRAM Configuration Register 0 */
+-#define MDREFR		__REG_2(0x48100004)  /* SDRAM Refresh Control Register */
+-#define FLYCNFG		__REG_2(0x48100020)  /* Fly-by DMA DVAL[1:0] polarities */
+-#define MDMRS		__REG_2(0x48100040)  /* MRS value to be written to SDRAM */
+-#define	DDR_SCAL	__REG_2(0x48100050)  /* Software Delay Line Calibration/Configuration for external DDR memory. */
+-#define	DDR_HCAL	__REG_2(0x48100060)  /* Hardware Delay Line Calibration/Configuration for external DDR memory. */
+-#define	DDR_WCAL	__REG_2(0x48100068)  /* DDR Write Strobe Calibration Register */
+-#define	DMCIER		__REG_2(0x48100070)  /* Dynamic MC Interrupt Enable Register. */
+-#define	DMCISR		__REG_2(0x48100078)  /* Dynamic MC Interrupt Status Register. */
+-#define	DDR_DLS		__REG_2(0x48100080)  /* DDR Delay Line Value Status register for external DDR memory. */
+-#define	EMPI		__REG_2(0x48100090)  /* EMPI Control Register */
+-#define RCOMP           __REG_2(0x48100100)
+-#define PAD_MA          __REG_2(0x48100110)
+-#define PAD_MDMSB       __REG_2(0x48100114)
+-#define PAD_MDLSB       __REG_2(0x48100118)
+-#define PAD_DMEM        __REG_2(0x4810011c)
+-#define PAD_SDCLK       __REG_2(0x48100120)
+-#define PAD_SDCS        __REG_2(0x48100124)
+-#define PAD_SMEM        __REG_2(0x48100128)
+-#define PAD_SCLK        __REG_2(0x4810012C)
+-#define TAI		__REG_2(0x48100F00) /* TAI Tavor Address Isolation Register */
++#define MDCNFG		__REG(0x48100000)  /* SDRAM Configuration Register 0 */
++#define MDREFR		__REG(0x48100004)  /* SDRAM Refresh Control Register */
++#define FLYCNFG		__REG(0x48100020)  /* Fly-by DMA DVAL[1:0] polarities */
++#define MDMRS		__REG(0x48100040)  /* MRS value to be written to SDRAM */
++#define	DDR_SCAL	__REG(0x48100050)  /* Software Delay Line Calibration/Configuration for external DDR memory. */
++#define	DDR_HCAL	__REG(0x48100060)  /* Hardware Delay Line Calibration/Configuration for external DDR memory. */
++#define	DDR_WCAL	__REG(0x48100068)  /* DDR Write Strobe Calibration Register */
++#define	DMCIER		__REG(0x48100070)  /* Dynamic MC Interrupt Enable Register. */
++#define	DMCISR		__REG(0x48100078)  /* Dynamic MC Interrupt Status Register. */
++#define	DDR_DLS		__REG(0x48100080)  /* DDR Delay Line Value Status register for external DDR memory. */
++#define	EMPI		__REG(0x48100090)  /* EMPI Control Register */
++#define RCOMP           __REG(0x48100100)
++#define PAD_MA          __REG(0x48100110)
++#define PAD_MDMSB       __REG(0x48100114)
++#define PAD_MDLSB       __REG(0x48100118)
++#define PAD_DMEM        __REG(0x4810011c)
++#define PAD_SDCLK       __REG(0x48100120)
++#define PAD_SDCS        __REG(0x48100124)
++#define PAD_SMEM        __REG(0x48100128)
++#define PAD_SCLK        __REG(0x4810012C)
++#define TAI		__REG(0x48100F00) /* TAI Tavor Address Isolation Register */
+ 
+ /* Some frequently used bits */
+ #define MDCNFG_DMAP	0x80000000	/* SDRAM 1GB Memory Map Enable */
+-- 
+1.6.0.4
+

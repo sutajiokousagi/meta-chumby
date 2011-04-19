@@ -1,0 +1,2421 @@
+From bd03fea43306badf1477f5aa697ccc7bb223c4cf Mon Sep 17 00:00:00 2001
+From: Wen Lei <leiwen@marvell.com>
+Date: Fri, 27 Feb 2009 10:19:37 +0800
+Subject: [PATCH] pxa910: add pxa168 soc support
+
+---
+ cpu/88SV331xV5/pxa168/Makefile            |   46 +++
+ cpu/88SV331xV5/pxa168/common.c            |   66 ++++
+ cpu/88SV331xV5/pxa168/mfp.c               |  250 +++++++++++++
+ cpu/88SV331xV5/pxa168/timer.c             |  175 +++++++++
+ include/asm-arm/arch-pxa168/bitfield.h    |  112 ++++++
+ include/asm-arm/arch-pxa168/common.h      |  491 ++++++++++++++++++++++++++
+ include/asm-arm/arch-pxa168/hardware.h    |  105 ++++++
+ include/asm-arm/arch-pxa168/mfp-pxa168.h  |  288 +++++++++++++++
+ include/asm-arm/arch-pxa168/mfp.h         |  546 +++++++++++++++++++++++++++++
+ include/asm-arm/arch-pxa168/regs-pxa168.h |  251 +++++++++++++
+ 10 files changed, 2330 insertions(+), 0 deletions(-)
+ create mode 100644 cpu/88SV331xV5/pxa168/Makefile
+ create mode 100644 cpu/88SV331xV5/pxa168/common.c
+ create mode 100644 cpu/88SV331xV5/pxa168/mfp.c
+ create mode 100644 cpu/88SV331xV5/pxa168/timer.c
+ create mode 100644 include/asm-arm/arch-pxa168/bitfield.h
+ create mode 100644 include/asm-arm/arch-pxa168/common.h
+ create mode 100644 include/asm-arm/arch-pxa168/hardware.h
+ create mode 100644 include/asm-arm/arch-pxa168/mfp-pxa168.h
+ create mode 100644 include/asm-arm/arch-pxa168/mfp.h
+ create mode 100644 include/asm-arm/arch-pxa168/regs-pxa168.h
+
+diff --git a/cpu/88SV331xV5/pxa168/Makefile b/cpu/88SV331xV5/pxa168/Makefile
+new file mode 100644
+index 0000000..8099440
+--- /dev/null
++++ b/cpu/88SV331xV5/pxa168/Makefile
+@@ -0,0 +1,46 @@
++#
++# (C) Copyright 2000-2006
++# Wolfgang Denk, DENX Software Engineering, wd@denx.de.
++#
++# See file CREDITS for list of people who contributed to this
++# project.
++#
++# This program is free software; you can redistribute it and/or
++# modify it under the terms of the GNU General Public License as
++# published by the Free Software Foundation; either version 2 of
++# the License, or (at your option) any later version.
++#
++# This program is distributed in the hope that it will be useful,
++# but WITHOUT ANY WARRANTY; without even the implied warranty of
++# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++# GNU General Public License for more details.
++#
++# You should have received a copy of the GNU General Public License
++# along with this program; if not, write to the Free Software
++# Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++# MA 02111-1307 USA
++#
++
++include $(TOPDIR)/config.mk
++
++LIB	= $(obj)lib$(SOC).a
++
++COBJS	= timer.o mfp.o common.o
++
++SRCS	:= $(START:.o=.S) $(SOBJS:.o=.S) $(COBJS:.o=.c)
++OBJS	:= $(addprefix $(obj),$(COBJS) $(SOBJS))
++START	:= $(addprefix $(obj),$(START))
++
++all:	$(obj).depend $(LIB)
++
++$(LIB):	$(OBJS)
++	$(AR) $(ARFLAGS) $@ $(OBJS)
++
++#########################################################################
++
++# defines $(obj).depend target
++include $(SRCTREE)/rules.mk
++
++sinclude $(obj).depend
++
++#########################################################################
+diff --git a/cpu/88SV331xV5/pxa168/common.c b/cpu/88SV331xV5/pxa168/common.c
+new file mode 100644
+index 0000000..3ace757
+--- /dev/null
++++ b/cpu/88SV331xV5/pxa168/common.c
+@@ -0,0 +1,66 @@
++#include <asm/arch/common.h>
++
++void complete(struct completion *completion)
++{
++	completion->done = 1;
++}
++
++inline unsigned long msecs_to_jiffies(int time)
++{
++	return time * HZ / USEC_PER_SEC;
++}
++
++
++int platform_driver_register(struct platform_device *pdev)
++{
++	return 1;
++}
++
++/*
++ * platform_get_resource - get a resource for a device
++ * @dev: platform device
++ * @type: resource type
++ * @num: resource index
++ */
++struct resource *platform_get_resource(struct platform_device *dev,
++		unsigned int type, unsigned int num)
++{
++	int i;
++
++	for (i = 0; i < dev->num_resources; i++) {
++		struct resource *r = &dev->resource[i];
++
++		if ((r->flags & (IORESOURCE_IO|IORESOURCE_MEM|
++						IORESOURCE_IRQ|IORESOURCE_DMA)) == type)
++			if (num-- == 0)
++				return r;
++	}
++	return NULL;
++}
++
++void dev_err(struct device * dev, char *msg)
++{
++	printf("%s: %s\n", (struct platform_device *)(container_of(dev, struct platform_device, dev))->name, msg);
++}
++
++int request_irq(unsigned int irq,
++		irq_handler_t handler,
++		unsigned long flags, const char *devname, void *dev_id)
++{
++	return 1;
++}
++
++void inline getnstimeofday(struct timespec *tv)
++{
++	long ticks = get_ticks();
++	tv->tv_nsec = ticks / (CONFIG_SYS_HZ / 5000); // KV
++	tv->tv_sec = 0;
++}
++
++struct clk *clk_get(struct device *dev, const char *id) {return NULL;}
++
++unsigned long  clk_get_rate(struct clk * clk) 
++{
++	return 208 * 1000000;
++}
++
+diff --git a/cpu/88SV331xV5/pxa168/mfp.c b/cpu/88SV331xV5/pxa168/mfp.c
+new file mode 100644
+index 0000000..84ac83b
+--- /dev/null
++++ b/cpu/88SV331xV5/pxa168/mfp.c
+@@ -0,0 +1,250 @@
++/*
++ * linux/arch/arm/mach-pxa/mfp.c
++ *
++ * PXA3xx Multi-Function Pin Support
++ *
++ * Copyright (C) 2007 Marvell Internation Ltd.
++ *
++ * 2007-08-21: eric miao <eric.miao@marvell.com>
++ *             initial version
++ *
++ *  This program is free software; you can redistribute it and/or modify
++ *  it under the terms of the GNU General Public License version 2 as
++ *  published by the Free Software Foundation.
++ */
++#if 0
++#include <linux/module.h>
++#include <linux/kernel.h>
++#include <linux/init.h>
++#include <linux/io.h>
++#endif
++
++#include <asm/hardware.h>
++#include <asm/arch/common.h>
++#include <asm/arch/mfp.h>
++
++/* mfp_spin_lock is used to ensure that MFP register configuration
++ * (most likely a read-modify-write operation) is atomic, and that
++ * mfp_table[] is consistent
++ */
++static DEFINE_SPINLOCK(mfp_spin_lock);
++
++static void __iomem *mfpr_mmio_base;
++static struct pxa3xx_mfp_pin mfp_table[MFP_PIN_MAX];
++
++#define mfpr_readl(off)			\
++	__raw_readl(mfpr_mmio_base + (off))
++
++#define mfpr_writel(off, val)		\
++	__raw_writel(val, mfpr_mmio_base + (off))
++
++/*
++ * perform a read-back of any MFPR register to make sure the
++ * previous writings are finished
++ */
++#define mfpr_sync()	(void)__raw_readl(mfpr_mmio_base + 0)
++
++static inline void __mfp_config(int pin, unsigned long val)
++{
++	unsigned long off = mfp_table[pin].mfpr_off;
++
++	mfp_table[pin].mfpr_val = val;
++	mfpr_writel(off, val);
++}
++
++void pxa3xx_mfp_config(mfp_cfg_t *mfp_cfgs, int num)
++{
++	int i, pin;
++	unsigned long val, flags;
++	mfp_cfg_t *mfp_cfg = mfp_cfgs;
++
++	spin_lock_irqsave(&mfp_spin_lock, flags);
++
++	for (i = 0; i < num; i++, mfp_cfg++) {
++		pin = MFP_CFG_PIN(*mfp_cfg);
++		val = MFP_CFG_VAL(*mfp_cfg);
++
++		BUG_ON(pin >= MFP_PIN_MAX);
++
++		if (cpu_is_pxa935() || cpu_is_pxa910()) {
++			/* pxa935 only, shift the Drive Strength 
++			 * from bit[11:10] to bit[12:11] */
++			int tmp;
++			tmp = (val & MFPR_DRV_MASK) << 1;
++			val = (val & ~MFPR_DRV_MASK) | tmp;
++		}
++		if (cpu_is_pxa910())
++			val |= 0x80;
++		__mfp_config(pin, val);
++	}
++
++	mfpr_sync();
++	spin_unlock_irqrestore(&mfp_spin_lock, flags);
++}
++
++unsigned long pxa3xx_mfp_read(int mfp)
++{
++	unsigned long val, flags;
++
++	BUG_ON(mfp >= MFP_PIN_MAX);
++
++	spin_lock_irqsave(&mfp_spin_lock, flags);
++	val = mfpr_readl(mfp_table[mfp].mfpr_off);
++	spin_unlock_irqrestore(&mfp_spin_lock, flags);
++
++	return val;
++}
++
++void pxa3xx_mfp_write(int mfp, unsigned long val)
++{
++	unsigned long flags;
++
++	BUG_ON(mfp >= MFP_PIN_MAX);
++
++	spin_lock_irqsave(&mfp_spin_lock, flags);
++	mfpr_writel(mfp_table[mfp].mfpr_off, val);
++	mfpr_sync();
++	spin_unlock_irqrestore(&mfp_spin_lock, flags);
++}
++
++void pxa3xx_mfp_set_afds(int mfp, int af, int ds)
++{
++	uint32_t mfpr_off, mfpr_val;
++	unsigned long flags;
++
++	BUG_ON(mfp >= MFP_PIN_MAX);
++
++	spin_lock_irqsave(&mfp_spin_lock, flags);
++	mfpr_off = mfp_table[mfp].mfpr_off;
++
++	mfpr_val = mfpr_readl(mfpr_off);
++	mfpr_val &= ~(MFPR_AF_MASK | MFPR_DRV_MASK);
++	mfpr_val |= (((af & 0x7) << MFPR_ALT_OFFSET) |
++		     ((ds & 0x7) << MFPR_DRV_OFFSET));
++
++	mfpr_writel(mfpr_off, mfpr_val);
++	mfpr_sync();
++
++	spin_unlock_irqrestore(&mfp_spin_lock, flags);
++}
++
++void pxa3xx_mfp_set_rdh(int mfp, int rdh)
++{
++	uint32_t mfpr_off, mfpr_val;
++	unsigned long flags;
++
++	BUG_ON(mfp >= MFP_PIN_MAX);
++
++	spin_lock_irqsave(&mfp_spin_lock, flags);
++
++	mfpr_off = mfp_table[mfp].mfpr_off;
++
++	mfpr_val = mfpr_readl(mfpr_off);
++	mfpr_val &= ~MFPR_RDH_MASK;
++
++	if (likely(rdh))
++		mfpr_val |= (1u << MFPR_SS_OFFSET);
++
++	mfpr_writel(mfpr_off, mfpr_val);
++	mfpr_sync();
++
++	spin_unlock_irqrestore(&mfp_spin_lock, flags);
++}
++
++void pxa3xx_mfp_set_lpm(int mfp, int lpm)
++{
++	uint32_t mfpr_off, mfpr_val;
++	unsigned long flags;
++
++	BUG_ON(mfp >= MFP_PIN_MAX);
++
++	spin_lock_irqsave(&mfp_spin_lock, flags);
++
++	mfpr_off = mfp_table[mfp].mfpr_off;
++	mfpr_val = mfpr_readl(mfpr_off);
++	mfpr_val &= ~MFPR_LPM_MASK;
++
++	if (lpm & 0x1) mfpr_val |= 1u << MFPR_SON_OFFSET;
++	if (lpm & 0x2) mfpr_val |= 1u << MFPR_SD_OFFSET;
++	if (lpm & 0x4) mfpr_val |= 1u << MFPR_PU_OFFSET;
++	if (lpm & 0x8) mfpr_val |= 1u << MFPR_PD_OFFSET;
++	if (lpm &0x10) mfpr_val |= 1u << MFPR_PS_OFFSET;
++
++	mfpr_writel(mfpr_off, mfpr_val);
++	mfpr_sync();
++
++	spin_unlock_irqrestore(&mfp_spin_lock, flags);
++}
++
++void pxa3xx_mfp_set_pull(int mfp, int pull)
++{
++	uint32_t mfpr_off, mfpr_val;
++	unsigned long flags;
++
++	BUG_ON(mfp >= MFP_PIN_MAX);
++
++	spin_lock_irqsave(&mfp_spin_lock, flags);
++
++	mfpr_off = mfp_table[mfp].mfpr_off;
++	mfpr_val = mfpr_readl(mfpr_off);
++	mfpr_val &= ~MFPR_PULL_MASK;
++	mfpr_val |= ((pull & 0x7u) << MFPR_PD_OFFSET);
++
++	mfpr_writel(mfpr_off, mfpr_val);
++	mfpr_sync();
++
++	spin_unlock_irqrestore(&mfp_spin_lock, flags);
++}
++
++void pxa3xx_mfp_set_edge(int mfp, int edge)
++{
++	uint32_t mfpr_off, mfpr_val;
++	unsigned long flags;
++
++	BUG_ON(mfp >= MFP_PIN_MAX);
++
++	spin_lock_irqsave(&mfp_spin_lock, flags);
++
++	mfpr_off = mfp_table[mfp].mfpr_off;
++	mfpr_val = mfpr_readl(mfpr_off);
++
++	mfpr_val &= ~MFPR_EDGE_MASK;
++	mfpr_val |= (edge & 0x3u) << MFPR_ERE_OFFSET;
++	mfpr_val |= (!edge & 0x1) << MFPR_EC_OFFSET;
++
++	mfpr_writel(mfpr_off, mfpr_val);
++	mfpr_sync();
++
++	spin_unlock_irqrestore(&mfp_spin_lock, flags);
++}
++
++void __init pxa3xx_mfp_init_addr(struct pxa3xx_mfp_addr_map *map)
++{
++	struct pxa3xx_mfp_addr_map *p;
++	unsigned long offset, flags;
++	int i;
++
++	spin_lock_irqsave(&mfp_spin_lock, flags);
++
++	for (p = map; p->start != MFP_PIN_INVALID; p++) {
++		offset = p->offset;
++		i = p->start;
++
++		do {
++			mfp_table[i].mfpr_off = offset;
++			mfp_table[i].mfpr_val = 0;
++			offset += 4; i++;
++		} while ((i <= p->end) && (p->end != -1));
++	}
++
++	spin_unlock_irqrestore(&mfp_spin_lock, flags);
++}
++
++void __init pxa3xx_init_mfp(void)
++{
++	if(cpu_is_pxa910())
++		mfpr_mmio_base = (void __iomem *)&__REG_PXA910(PXA910_MFPR_BASE);
++	else
++		mfpr_mmio_base = (void __iomem *)&__REG(MFPR_BASE);
++	memset(mfp_table, 0, sizeof(mfp_table));
++}
+diff --git a/cpu/88SV331xV5/pxa168/timer.c b/cpu/88SV331xV5/pxa168/timer.c
+new file mode 100644
+index 0000000..b71a030
+--- /dev/null
++++ b/cpu/88SV331xV5/pxa168/timer.c
+@@ -0,0 +1,175 @@
++/*
++ * (C) Copyright 2003
++ * Texas Instruments <www.ti.com>
++ *
++ * (C) Copyright 2002
++ * Sysgo Real-Time Solutions, GmbH <www.elinos.com>
++ * Marius Groeger <mgroeger@sysgo.de>
++ *
++ * (C) Copyright 2002
++ * Sysgo Real-Time Solutions, GmbH <www.elinos.com>
++ * Alex Zuepke <azu@sysgo.de>
++ *
++ * (C) Copyright 2002-2004
++ * Gary Jennejohn, DENX Software Engineering, <gj@denx.de>
++ *
++ * (C) Copyright 2004
++ * Philippe Robin, ARM Ltd. <philippe.robin@arm.com>
++ *
++ * See file CREDITS for list of people who contributed to this
++ * project.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.	 See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++#include <asm/io.h>
++#include <common.h>
++
++#define READ_TIMER ({volatile int loop=100; \
++	         	*(volatile ulong *)(CONFIG_SYS_TIMERBASE+0xa4) = 0x1; \
++			while(loop--);\
++	       		*(volatile ulong *)(CONFIG_SYS_TIMERBASE+0xa4);})
++
++#define TIMER_LOAD_VAL 0xffffffff
++
++static ulong timestamp;
++static ulong lastdec;
++
++int timer_init(void)
++{
++	volatile unsigned int i;
++	*(volatile unsigned int *)0xD4015034 = 5;
++	i = 0x10000;
++	while(i --);
++
++	*(volatile unsigned int *)0xD4015034 = 0x33; //KV - Choose 3.25 MHz Clock Frequency for OS Timer
++	i = 0x10000;
++	while(i --);
++
++	/* Select clock 3.25 MHz */
++	*(volatile ulong *)(CONFIG_SYS_TIMERBASE + 0) = 0x0; //KV
++	/* Select match register */
++	*(volatile ulong *)(CONFIG_SYS_TIMERBASE + 4) = 0xffffffff;
++	/* Preload value. */
++	*(volatile ulong *)(CONFIG_SYS_TIMERBASE + 0x4c) = 0;
++	/* Preload control. */
++	*(volatile ulong *)(CONFIG_SYS_TIMERBASE + 0x58) = 0x0;
++
++	/* Enable counter 0.  */
++	*(volatile ulong *)(CONFIG_SYS_TIMERBASE + 0x84) = 0x1;
++	/* init the timestamp and lastdec value */
++	reset_timer_masked();
++}
++
++void reset_timer_masked (void)
++{
++	/* reset time */
++	lastdec = READ_TIMER;  /* capure current decrementer value time */
++	timestamp = 0;         /* start "advancing" time stamp from 0 */
++}
++
++/*
++ * timer without interrupts
++ */
++
++void reset_timer (void)
++{
++	reset_timer_masked ();
++}
++
++ulong get_timer (ulong base)
++{
++	return get_timer_masked () * 3 / 10000 - base;
++}
++
++void set_timer (ulong t)
++{
++	timestamp = t;
++}
++
++/* delay x useconds AND perserve advance timstamp value */
++void udelay (unsigned long usec)
++{
++	ulong tmo, tmp;
++
++	if(usec >= 1000){               /* if "big" number, spread normalization to seconds */
++		tmo = usec / 1000;      /* start to normalize for usec to ticks per sec */
++		tmo *= CONFIG_SYS_HZ;   /* find number of "ticks" to wait to achieve target */
++		tmo /= 1000;            /* finish normalize. */
++	}else{                          /* else small number, don't kill it prior to HZ multiply */
++		tmo = usec * CONFIG_SYS_HZ;
++		tmo /= (1000*1000);
++	}
++
++	/* tune tmo */
++	tmo /= (CONFIG_SYS_HZ / 3000000);
++	tmp = get_timer_masked ();	/* get current timestamp */
++	if( (tmo + tmp + 1) < tmp ) 	/* if setting this fordward will roll time stamp */
++		reset_timer_masked ();	/* reset "advancing" timestamp to 0, set lastdec value */
++	else
++		tmo += tmp;		/* else, set advancing stamp wake up time */
++
++	while (get_timer_masked () < tmo)/* loop till event */
++		/*NOP*/;
++}
++
++ulong get_timer_masked (void)
++{
++	ulong now = READ_TIMER;		/* current tick value */
++
++	if (lastdec <= now) {		/* normal mode (non roll) */
++		/* normal mode */
++		timestamp += (now - lastdec); /* move stamp fordward with absoulte diff ticks */
++	} else {			/* we have overflow of the count down timer */
++		/* nts = ts + ld + (TLV - now)
++		 * ts=old stamp, ld=time that passed before passing through -1
++		 * (TLV-now) amount of time after passing though -1
++		 * nts = new "advancing time stamp"...it could also roll and cause problems.
++		 */
++		timestamp += now + (TIMER_LOAD_VAL - lastdec);
++	}
++	lastdec = now;
++
++	return timestamp;
++}
++
++/* waits specified delay value and resets timestamp */
++void udelay_masked (unsigned long usec)
++{
++	ulong tmo;
++
++	if(usec >= 1000){               /* if "big" number, spread normalization to seconds */
++		tmo = usec / 1000;      /* start to normalize for usec to ticks per sec */
++		tmo *= CONFIG_SYS_HZ;          /* find number of "ticks" to wait to achieve target */
++	}else{                          /* else small number, don't kill it prior to HZ multiply */
++		tmo = usec * CONFIG_SYS_HZ;
++	}
++
++	reset_timer_masked ();	/* set "advancing" timestamp to 0, set lastdec vaule */
++
++	while (get_timer_masked () < tmo) /* wait for time stamp to overtake tick number.*/
++		/*NOP*/;
++}
++
++/*
++ * This function is derived from PowerPC code (read timebase as long long).
++ * On ARM it just returns the timer value.
++ */
++unsigned long long get_ticks(void)
++{
++	return get_timer_masked ();
++}
++
+diff --git a/include/asm-arm/arch-pxa168/bitfield.h b/include/asm-arm/arch-pxa168/bitfield.h
+new file mode 100644
+index 0000000..104a21c
+--- /dev/null
++++ b/include/asm-arm/arch-pxa168/bitfield.h
+@@ -0,0 +1,112 @@
++/*
++ *	FILE		bitfield.h
++ *
++ *	Version		1.1
++ *	Author		Copyright (c) Marc A. Viredaz, 1998
++ *			DEC Western Research Laboratory, Palo Alto, CA
++ *	Date		April 1998 (April 1997)
++ *	System		Advanced RISC Machine (ARM)
++ *	Language	C or ARM Assembly
++ *	Purpose		Definition of macros to operate on bit fields.
++ */
++
++
++#ifndef __BITFIELD_H
++#define __BITFIELD_H
++
++#ifndef __ASSEMBLY__
++#define UData(Data)	((unsigned long) (Data))
++#else
++#define UData(Data)	(Data)
++#endif
++
++
++/*
++ * MACRO: Fld
++ *
++ * Purpose
++ *    The macro "Fld" encodes a bit field, given its size and its shift value
++ *    with respect to bit 0.
++ *
++ * Note
++ *    A more intuitive way to encode bit fields would have been to use their
++ *    mask. However, extracting size and shift value information from a bit
++ *    field's mask is cumbersome and might break the assembler (255-character
++ *    line-size limit).
++ *
++ * Input
++ *    Size		Size of the bit field, in number of bits.
++ *    Shft		Shift value of the bit field with respect to bit 0.
++ *
++ * Output
++ *    Fld		Encoded bit field.
++ */
++
++#define Fld(Size, Shft)	(((Size) << 16) + (Shft))
++
++
++/*
++ * MACROS: FSize, FShft, FMsk, FAlnMsk, F1stBit
++ *
++ * Purpose
++ *    The macros "FSize", "FShft", "FMsk", "FAlnMsk", and "F1stBit" return
++ *    the size, shift value, mask, aligned mask, and first bit of a
++ *    bit field.
++ *
++ * Input
++ *    Field		Encoded bit field (using the macro "Fld").
++ *
++ * Output
++ *    FSize		Size of the bit field, in number of bits.
++ *    FShft		Shift value of the bit field with respect to bit 0.
++ *    FMsk		Mask for the bit field.
++ *    FAlnMsk		Mask for the bit field, aligned on bit 0.
++ *    F1stBit		First bit of the bit field.
++ */
++
++#define FSize(Field)	((Field) >> 16)
++#define FShft(Field)	((Field) & 0x0000FFFF)
++#define FMsk(Field)	(((UData (1) << FSize (Field)) - 1) << FShft (Field))
++#define FAlnMsk(Field)	((UData (1) << FSize (Field)) - 1)
++#define F1stBit(Field)	(UData (1) << FShft (Field))
++
++
++/*
++ * MACRO: FInsrt
++ *
++ * Purpose
++ *    The macro "FInsrt" inserts a value into a bit field by shifting the
++ *    former appropriately.
++ *
++ * Input
++ *    Value		Bit-field value.
++ *    Field		Encoded bit field (using the macro "Fld").
++ *
++ * Output
++ *    FInsrt		Bit-field value positioned appropriately.
++ */
++
++#define FInsrt(Value, Field) \
++			(UData (Value) << FShft (Field))
++
++
++/*
++ * MACRO: FExtr
++ *
++ * Purpose
++ *    The macro "FExtr" extracts the value of a bit field by masking and
++ *    shifting it appropriately.
++ *
++ * Input
++ *    Data		Data containing the bit-field to be extracted.
++ *    Field		Encoded bit field (using the macro "Fld").
++ *
++ * Output
++ *    FExtr		Bit-field value.
++ */
++
++#define FExtr(Data, Field) \
++			((UData (Data) >> FShft (Field)) & FAlnMsk (Field))
++
++
++#endif /* __BITFIELD_H */
+diff --git a/include/asm-arm/arch-pxa168/common.h b/include/asm-arm/arch-pxa168/common.h
+new file mode 100644
+index 0000000..da28115
+--- /dev/null
++++ b/include/asm-arm/arch-pxa168/common.h
+@@ -0,0 +1,491 @@
++#ifndef _PXA_CONFIG
++#define _PXA_CONFIG
++
++#include <common.h>
++#include <asm/io.h>
++#include <linux/err.h>
++#include <linux/mtd/compat.h>
++#include <linux/mtd/nand.h>
++
++
++#define __initdata
++#define __exit
++#define __init
++#define __deprecated
++#define module_init(...)
++#define module_exit(...)
++#define MODULE_DESCRIPTION(...)
++#define MODULE_AUTHOR(...)
++#define MODULE_LICENSE(...)
++
++#define HZ CONFIG_SYS_HZ
++#define IRQ_NONE        (0)
++#define IRQ_HANDLED     (1)
++#define IRQ_RETVAL(x)   ((x) != 0)
++#define IORESOURCE_IO           0x00000100      /* Resource type */
++#define IORESOURCE_MEM          0x00000200
++#define IORESOURCE_IRQ          0x00000400
++#define IORESOURCE_DMA          0x00000800
++#define PXA_IRQ(x)      (x)
++#define IRQ_NAND        PXA_IRQ(45)     /* NAND Controller */
++#define IRQF_DISABLED           0x00000020
++#define free_irq(x, y)	kfree(y)
++#define DFC_BASE_ADDR   0xD4283000
++#define IRQF_SHARED	1
++#undef	ioremap
++#define ioremap(physaddr, size) DFC_BASE_ADDR
++#define ARRAY_AND_SIZE(x)       (x), ARRAY_SIZE(x)
++
++#define __REG_PXA910(x)	(*((volatile u32 *)(x)))
++#define BU_U32            unsigned int
++#define BU_REG_WRITE(x,y) ((*(volatile BU_U32 *)(x)) = y )
++
++typedef int onenand_state_t;
++typedef int wait_queue_head_t; 
++typedef int irqreturn_t;
++typedef irqreturn_t (*irq_handler_t)(int, void *);
++typedef u32 resource_size_t;
++typedef struct pm_message {
++	        int event;
++} pm_message_t;
++typedef int spinlock_t;
++#define clk_enable(...)	
++#define clk_disable(...)
++#define DEBUG(...)
++#define del_mtd_device(...)
++
++static inline int __decalare_return(void)
++{
++	return 1;
++}
++#define DECLARE_WAITQUEUE(x, y) __decalare_return()
++#define set_current_state(...)		do { } while (0)
++#define schedule()			do { } while (0)
++#define cond_resched()
++#define	spin_lock_irqsave(x,y) y = 0;
++#define spin_unlock_irqrestore(x,y)
++#define spin_lock_init(...)
++#define spin_lock(...)
++#define spin_unlock(...)
++#define add_wait_queue(...)
++#define remove_wait_queue(...)
++#define wake_up(...)
++#define init_waitqueue_head(...)
++#define THIS_MODULE		0
++#define wait_for_completion(...)
++
++/* Parameters used to convert the timespec values: */
++#define MSEC_PER_SEC    1000L
++#define USEC_PER_MSEC   1000L
++#define NSEC_PER_USEC   1000L
++#define NSEC_PER_MSEC   1000000L
++#define USEC_PER_SEC    1000000L
++#define NSEC_PER_SEC    1000000000L
++#define FSEC_PER_SEC    1000000000000000L
++
++#define BIT_0 (1 << 0)
++#define BIT_1 (1 << 1)
++#define BIT_2 (1 << 2)
++#define BIT_3 (1 << 3)
++#define BIT_4 (1 << 4)
++#define BIT_5 (1 << 5)
++#define BIT_6 (1 << 6)
++#define BIT_7 (1 << 7)
++#define BIT_8 (1 << 8)
++#define BIT_9 (1 << 9)
++#define BIT_10 (1 << 10)
++#define BIT_11 (1 << 11)
++#define BIT_12 (1 << 12)
++#define BIT_13 (1 << 13)
++#define BIT_14 (1 << 14)
++#define BIT_15 (1 << 15)
++#define BIT_16 (1 << 16)
++#define BIT_17 (1 << 17)
++#define BIT_18 (1 << 18)
++#define BIT_19 (1 << 19)
++#define BIT_20 (1 << 20)
++#define BIT_21 (1 << 21)
++#define BIT_22 (1 << 22)
++#define BIT_23 (1 << 23)
++#define BIT_24 (1 << 24)
++#define BIT_25 (1 << 25)
++#define BIT_26 (1 << 26)
++#define BIT_27 (1 << 27)
++#define BIT_28 (1 << 28)
++#define BIT_29 (1 << 29)
++#define BIT_30 (1 << 30)
++#define BIT_31 ((unsigned)1 << 31)
++
++#define SHIFT0(Val)  (Val)
++#define SHIFT1(Val)  ((Val) << 1)
++#define SHIFT2(Val)  ((Val) << 2)
++#define SHIFT3(Val)  ((Val) << 3)
++#define SHIFT4(Val)  ((Val) << 4)
++#define SHIFT5(Val)  ((Val) << 5)
++#define SHIFT6(Val)  ((Val) << 6)
++#define SHIFT7(Val)  ((Val) << 7)
++#define SHIFT8(Val)  ((Val) << 8)
++#define SHIFT9(Val)  ((Val) << 9)
++#define SHIFT10(Val) ((Val) << 10)
++#define SHIFT11(Val) ((Val) << 11)
++#define SHIFT12(Val) ((Val) << 12)
++#define SHIFT13(Val) ((Val) << 13)
++#define SHIFT14(Val) ((Val) << 14)
++#define SHIFT15(Val) ((Val) << 15)
++#define SHIFT16(Val) ((Val) << 16)
++#define SHIFT17(Val) ((Val) << 17)
++#define SHIFT18(Val) ((Val) << 18)
++#define SHIFT19(Val) ((Val) << 19)
++#define SHIFT20(Val) ((Val) << 20)
++#define SHIFT21(Val) ((Val) << 21)
++#define SHIFT22(Val) ((Val) << 22)
++#define SHIFT23(Val) ((Val) << 23)
++#define SHIFT24(Val) ((Val) << 24)
++#define SHIFT25(Val) ((Val) << 25)
++#define SHIFT26(Val) ((Val) << 26)
++#define SHIFT27(Val) ((Val) << 27)
++#define SHIFT28(Val) ((Val) << 28)
++#define SHIFT29(Val) ((Val) << 29)
++#define SHIFT30(Val) ((Val) << 30)
++#define SHIFT31(Val) ((Val) << 31)
++
++/*
++ *
++ *      THE BASE ADDRESSES
++ *
++ */
++#define APBC_BASE       0xD4015000
++
++#define APBC_AIB_CLK_RST                (APBC_BASE+0x003C)      /* 32 bit       Clock/Reset
++								 * Control
++								 * Register for
++								 * AIB
++								 */
++
++#define APBC_AIB_CLK_RST_FNCLK                          (1 << 1)
++
++#define APBC_AIB_CLK_RST_APBCLK                         (1 << 0)
++
++/*
++ *
++ *      THE BASE ADDRESSES
++ *
++ */
++#define SMC_BASE        0xD4283800
++
++/*
++ *
++ *      THE REGISTER DEFINES
++ *
++ */
++#define SMC_MSCX                (SMC_BASE+0x0020)       /* Static Memory Control Registers Start */
++#define SMC_SXCNFGX             (SMC_BASE+0x0030)       /* Synchronous Static Memory Control
++							 * Registers Start
++							 */
++#define SMC_MEMCLKCFG   (SMC_BASE+0x0068)       /* 32 bit       Clock Configuration
++						 * Control Register
++						 */
++#define SMC_CSDFICFGX   (SMC_BASE+0x0090)       /* DFI Configuration Control
++						 * Register for Chip
++						 * Selects Start
++						 */
++#define SMC_CLK_RET_DEL (SMC_BASE+0x00B0)       /* 32 bit       Synchronous NOR Flash
++						 * Clock Return Delay
++						 * Register
++						 */
++#define SMC_ADV_RET_DEL (SMC_BASE+0x00B4)       /* 32 bit       Synchronous NOR Flash
++						 * nADV Return Delay
++						 * Register
++						 */
++#define SMC_CSADRMAPX   (SMC_BASE+0x00C0)       /* Address Mapping Control Registers Start */
++#define SMC_TCVCFGREG   (SMC_BASE+0x00D0)       /* 32 bit       Transceiver
++						 * Configuration Control
++						 * Register 0
++						 */
++#define SMC_WE_APX              (SMC_BASE+0x00E0)       /* nWE Address Phase Control
++							 * Registers Start
++							 */
++#define SMC_OE_APX              (SMC_BASE+0x00F0)       /* nOE Address Phase Control
++							 * Registers Start
++							 */
++#define SMC_ADV_APX             (SMC_BASE+0x0100)       /* nADV Address Phase Control
++							 * Registers Start
++							 */
++
++#define typecheck(type,x) \
++	({      type __dummy; \
++	         typeof(x) __dummy2; \
++	         (void)(&__dummy == &__dummy2); \
++	         1; \
++	 })
++
++#define time_after(a,b)         \
++	(typecheck(unsigned long, a) && \
++	 typecheck(unsigned long, b) && \
++	 ((long)(b) - (long)(a) < 0))
++
++#define time_before(a,b)        time_after(b,a)
++#define jiffies			({			\
++				long ticks;		\
++				ticks = get_ticks();	\
++				ticks / 3 / 1000; 	\
++				})
++#define INIT_COMPLETION(x)      ((x).done = 0)
++
++struct ecc_layout {
++	int     offset;
++	int     length;
++};
++
++struct yaffs_oob_desc {
++	int     offset;
++	int     size;
++};
++
++struct completion {
++	        unsigned int done;
++};
++
++struct resource {
++	resource_size_t start;
++	resource_size_t end;
++	const char *name;
++	unsigned long flags;
++	struct resource *parent, *sibling, *child;
++};
++
++struct device {
++        void            *driver_data;   /* data private to the driver */
++	void            *platform_data; /* Platform specific data, device
++					   core doesn't touch it */
++	u64             *dma_mask;      /* dma mask (if dma'able device) */
++	u64             coherent_dma_mask;/* Like dma_mask, but for
++					     alloc_coherent mappings as
++					     not all hardware supports
++					     64 bit addresses for consistent
++					     allocations such descriptors. */
++};
++
++struct platform_device {
++	const char      * name;
++	int             id;
++        struct device   dev;
++	u32             num_resources;
++	struct resource * resource;
++};
++
++struct device_driver {
++	const char              *name;
++};
++
++struct platform_driver {
++	int (*probe)(struct platform_device *);
++	int (*remove)(struct platform_device *);
++	void (*shutdown)(struct platform_device *);
++	int (*suspend)(struct platform_device *, pm_message_t state);
++	int (*resume)(struct platform_device *);
++	struct device_driver driver;
++};
++
++struct timespec {
++	time_t  tv_sec;         /* seconds */
++	long    tv_nsec;        /* nanoseconds */
++};
++
++struct mtd_partition {
++	char *name;                     /* identifier string */
++	u_int32_t size;                 /* partition size */
++	u_int32_t offset;               /* offset within the master MTD space */
++	u_int32_t mask_flags;           /* master MTD flags to mask out for this partition */
++	struct nand_ecclayout *ecclayout;       /* out of band layout for this partition (NAND only)*/
++	struct mtd_info **mtdp;         /* pointer to store the MTD object */
++};
++
++void complete(struct completion *completion);
++unsigned long wait_for_completion_timeout(struct completion *x, unsigned long timeout);
++inline unsigned long msecs_to_jiffies(int time);
++void dev_err(struct device * dev, char *msg);
++void getnstimeofday(struct timespec *tv);
++struct clk *clk_get(struct device *dev, const char *id);
++unsigned long clk_get_rate(struct clk * clk);
++
++#define CPUID_ID	        0
++
++#define __stringify_1(x)        #x
++#define __stringify(x)          __stringify_1(x)
++
++#define read_cpuid(reg)							\
++	({								\
++		unsigned int __val;					\
++		asm("mrc	p15, 0, %0, c0, c0, " __stringify(reg)	\
++		    : "=r" (__val)					\
++		    :							\
++		    : "cc");						\
++		__val;							\
++	})
++
++
++#ifdef CONFIG_CPU_PXA930
++#define __cpu_is_pxa930(id)                             		\
++	({                                              		\
++	 unsigned int _id = (id) >> 4 & 0xfff;   			\
++	 _id == 0x683;           					\
++	 })
++#else
++#define __cpu_is_pxa930(id)     (0)
++#endif
++
++#ifdef CONFIG_CPU_PXA935
++#define __cpu_is_pxa935(id)                             		\
++	({                                              		\
++	 unsigned int _id = (id) >> 4 & 0xfff;   			\
++	 _id == 0x693;                           			\
++	 })
++#else
++#define __cpu_is_pxa935(id)     (0)
++#endif
++
++#ifdef CONFIG_CPU_PXA910
++#define __cpu_is_pxa910(id)                             		\
++	({                                              		\
++	 unsigned int _id = (id) >> 4 & 0xfff;   			\
++	 _id == 0x926 || _id == 0x800 || _id == 0x840;   		\
++	 })
++#else
++#define __cpu_is_pxa910(id)     (0)
++#endif
++
++#ifdef CONFIG_CPU_PXA910_910
++#define __cpu_is_pxa910_910(id)                         		\
++	({                                              		\
++	 unsigned int _id = (id) & 0xffff;       			\
++	 _id == 0x9262 || _id == 0x8000;         			\
++	 })
++#else
++#define __cpu_is_pxa910_910(id) (0)
++#endif
++
++#ifdef CONFIG_CPU_PXA910_168
++#define __cpu_is_pxa910_168(id)                         		\
++	({                                              		\
++	 unsigned int _id = (id) & 0xffff;       			\
++	 _id == 0x9263 || _id == 0x8400;         			\
++	 })
++#else
++#define __cpu_is_pxa910_168(id) (0)
++#endif
++
++#define cpu_is_pxa930()                                 		\
++	({                                              		\
++	 unsigned int id = read_cpuid(CPUID_ID); 			\
++	 __cpu_is_pxa930(id);                    			\
++	 })
++#define cpu_is_pxa935()    		                		\
++	({                              		                \
++	 unsigned int id = read_cpuid(CPUID_ID); 			\
++	 __cpu_is_pxa935(id);                    			\
++	 })
++#define cpu_is_pxa910()                                 		\
++	({                                              		\
++	 unsigned int id = read_cpuid(CPUID_ID); 			\
++	 __cpu_is_pxa910(id);                    			\
++	 })
++#define cpu_is_pxa910_910()                                     	\
++	({                                              		\
++	 unsigned int id = read_cpuid(CPUID_ID); 			\
++	 __cpu_is_pxa910_910(id);                        		\
++	 })
++#define cpu_is_pxa910_168()                                     	\
++	({                                              		\
++	 unsigned int id = read_cpuid(CPUID_ID); 			\
++	 __cpu_is_pxa910_168(id);                        		\
++	 })
++
++static int add_mtd_partitions(struct mtd_info *master,
++		const struct mtd_partition *parts,
++		int nbparts)
++{
++	return 0;
++}
++
++struct pxa3xx_nand_platform_data {
++	struct mtd_partition *parts;
++	unsigned int    nr_parts;
++};
++
++static struct mtd_partition pxa910_128m_partitions[] = {
++	[0] = {
++		.name        = "Bootloader",
++		.offset      = 0x00040000,
++		.size        = 0x00040000,
++		.mask_flags  = MTD_WRITEABLE, /* force read-only */
++	},
++	[1] = {
++		.name        = "Reserve",
++		.offset      = 0x00080000,
++		.size        = 0x00020000,
++	},
++	[2] = {
++		.name        = "Reserve",
++		.offset      = 0x000a0000,
++		.size        = 0x00020000,
++	},
++	[3] = {
++		.name        = "Kernel",
++		.offset      = 0x00100000,
++		.size        = 0x00200000,
++		.mask_flags  = MTD_WRITEABLE,  /* force read-only */
++	},
++	[4] = {
++		.name        = "Filesystem",
++		.offset      = 0x00300000,
++		.size        = 0x03000000,     /* only mount 48M fs */
++	},
++	[5] = {
++		.name        = "MassStorage",
++		.offset      = 0x03300000,
++		.size        = 0x03CA0000,/* It will be set at probe function */
++	},
++	[6] = {
++		.name        = "BBT",
++		.offset      = 0x6FA0000,
++		.size        = 0x80000,
++		.mask_flags  = MTD_WRITEABLE,  /* force read-only */
++	},
++};
++
++static struct pxa3xx_nand_platform_data tavorevb_nand_info;
++static struct resource pxa910_resources_nand[] = {
++	[0] = {
++		.start  = 0xD4283000,
++		.end    = 0xD4283200,
++		.flags  = IORESOURCE_MEM,
++	},
++};
++
++static struct resource pxa3xx_resource_nand[] = {
++	[0] = {
++		.start  = 0x43100000,
++		.end    = 0x431000ff,
++		.flags  = IORESOURCE_MEM,
++	},
++};
++
++static struct platform_device pxa910_device_nand = {
++	.name           = "pxa3xx-nand",
++	.id             = -1,
++	.resource = pxa910_resources_nand,
++	//.resource = pxa3xx_resource_nand,
++	.num_resources  = ARRAY_SIZE(pxa3xx_resource_nand),
++};
++
++static inline void dev_set_drvdata(struct device *dev, void *data)
++{
++}
++#define platform_set_drvdata(_dev,data) dev_set_drvdata(&(_dev)->dev, (data))
++
++static inline void init_completion(struct completion *x)
++{
++        x->done = 0;
++}
++#endif
+diff --git a/include/asm-arm/arch-pxa168/hardware.h b/include/asm-arm/arch-pxa168/hardware.h
+new file mode 100644
+index 0000000..6595fa1
+--- /dev/null
++++ b/include/asm-arm/arch-pxa168/hardware.h
+@@ -0,0 +1,105 @@
++/*
++ *  linux/include/asm-arm/arch-pxa/hardware.h
++ *
++ *  Author:	Nicolas Pitre
++ *  Created:	Jun 15, 2001
++ *  Copyright:	MontaVista Software Inc.
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License version 2 as
++ * published by the Free Software Foundation.
++ *
++ * Note: This file was taken from linux-2.4.19-rmk4-pxa1
++ *
++ * - 2003/01/20 implementation specifics activated
++ *   Robert Schwebel <r.schwebel@pengutronix.de>
++ */
++
++#ifndef __ASM_ARCH_HARDWARE_H
++#define __ASM_ARCH_HARDWARE_H
++
++#include <linux/config.h>
++#include <asm/mach-types.h>
++
++
++/*
++ * These are statically mapped PCMCIA IO space for designs using it as a
++ * generic IO bus, typically with ISA parts, hardwired IDE interfaces, etc.
++ * The actual PCMCIA code is mapping required IO region at run time.
++ */
++#define PCMCIA_IO_0_BASE	0xf6000000
++#define PCMCIA_IO_1_BASE	0xf7000000
++
++
++/*
++ * We requires absolute addresses.
++ */
++#define PCIO_BASE		0
++
++/*
++ * Workarounds for at least 2 errata so far require this.
++ * The mapping is set in mach-pxa/generic.c.
++ */
++#define UNCACHED_PHYS_0		0xff000000
++#define UNCACHED_ADDR		UNCACHED_PHYS_0
++
++/*
++ * Intel PXA internal I/O mappings:
++ *
++ * 0x40000000 - 0x41ffffff <--> 0xf8000000 - 0xf9ffffff
++ * 0x44000000 - 0x45ffffff <--> 0xfa000000 - 0xfbffffff
++ * 0x48000000 - 0x49ffffff <--> 0xfc000000 - 0xfdffffff
++ */
++
++/* FIXME: Only this does work for u-boot... find out why... [RS] */
++#define UBOOT_REG_FIX 1
++
++#ifndef UBOOT_REG_FIX
++#ifndef __ASSEMBLY__
++
++#define io_p2v(x)	( ((x) | 0xbe000000) ^ (~((x) >> 1) & 0x06000000) )
++#define io_v2p( x )	( ((x) & 0x41ffffff) ^ ( ((x) & 0x06000000) << 1) )
++
++/*
++ * This __REG() version gives the same results as the one above,  except
++ * that we are fooling gcc somehow so it generates far better and smaller
++ * assembly code for access to contigous registers.  It's a shame that gcc
++ * doesn't guess this by itself.
++ */
++#include <asm/types.h>
++typedef struct { volatile u32 offset[4096]; } __regbase;
++# define __REGP(x)	((__regbase *)((x)&~4095))->offset[((x)&4095)>>2]
++# define __REG(x)	__REGP(io_p2v(x))
++#endif
++
++/* Let's kick gcc's ass again... */
++# define __REG2(x,y)	\
++	( __builtin_constant_p(y) ? (__REG((x) + (y))) \
++				  : (*(volatile u32 *)((u32)&__REG(x) + (y))) )
++
++# define __PREG(x)	(io_v2p((u32)&(x)))
++
++#else
++
++# define __REG(x)	io_p2v(x)
++# define __PREG(x)	io_v2p(x)
++
++# undef io_p2v
++# undef __REG
++# ifndef __ASSEMBLY__
++#  define io_p2v(PhAdd)	   (PhAdd)
++#  define __REG(x)	(*((volatile u32 *)io_p2v(x)))
++#  define __REG2(x,y)	(*(volatile u32 *)((u32)&__REG(x) + (y)))
++# else
++#  define __REG(x) (x)
++#  ifdef CONFIG_CPU_MONAHANS /* Hack to make this work with mona's pxa-regs.h */
++#   define __REG_2(x) (x)
++#   define __REG_3(x) (x)
++#  endif
++# endif
++#endif /* UBOOT_REG_FIX */
++
++#include <asm/arch/regs-pxa168.h>
++
++
++#endif	/* _ASM_ARCH_HARDWARE_H */
+diff --git a/include/asm-arm/arch-pxa168/mfp-pxa168.h b/include/asm-arm/arch-pxa168/mfp-pxa168.h
+new file mode 100644
+index 0000000..a7570ac
+--- /dev/null
++++ b/include/asm-arm/arch-pxa168/mfp-pxa168.h
+@@ -0,0 +1,288 @@
++/*
++ * linux/include/asm-arm/arch-pxa/mfp-pxa9xx.h
++ *
++ * PXA910 specific MFP configuration definitions
++ *
++ * Copyright (C) 2008 Marvell International Ltd.
++ * 2008-10-15: bin yang <bin.yang@marvell.com>
++ *             initial version
++ *
++ *  This program is free software; you can redistribute it and/or modify
++ *  it under the terms of the GNU General Public License version 2 as
++ *  published by the Free Software Foundation.
++ */
++
++#ifndef __ASM_ARCH_MFP_PXA910_H
++#define __ASM_ARCH_MFP_PXA910_H
++
++#include <asm/arch/mfp.h>
++
++/* UART2 */
++#define GPIO47_UART2_RXD              MFP_CFG(GPIO47, AF6)
++#define GPIO48_UART2_TXD              MFP_CFG(GPIO48, AF6)
++
++#ifdef CONFIG_CPU_PXA910_168
++#define GPIO107_FFTXD               MFP_CFG(GPIO107, AF2)
++#define GPIO108_FFRXD               MFP_CFG(GPIO108, AF2)
++#endif
++
++/*IRDA*/
++#define GPIO51_IRDA_SHDN              MFP_CFG(GPIO51, AF0)
++/* UART3 */
++#define GPIO31_UART3_RXD              MFP_CFG(GPIO31, AF4)
++#define GPIO32_UART3_TXD              MFP_CFG(GPIO32, AF4)
++
++/* SMC */
++#define SM_nCS0_nCS0           	 MFP_CFG(SM_nCS0, AF0)
++#define SM_ADV_SM_ADV        MFP_CFG(SM_ADV, AF0)
++#define SM_SCLK_SM_SCLK        MFP_CFG(SM_SCLK, AF0)
++#define SM_SCLK_SM_SCLK        MFP_CFG(SM_SCLK, AF0)
++#define SM_BE0_SM_BE0        MFP_CFG(SM_BE0, AF1)
++#define SM_BE1_SM_BE1        MFP_CFG(SM_BE1, AF1)
++
++
++/* I2C */
++#define GPIO53_CI2C_SCL             MFP_CFG(GPIO53, AF2)
++#define GPIO54_CI2C_SDA             MFP_CFG(GPIO54, AF2)
++
++#ifdef CONFIG_CPU_PXA910_168
++#define	GPIO87_PI2C_SDA             MFP_CFG(GPIO87, AF0)
++#define	GPIO88_PI2C_SCL             MFP_CFG(GPIO88, AF0)
++#define	GPIO105_CI2C_SDA            MFP_CFG(GPIO105, AF1)
++#define	GPIO106_CI2C_SCL            MFP_CFG(GPIO106, AF1)
++#endif
++
++/* SSP1 (I2S) */ 
++#define GPIO24_SSP1_SDATA_IN        MFP_CFG_DRV(GPIO24, AF1, DS06X)
++#define GPIO21_SSP1_BITCLK          MFP_CFG_DRV(GPIO21, AF1, DS06X)
++#define GPIO20_SSP1_SYSCLK          MFP_CFG_DRV(GPIO20, AF1, DS06X)
++#define GPIO22_SSP1_SYNC            MFP_CFG_DRV(GPIO22, AF1, DS06X)
++#define GPIO23_SSP1_DATA_OUT        MFP_CFG_DRV(GPIO23, AF1, DS06X)
++#define GPIO124_MN_CLK_OUT		MFP_CFG_DRV(GPIO124, AF1, DS06X)
++#define GPIO123_CLK_REQ		MFP_CFG_DRV(GPIO123, AF0, DS06X)
++
++
++/* DFI */
++#define PXA910_DF_IO0_ND_IO0               MFP_CFG_LPM(DF_IO0, AF0, PULL_LOW)
++#define PXA910_DF_IO1_ND_IO1               MFP_CFG_LPM(DF_IO1, AF0, PULL_LOW)
++#define PXA910_DF_IO2_ND_IO2               MFP_CFG_LPM(DF_IO2, AF0, PULL_LOW)
++#define PXA910_DF_IO3_ND_IO3               MFP_CFG_LPM(DF_IO3, AF0, PULL_LOW)
++#define PXA910_DF_IO4_ND_IO4               MFP_CFG_LPM(DF_IO4, AF0, PULL_LOW)
++#define PXA910_DF_IO5_ND_IO5               MFP_CFG_LPM(DF_IO5, AF0, PULL_LOW)
++#define PXA910_DF_IO6_ND_IO6               MFP_CFG_LPM(DF_IO6, AF0, PULL_LOW)
++#define PXA910_DF_IO7_ND_IO7               MFP_CFG_LPM(DF_IO7, AF0, PULL_LOW)
++#define PXA910_DF_IO8_ND_IO8               MFP_CFG_LPM(DF_IO8, AF0, PULL_LOW)
++#define PXA910_DF_IO9_ND_IO9               MFP_CFG_LPM(DF_IO9, AF0, PULL_LOW)
++#define PXA910_DF_IO10_ND_IO10             MFP_CFG_LPM(DF_IO10, AF0, PULL_LOW)
++#define PXA910_DF_IO11_ND_IO11             MFP_CFG_LPM(DF_IO11, AF0, PULL_LOW)
++#define PXA910_DF_IO12_ND_IO12             MFP_CFG_LPM(DF_IO12, AF0, PULL_LOW)
++#define PXA910_DF_IO13_ND_IO13             MFP_CFG_LPM(DF_IO13, AF0, PULL_LOW)
++#define PXA910_DF_IO14_ND_IO14             MFP_CFG_LPM(DF_IO14, AF0, PULL_LOW)
++#define PXA910_DF_IO15_ND_IO15             MFP_CFG_LPM(DF_IO15, AF0, PULL_LOW)
++#define DF_nCS0_SM_nCS2_nCS0        MFP_CFG(DF_nCS0_SM_nCS2, AF0)
++#define DF_ALE_SM_WEn_ND_ALE        MFP_CFG(DF_ALE_SM_WEn, AF1)
++#define DF_CLE_SM_OEn_ND_CLE        MFP_CFG(DF_CLE_SM_OEn, AF0)
++#define DF_WEn_DF_WEn	        MFP_CFG(DF_WEn, AF1)
++#define DF_REn_DF_REn	        MFP_CFG(DF_REn, AF1)
++#define DF_RDY0_DF_RDY0	        MFP_CFG(DF_RDY0, AF0)
++/*keypad*/
++#define GPIO00_KP_MKIN0          MFP_CFG_LPM(GPIO0, AF1,PULL_LOW)
++#define GPIO01_KP_MKOUT0          MFP_CFG(GPIO1, AF1)
++#define GPIO02_KP_MKIN1          MFP_CFG_LPM(GPIO2, AF1,PULL_LOW)
++#define GPIO03_KP_MKOUT1          MFP_CFG(GPIO3, AF1)
++#define GPIO04_KP_MKIN2          MFP_CFG_LPM(GPIO4, AF1,PULL_LOW)
++#define GPIO05_KP_MKOUT2          MFP_CFG(GPIO5, AF1)
++#define GPIO06_KP_MKIN3         MFP_CFG_LPM(GPIO6, AF1,PULL_LOW)
++#define GPIO07_KP_MKOUT3          MFP_CFG(GPIO7, AF1)
++#define GPIO08_KP_MKIN4         MFP_CFG_LPM(GPIO8, AF1,PULL_LOW)
++#define GPIO09_KP_MKOUT4          MFP_CFG(GPIO9, AF1)
++#define GPIO10_KP_MKIN5         MFP_CFG_LPM(GPIO10, AF1,PULL_LOW)
++#define GPIO11_KP_MKOUT5          MFP_CFG(GPIO11, AF1)
++#define GPIO12_KP_MKIN6         MFP_CFG_LPM(GPIO12, AF1,PULL_LOW)
++#define GPIO13_KP_MKOUT6          MFP_CFG(GPIO13, AF1)
++#define GPIO14_KP_MKIN7         MFP_CFG_LPM(GPIO14, AF1,PULL_LOW)
++#define GPIO15_KP_MKOUT7          MFP_CFG(GPIO15, AF1)
++#define GPIO16_KP_DKIN0         MFP_CFG_LPM(GPIO16, AF1,PULL_LOW)
++#define GPIO17_KP_DKIN1          MFP_CFG_LPM(GPIO17, AF1,PULL_LOW)
++#define GPIO18_KP_DKIN2          MFP_CFG_LPM(GPIO18, AF1,PULL_LOW)
++#define GPIO19_KP_DKIN3          MFP_CFG_LPM(GPIO19, AF1,PULL_LOW)
++/* LCD */
++#define GPIO81_LCD_FCLK          MFP_CFG(GPIO81, AF1)
++#define GPIO82_LCD_LCLK          MFP_CFG(GPIO82, AF1)
++#define GPIO83_LCD_PCLK          MFP_CFG(GPIO83, AF1)
++#define GPIO84_LCD_DENA        	    MFP_CFG(GPIO84, AF1)
++#define GPIO85_LCD_DD0              MFP_CFG(GPIO85, AF1)
++#define GPIO86_LCD_DD1              MFP_CFG(GPIO86, AF1)
++#define GPIO87_LCD_DD2              MFP_CFG(GPIO87, AF1)
++#define GPIO88_LCD_DD3              MFP_CFG(GPIO88, AF1)
++#define GPIO89_LCD_DD4              MFP_CFG(GPIO89, AF1)
++#define GPIO90_LCD_DD5              MFP_CFG(GPIO90, AF1)
++#define GPIO91_LCD_DD6              MFP_CFG(GPIO91, AF1)
++#define GPIO92_LCD_DD7              MFP_CFG(GPIO92, AF1)
++#define GPIO93_LCD_DD8              MFP_CFG(GPIO93, AF1)
++#define GPIO94_LCD_DD9              MFP_CFG(GPIO94, AF1)
++#define GPIO95_LCD_DD10             MFP_CFG(GPIO95, AF1)
++#define GPIO96_LCD_DD11             MFP_CFG(GPIO96, AF1)
++#define GPIO97_LCD_DD12             MFP_CFG(GPIO97, AF1)
++#define GPIO98_LCD_DD13             MFP_CFG(GPIO98, AF1)
++#define GPIO100_LCD_DD14             MFP_CFG(GPIO100, AF1)
++#define GPIO101_LCD_DD15             MFP_CFG(GPIO101, AF1)
++#define GPIO102_LCD_DD16             MFP_CFG(GPIO102, AF1)
++#define GPIO103_LCD_DD17             MFP_CFG(GPIO103, AF1)
++#define GPIO104_LCD_DD18             MFP_CFG(GPIO104, AF1)
++#define GPIO105_LCD_DD19             MFP_CFG(GPIO105, AF1)
++#define GPIO106_LCD_DD20             MFP_CFG(GPIO106, AF1)
++#define GPIO107_LCD_DD21             MFP_CFG(GPIO107, AF1)
++#define GPIO108_LCD_DD22             MFP_CFG(GPIO108, AF1)
++#define GPIO109_LCD_DD23             MFP_CFG(GPIO109, AF1)
++
++#ifdef CONFIG_CPU_PXA910_168
++
++#define GPIO84_LCD_CS                   MFP_CFG_DRV(GPIO84, AF1,DS04X)            
++#define GPIO60_LCD_DD0                  MFP_CFG_DRV(GPIO60, AF1,DS04X)            
++#define GPIO61_LCD_DD1                  MFP_CFG_DRV(GPIO61, AF1,DS04X)            
++#define GPIO70_LCD_DD10                 MFP_CFG_DRV(GPIO70, AF1,DS04X)            
++#define GPIO71_LCD_DD11                 MFP_CFG_DRV(GPIO71, AF1,DS04X)            
++#define GPIO72_LCD_DD12                 MFP_CFG_DRV(GPIO72, AF1,DS04X)            
++#define GPIO73_LCD_DD13                 MFP_CFG_DRV(GPIO73, AF1,DS04X)            
++#define GPIO74_LCD_DD14                 MFP_CFG_DRV(GPIO74, AF1,DS04X)            
++#define GPIO75_LCD_DD15                 MFP_CFG_DRV(GPIO75, AF1,DS04X)            
++#define GPIO76_LCD_DD16                 MFP_CFG_DRV(GPIO76, AF1,DS04X)            
++#define GPIO77_LCD_DD17                 MFP_CFG_DRV(GPIO77, AF1,DS04X)            
++#define GPIO78_LCD_DD18                 MFP_CFG_DRV(GPIO78, AF1,DS04X)            
++#define GPIO79_LCD_DD19                 MFP_CFG_DRV(GPIO79, AF1,DS04X)            
++#define GPIO62_LCD_DD2                  MFP_CFG_DRV(GPIO62, AF1,DS04X)            
++#define GPIO80_LCD_DD20                 MFP_CFG_DRV(GPIO80, AF1,DS04X)            
++#define GPIO81_LCD_DD21                 MFP_CFG_DRV(GPIO81, AF1,DS04X)            
++#define GPIO82_LCD_DD22                 MFP_CFG_DRV(GPIO82, AF1,DS04X)            
++#define GPIO83_LCD_DD23                 MFP_CFG_DRV(GPIO83, AF1,DS04X)            
++#define GPIO63_LCD_DD3                  MFP_CFG_DRV(GPIO63, AF1,DS04X)            
++#define GPIO64_LCD_DD4                  MFP_CFG_DRV(GPIO64, AF1,DS04X)            
++#define GPIO65_LCD_DD5                  MFP_CFG_DRV(GPIO65, AF1,DS04X)            
++#define GPIO66_LCD_DD6                  MFP_CFG_DRV(GPIO66, AF1,DS04X)            
++#define GPIO67_LCD_DD7                  MFP_CFG_DRV(GPIO67, AF1,DS04X)            
++#define GPIO68_LCD_DD8                  MFP_CFG_DRV(GPIO68, AF1,DS04X)            
++#define GPIO69_LCD_DD9                  MFP_CFG_DRV(GPIO69, AF1,DS04X)            
++#define GPIO59_LCD_DENA_BIAS            MFP_CFG_DRV(GPIO59, AF1,DS04X)            
++#define GPIO56_LCD_FCLK_RD              MFP_CFG_DRV(GPIO56, AF1,DS04X)            
++#define GPIO57_LCD_LCLK_A0              MFP_CFG_DRV(GPIO57, AF1,DS04X)            
++#define GPIO58_LCD_PCLK_WR              MFP_CFG_DRV(GPIO58, AF1,DS04X)            
++#define GPIO85_LCD_VSYNC                MFP_CFG_DRV(GPIO85, AF1,DS04X) 
++
++#define GPIO113_I2S_MCLK		MFP_CFG_DRV(GPIO113,AF6,DS04X)
++#define GPIO114_I2S_FRM			MFP_CFG_DRV(GPIO114,AF1,DS04X)
++#define GPIO115_I2S_BCLK		MFP_CFG_DRV(GPIO115,AF1,DS04X)
++#define GPIO116_I2S_RXD			MFP_CFG_DRV(GPIO116,AF2,DS04X)
++#define GPIO117_I2S_TXD			MFP_CFG_DRV(GPIO117,AF2,DS04X)
++#endif
++
++/*1wire*/
++#define GPIO106_1WIRE            	MFP_CFG(GPIO106, AF3)
++/*CCIC*/
++#define GPIO67_CCIC_IN7			MFP_CFG_DRV(GPIO67, AF1, DS06X)
++#define GPIO68_CCIC_IN6			MFP_CFG_DRV(GPIO68, AF1, DS06X)
++#define GPIO69_CCIC_IN5                 MFP_CFG_DRV(GPIO69, AF1, DS06X)
++#define GPIO70_CCIC_IN4                 MFP_CFG_DRV(GPIO70, AF1, DS06X)
++#define GPIO71_CCIC_IN3                 MFP_CFG_DRV(GPIO71, AF1, DS06X)
++#define GPIO72_CCIC_IN2                 MFP_CFG_DRV(GPIO72, AF1, DS06X)
++#define GPIO73_CCIC_IN1                 MFP_CFG_DRV(GPIO73, AF1, DS06X)
++#define GPIO74_CCIC_IN0                 MFP_CFG_DRV(GPIO74, AF1, DS06X)
++#define GPIO75_CAM_HSYNC                MFP_CFG_DRV(GPIO75, AF1, DS06X)
++#define GPIO76_CAM_VSYNC                MFP_CFG_DRV(GPIO76, AF1, DS06X)
++#define GPIO77_CAM_MCLK	                MFP_CFG_DRV(GPIO77, AF1, DS06X)
++#define GPIO78_CAM_PCLK                 MFP_CFG_DRV(GPIO78, AF1, DS06X)
++
++/* MMC1 */
++#define MMC1_DAT7_MMC1_DAT7        MFP_CFG_DRV(MMC1_DAT7, AF0, DS06X)
++#define MMC1_DAT6_MMC1_DAT6        MFP_CFG_DRV(MMC1_DAT6, AF0, DS06X)
++#define MMC1_DAT5_MMC1_DAT5        MFP_CFG_DRV(MMC1_DAT5, AF0, DS06X)
++#define MMC1_DAT4_MMC1_DAT4        MFP_CFG_DRV(MMC1_DAT4, AF0, DS06X)
++#define MMC1_DAT3_MMC1_DAT3        MFP_CFG_DRV(MMC1_DAT3, AF0, DS06X)
++#define MMC1_DAT2_MMC1_DAT2        MFP_CFG_DRV(MMC1_DAT2, AF0, DS06X)
++#define MMC1_DAT1_MMC1_DAT1        MFP_CFG_DRV(MMC1_DAT1, AF0, DS06X)
++#define MMC1_DAT0_MMC1_DAT0        MFP_CFG_DRV(MMC1_DAT0, AF0, DS06X)
++#define MMC1_CMD_MMC1_CMD          MFP_CFG_DRV(MMC1_CMD, AF0, DS06X)
++#define MMC1_CLK_MMC1_CLK          MFP_CFG_DRV(MMC1_CLK, AF0, DS06X)
++#define MMC1_CD_MMC1_CD            MFP_CFG_DRV(MMC1_CD, AF0, DS06X)
++#define MMC1_WP_MMC1_WP            MFP_CFG_DRV(MMC1_WP, AF0, DS06X)
++
++#ifdef CONFIG_CPU_PXA910_168
++#define GPIO0_DFI_D15		    MFP_CFG(GPIO0, AF0)
++#define GPIO1_DFI_D14		    MFP_CFG(GPIO1, AF0)
++#define GPIO2_DFI_D13		    MFP_CFG(GPIO2, AF0)
++#define GPIO3_DFI_D12		    MFP_CFG(GPIO3, AF0)
++#define GPIO4_DFI_D11		    MFP_CFG(GPIO4, AF0)
++#define GPIO5_DFI_D10		    MFP_CFG(GPIO5, AF0)
++#define GPIO6_DFI_D9		    MFP_CFG(GPIO6, AF0)
++#define GPIO7_DFI_D8		    MFP_CFG(GPIO7, AF0)
++#define GPIO8_DFI_D7		    MFP_CFG(GPIO8, AF0)
++#define GPIO9_DFI_D6		    MFP_CFG(GPIO9, AF0)
++#define GPIO10_DFI_D5		    MFP_CFG(GPIO10, AF0)
++#define GPIO11_DFI_D4		    MFP_CFG(GPIO11, AF0)
++#define GPIO12_DFI_D3		    MFP_CFG(GPIO12, AF0)
++#define GPIO13_DFI_D2		    MFP_CFG(GPIO13, AF0)
++#define GPIO14_DFI_D1		    MFP_CFG(GPIO14, AF0)
++#define GPIO15_DFI_D0		    MFP_CFG(GPIO15, AF0)
++
++#define GPIO16_ND_CS0		    MFP_CFG_DRV(GPIO16, AF1, DS12X)
++#define GPIO17_ND_nWE		    MFP_CFG(GPIO17, AF0)
++#define GPIO19_CF_nCE1		    MFP_CFG_DRV(GPIO19, AF3, DS12X)
++#define GPIO20_CF_nCE2		    MFP_CFG_DRV(GPIO20, AF3, DS12X)
++#define GPIO26_ND_RnB1		    MFP_CFG_DRV(GPIO26, AF1, DS12X)
++
++#define GPIO28_CF_RDY		    MFP_CFG_DRV(GPIO28, AF3, DS12X)
++#define GPIO29_CF_STSCH		    MFP_CFG_DRV(GPIO29, AF3, DS12X)
++#define GPIO30_CF_nREG		    MFP_CFG_DRV(GPIO30, AF3, DS12X)
++#define GPIO31_CF_nIOIS16	    MFP_CFG_DRV(GPIO31, AF3, DS12X)
++#define GPIO32_CF_nCD1		    MFP_CFG_DRV(GPIO32, AF3, DS12X)
++#define GPIO33_CF_nCD2		    MFP_CFG_DRV(GPIO33, AF3, DS12X)
++
++#define GPIO30_DFI_ADDR0	    MFP_CFG(GPIO30, AF0)
++#define GPIO31_DFI_ADDR1	    MFP_CFG(GPIO31, AF0)
++#define GPIO32_DFI_ADDR2	    MFP_CFG(GPIO32, AF0)
++#define GPIO33_DFI_ADDR3	    MFP_CFG(GPIO33, AF0)
++
++/* MSPRO */
++#define GPIO40_MSP_DAT1_DEF                 MFP_CFG(GPIO40, AF2)            
++#define GPIO41_MSP_DAT0_DEF                 MFP_CFG(GPIO41, AF2)            
++#define GPIO43_MSP_DAT2_DEF                 MFP_CFG(GPIO43, AF2)            
++#define GPIO44_MSP_DAT3_DEF                 MFP_CFG(GPIO44, AF2)            
++#define GPIO42_MSP_BS_DEF                   MFP_CFG(GPIO42, AF3)            
++#define GPIO50_MSP_SCLK_DEF                 MFP_CFG(GPIO50, AF3)            
++
++#define GPIO84_MSP_DETECT	            MFP_CFG(GPIO84, AF0)            
++
++/* MMC1 */
++#define GPIO37_MMC1_DAT7            MFP_CFG(GPIO37, AF1)
++#define GPIO38_MMC1_DAT6            MFP_CFG(GPIO38, AF1)
++#define GPIO54_MMC1_DAT5            MFP_CFG(GPIO54, AF1)
++#define GPIO48_MMC1_DAT4            MFP_CFG(GPIO48, AF1)
++#define GPIO51_MMC1_DAT3            MFP_CFG(GPIO51, AF1)
++#define GPIO52_MMC1_DAT2            MFP_CFG(GPIO52, AF1)
++#define GPIO40_MMC1_DAT1            MFP_CFG(GPIO40, AF1)
++#define GPIO41_MMC1_DAT0            MFP_CFG(GPIO41, AF1)
++#define GPIO49_MMC1_CMD             MFP_CFG(GPIO49, AF1)
++#define GPIO43_MMC1_CLK             MFP_CFG(GPIO43, AF1)
++#define GPIO53_MMC1_CD              MFP_CFG(GPIO53, AF1)
++#define GPIO46_MMC1_WP              MFP_CFG(GPIO46, AF1)
++
++/* SMC */
++#define GPIO25_SMC_nLLA	  MFP_CFG(GPIO25, AF0)
++#define GPIO23_SMC_nLUA	  MFP_CFG(GPIO23, AF0)
++#define GPIO28_SMC_RDY    MFP_CFG(GPIO28, AF0)
++#define GPIO27_SMC_IRQ    MFP_CFG(GPIO27, AF5)
++#define GPIO21_SMC_ALE	  MFP_CFG(GPIO21, AF0)
++#define GPIO22_SMC_CLE	  MFP_CFG(GPIO22, AF0)
++#define GPIO24_SMC_nRE	  MFP_CFG(GPIO24, AF0)
++
++#define GPIO29_SMC_SCLK   MFP_CFG(GPIO29, AF0)
++#define GPIO34_SMC_nCS1   MFP_CFG(GPIO34, AF2)
++#define GPIO18_SMC_nCS0   MFP_CFG(GPIO18, AF3)
++#define GPIO35_SMC_BE1    MFP_CFG(GPIO35, AF2)
++#define GPIO36_SMC_BE2    MFP_CFG(GPIO36, AF2)
++
++#endif
++
++#endif /* __ASM_ARCH_MFP_PXA9xx_H */
++
++
+diff --git a/include/asm-arm/arch-pxa168/mfp.h b/include/asm-arm/arch-pxa168/mfp.h
+new file mode 100644
+index 0000000..48694be
+--- /dev/null
++++ b/include/asm-arm/arch-pxa168/mfp.h
+@@ -0,0 +1,546 @@
++/*
++ * linux/include/asm-arm/arch-pxa/mfp.h
++ *
++ * Multi-Function Pin Definitions
++ *
++ * Copyright (C) 2007 Marvell International Ltd.
++ *
++ * 2007-8-21: eric miao <eric.miao@marvell.com>
++ *            initial version
++ *
++ *  This program is free software; you can redistribute it and/or modify
++ *  it under the terms of the GNU General Public License version 2 as
++ *  published by the Free Software Foundation.
++ */
++
++#ifndef __ASM_ARCH_MFP_H
++#define __ASM_ARCH_MFP_H
++
++#define MFPR_BASE	(0x40e10000)
++#define PXA910_MFPR_BASE (0xd401e000)
++#define MFPR_SIZE	(PAGE_SIZE)
++
++#define mfp_to_gpio(m)	((m) % 256)
++
++/* list of all the configurable MFP pins */
++enum {
++	MFP_PIN_INVALID = -1,
++
++	MFP_PIN_GPIO0 = 0,
++	MFP_PIN_GPIO1,
++	MFP_PIN_GPIO2,
++	MFP_PIN_GPIO3,
++	MFP_PIN_GPIO4,
++	MFP_PIN_GPIO5,
++	MFP_PIN_GPIO6,
++	MFP_PIN_GPIO7,
++	MFP_PIN_GPIO8,
++	MFP_PIN_GPIO9,
++	MFP_PIN_GPIO10,
++	MFP_PIN_GPIO11,
++	MFP_PIN_GPIO12,
++	MFP_PIN_GPIO13,
++	MFP_PIN_GPIO14,
++	MFP_PIN_GPIO15,
++	MFP_PIN_GPIO16,
++	MFP_PIN_GPIO17,
++	MFP_PIN_GPIO18,
++	MFP_PIN_GPIO19,
++	MFP_PIN_GPIO20,
++	MFP_PIN_GPIO21,
++	MFP_PIN_GPIO22,
++	MFP_PIN_GPIO23,
++	MFP_PIN_GPIO24,
++	MFP_PIN_GPIO25,
++	MFP_PIN_GPIO26,
++	MFP_PIN_GPIO27,
++	MFP_PIN_GPIO28,
++	MFP_PIN_GPIO29,
++	MFP_PIN_GPIO30,
++	MFP_PIN_GPIO31,
++	MFP_PIN_GPIO32,
++	MFP_PIN_GPIO33,
++	MFP_PIN_GPIO34,
++	MFP_PIN_GPIO35,
++	MFP_PIN_GPIO36,
++	MFP_PIN_GPIO37,
++	MFP_PIN_GPIO38,
++	MFP_PIN_GPIO39,
++	MFP_PIN_GPIO40,
++	MFP_PIN_GPIO41,
++	MFP_PIN_GPIO42,
++	MFP_PIN_GPIO43,
++	MFP_PIN_GPIO44,
++	MFP_PIN_GPIO45,
++	MFP_PIN_GPIO46,
++	MFP_PIN_GPIO47,
++	MFP_PIN_GPIO48,
++	MFP_PIN_GPIO49,
++	MFP_PIN_GPIO50,
++	MFP_PIN_GPIO51,
++	MFP_PIN_GPIO52,
++	MFP_PIN_GPIO53,
++	MFP_PIN_GPIO54,
++	MFP_PIN_GPIO55,
++	MFP_PIN_GPIO56,
++	MFP_PIN_GPIO57,
++	MFP_PIN_GPIO58,
++	MFP_PIN_GPIO59,
++	MFP_PIN_GPIO60,
++	MFP_PIN_GPIO61,
++	MFP_PIN_GPIO62,
++	MFP_PIN_GPIO63,
++	MFP_PIN_GPIO64,
++	MFP_PIN_GPIO65,
++	MFP_PIN_GPIO66,
++	MFP_PIN_GPIO67,
++	MFP_PIN_GPIO68,
++	MFP_PIN_GPIO69,
++	MFP_PIN_GPIO70,
++	MFP_PIN_GPIO71,
++	MFP_PIN_GPIO72,
++	MFP_PIN_GPIO73,
++	MFP_PIN_GPIO74,
++	MFP_PIN_GPIO75,
++	MFP_PIN_GPIO76,
++	MFP_PIN_GPIO77,
++	MFP_PIN_GPIO78,
++	MFP_PIN_GPIO79,
++	MFP_PIN_GPIO80,
++	MFP_PIN_GPIO81,
++	MFP_PIN_GPIO82,
++	MFP_PIN_GPIO83,
++	MFP_PIN_GPIO84,
++	MFP_PIN_GPIO85,
++	MFP_PIN_GPIO86,
++	MFP_PIN_GPIO87,
++	MFP_PIN_GPIO88,
++	MFP_PIN_GPIO89,
++	MFP_PIN_GPIO90,
++	MFP_PIN_GPIO91,
++	MFP_PIN_GPIO92,
++	MFP_PIN_GPIO93,
++	MFP_PIN_GPIO94,
++	MFP_PIN_GPIO95,
++	MFP_PIN_GPIO96,
++	MFP_PIN_GPIO97,
++	MFP_PIN_GPIO98,
++	MFP_PIN_GPIO99,
++	MFP_PIN_GPIO100,
++	MFP_PIN_GPIO101,
++	MFP_PIN_GPIO102,
++	MFP_PIN_GPIO103,
++	MFP_PIN_GPIO104,
++	MFP_PIN_GPIO105,
++	MFP_PIN_GPIO106,
++	MFP_PIN_GPIO107,
++	MFP_PIN_GPIO108,
++	MFP_PIN_GPIO109,
++	MFP_PIN_GPIO110,
++	MFP_PIN_GPIO111,
++	MFP_PIN_GPIO112,
++	MFP_PIN_GPIO113,
++	MFP_PIN_GPIO114,
++	MFP_PIN_GPIO115,
++	MFP_PIN_GPIO116,
++	MFP_PIN_GPIO117,
++	MFP_PIN_GPIO118,
++	MFP_PIN_GPIO119,
++	MFP_PIN_GPIO120,
++	MFP_PIN_GPIO121,
++	MFP_PIN_GPIO122,
++	MFP_PIN_GPIO123,
++	MFP_PIN_GPIO124,
++	MFP_PIN_GPIO125,
++	MFP_PIN_GPIO126,
++	MFP_PIN_GPIO127,
++
++	MFP_PIN_GPIO128,
++	MFP_PIN_GPIO129,
++	MFP_PIN_GPIO130,
++	MFP_PIN_GPIO131,
++	MFP_PIN_GPIO132,
++	MFP_PIN_GPIO133,
++	MFP_PIN_GPIO134,
++	MFP_PIN_GPIO135,
++	MFP_PIN_GPIO136,
++	MFP_PIN_GPIO137,
++	MFP_PIN_GPIO138,
++	MFP_PIN_GPIO139,
++	MFP_PIN_GPIO140,
++	MFP_PIN_GPIO141,
++	MFP_PIN_GPIO142,
++	MFP_PIN_GPIO143,
++	MFP_PIN_GPIO144,
++	MFP_PIN_GPIO145,
++	MFP_PIN_GPIO146,
++	MFP_PIN_GPIO147,
++	MFP_PIN_GPIO148,
++	MFP_PIN_GPIO149,
++	MFP_PIN_GPIO150,
++	MFP_PIN_GPIO151,
++	MFP_PIN_GPIO152,
++	MFP_PIN_GPIO153,
++	MFP_PIN_GPIO154,
++	MFP_PIN_GPIO155,
++	MFP_PIN_GPIO156,
++	MFP_PIN_GPIO157,
++	MFP_PIN_GPIO158,
++	MFP_PIN_GPIO159,
++	MFP_PIN_GPIO160,
++	MFP_PIN_GPIO161,
++	MFP_PIN_GPIO162,
++	MFP_PIN_GPIO163,
++	MFP_PIN_GPIO164,
++	MFP_PIN_GPIO165,
++	MFP_PIN_GPIO166,
++	MFP_PIN_GPIO167,
++	MFP_PIN_GPIO168,
++	MFP_PIN_GPIO169,
++	MFP_PIN_GPIO170,
++	MFP_PIN_GPIO171,
++	MFP_PIN_GPIO172,
++	MFP_PIN_GPIO173,
++	MFP_PIN_GPIO174,
++	MFP_PIN_GPIO175,
++	MFP_PIN_GPIO176,
++	MFP_PIN_GPIO177,
++	MFP_PIN_GPIO178,
++	MFP_PIN_GPIO179,
++	MFP_PIN_GPIO180,
++	MFP_PIN_GPIO181,
++	MFP_PIN_GPIO182,
++	MFP_PIN_GPIO183,
++	MFP_PIN_GPIO184,
++	MFP_PIN_GPIO185,
++	MFP_PIN_GPIO186,
++	MFP_PIN_GPIO187,
++	MFP_PIN_GPIO188,
++	MFP_PIN_GPIO189,
++	MFP_PIN_GPIO190,
++	MFP_PIN_GPIO191,
++
++	MFP_PIN_GPIO256 = 256,
++
++	MFP_PIN_GPIO0_2,
++	MFP_PIN_GPIO1_2,
++	MFP_PIN_GPIO2_2,
++	MFP_PIN_GPIO3_2,
++	MFP_PIN_GPIO4_2,
++	MFP_PIN_GPIO5_2,
++	MFP_PIN_GPIO6_2,
++	MFP_PIN_GPIO7_2,
++	MFP_PIN_GPIO8_2,
++	MFP_PIN_GPIO9_2,
++	MFP_PIN_GPIO10_2,
++	MFP_PIN_GPIO11_2,
++	MFP_PIN_GPIO12_2,
++	MFP_PIN_GPIO13_2,
++	MFP_PIN_GPIO14_2,
++	MFP_PIN_GPIO15_2,
++	MFP_PIN_GPIO16_2,
++	MFP_PIN_GPIO17_2,
++
++	MFP_PIN_ULPI_STP,
++	MFP_PIN_ULPI_NXT,
++	MFP_PIN_ULPI_DIR,
++
++	MFP_PIN_nXCVREN,
++	MFP_PIN_DF_CLE_nOE,
++	MFP_PIN_DF_nADV1_ALE,
++	MFP_PIN_DF_SCLK_E,
++	MFP_PIN_DF_SCLK_S,
++	MFP_PIN_nBE0,
++	MFP_PIN_nBE1,
++	MFP_PIN_DF_nADV2_ALE,
++	MFP_PIN_DF_INT_RnB,
++	MFP_PIN_DF_nCS0,
++	MFP_PIN_DF_nCS1,
++	MFP_PIN_nLUA,
++	MFP_PIN_nLLA,
++	MFP_PIN_DF_nWE,
++	MFP_PIN_DF_ALE_nWE,
++	MFP_PIN_DF_nRE_nOE,
++	MFP_PIN_DF_ADDR0,
++	MFP_PIN_DF_ADDR1,
++	MFP_PIN_DF_ADDR2,
++	MFP_PIN_DF_ADDR3,
++	MFP_PIN_DF_IO0,
++	MFP_PIN_DF_IO1,
++	MFP_PIN_DF_IO2,
++	MFP_PIN_DF_IO3,
++	MFP_PIN_DF_IO4,
++	MFP_PIN_DF_IO5,
++	MFP_PIN_DF_IO6,
++	MFP_PIN_DF_IO7,
++	MFP_PIN_DF_IO8,
++	MFP_PIN_DF_IO9,
++	MFP_PIN_DF_IO10,
++	MFP_PIN_DF_IO11,
++	MFP_PIN_DF_IO12,
++	MFP_PIN_DF_IO13,
++	MFP_PIN_DF_IO14,
++	MFP_PIN_DF_IO15,
++	MFP_PIN_DF_nCS0_SM_nCS2,
++	MFP_PIN_DF_nCS1_SM_nCS3,
++	MFP_PIN_SM_nCS0,
++	MFP_PIN_SM_nCS1,
++	MFP_PIN_DF_WEn,
++	MFP_PIN_DF_REn,
++	MFP_PIN_DF_CLE_SM_OEn,
++	MFP_PIN_DF_ALE_SM_WEn,
++	MFP_PIN_SM_SCLK,
++	MFP_PIN_DF_RDY0,
++	MFP_PIN_SM_BE0,
++	MFP_PIN_SM_BE1,
++	MFP_PIN_SM_ADV,
++	MFP_PIN_DF_RDY1,
++	MFP_PIN_SM_ADVMUX,
++	MFP_PIN_SM_RDY,
++	
++	MFP_PIN_GSIM_UIO,
++	MFP_PIN_GSIM_UCLK,
++	MFP_PIN_GSIM_UDET,
++	MFP_PIN_GSIM_nURST,
++
++	MFP_PIN_PMIC_INT,
++	MFP_PIN_RDY,
++
++	MFP_PIN_MAX,
++};
++
++/*
++ * Table that determines the low power modes outputs, with actual settings
++ * used in parentheses for don't-care values. Except for the float output,
++ * the configured driven and pulled levels match, so if there is a need for
++ * non-LPM pulled output, the same configuration could probably be used.
++ *
++ * Output value  sleep_oe_n  sleep_data  pullup_en  pulldown_en  pull_sel
++ *                 (bit 7)    (bit 8)    (bit 14d)   (bit 13d)
++ *
++ * Drive 0          0          0           0           X (1)      0
++ * Drive 1          0          1           X (1)       0	  0
++ * Pull hi (1)      1          X(1)        1           0	  0
++ * Pull lo (0)      1          X(0)        0           1	  0
++ * Z (float)        1          X(0)        0           0	  0
++ */
++#define MFP_LPM_DRIVE_LOW	0x8
++#define MFP_LPM_DRIVE_HIGH    	0x6
++#define MFP_LPM_PULL_HIGH     	0x7
++#define MFP_LPM_PULL_LOW      	0x9
++#define MFP_LPM_FLOAT         	0x1
++#define MFP_LPM_PULL_NEITHER	0x0
++
++/*
++ * The pullup and pulldown state of the MFP pin is by default determined by
++ * selected alternate function. In case some buggy devices need to override
++ * this default behavior,  pxa3xx_mfp_set_pull() can be invoked with one of
++ * the following definition as the parameter.
++ *
++ * Definition       pull_sel  pullup_en  pulldown_en
++ * MFP_PULL_HIGH        1         1        0
++ * MFP_PULL_LOW         1         0        1
++ * MFP_PULL_BOTH        1         1        1
++ * MFP_PULL_NONE        1         0        0
++ * MFP_PULL_DEFAULT     0         X        X
++ *
++ * NOTE: pxa3xx_mfp_set_pull() will modify the PULLUP_EN and PULLDOWN_EN
++ * bits,  which will cause potential conflicts with the low power mode
++ * setting, device drivers should take care of this
++ */
++#define MFP_PULL_BOTH		(0x7u)
++#define MFP_PULL_HIGH		(0x6u)
++#define MFP_PULL_LOW		(0x5u)
++#define MFP_PULL_NONE		(0x4u)
++#define MFP_PULL_DEFAULT	(0x0u)
++
++#define MFP_AF0			(0)
++#define MFP_AF1			(1)
++#define MFP_AF2			(2)
++#define MFP_AF3			(3)
++#define MFP_AF4			(4)
++#define MFP_AF5			(5)
++#define MFP_AF6			(6)
++#define MFP_AF7			(7)
++
++#define MFP_DS01X		(0)
++#define MFP_DS02X		(1)
++#define MFP_DS03X		(2)
++#define MFP_DS04X		(3)
++#define MFP_DS06X		(4)
++#define MFP_DS08X		(5)
++#define MFP_DS10X		(6)
++#define MFP_DS12X		(7)
++
++#define MFP_EDGE_BOTH		0x3
++#define MFP_EDGE_RISE		0x2
++#define MFP_EDGE_FALL		0x1
++#define MFP_EDGE_NONE		0x0
++
++#define MFPR_AF_MASK		0x0007
++#define MFPR_DRV_MASK		0x1c00
++#define MFPR_RDH_MASK		0x0200
++#define MFPR_LPM_MASK		0xe180
++#define MFPR_PULL_MASK		0xe000
++#define MFPR_EDGE_MASK		0x0070
++
++#define MFPR_ALT_OFFSET		0
++#define MFPR_ERE_OFFSET		4
++#define MFPR_EFE_OFFSET		5
++#define MFPR_EC_OFFSET		6
++#define MFPR_SON_OFFSET		7
++#define MFPR_SD_OFFSET		8
++#define MFPR_SS_OFFSET		9
++#define MFPR_DRV_OFFSET		10
++#define MFPR_PD_OFFSET		13
++#define MFPR_PU_OFFSET		14
++#define MFPR_PS_OFFSET		15
++
++#define MFPR(af, drv, rdh, lpm, edge) \
++	(((af) & 0x7) | (((drv) & 0x7) << 10) |\
++	 (((rdh) & 0x1) << 9) |\
++	 (((lpm) & 0x3) << 7) |\
++	 (((lpm) & 0x4) << 12)|\
++	 (((lpm) & 0x8) << 10)|\
++	 ((!(edge)) << 6) |\
++	 (((edge) & 0x1) << 5) |\
++	 (((edge) & 0x2) << 3))
++
++/*
++ * a possible MFP configuration is represented by a 32-bit integer
++ * bit  0..15 - MFPR value (16-bit)
++ * bit 16..31 - mfp pin index (used to obtain the MFPR offset)
++ *
++ * to facilitate the definition, the following macros are provided
++ *
++ * MFPR_DEFAULT - default MFPR value, with
++ * 		  alternate function = 0,
++ * 		  drive strength = fast 1mA (MFP_DS01X)
++ * 		  low power mode = default
++ * 		  release dalay hold = false (RDH bit)
++ * 		  edge detection = none
++ *
++ * MFP_CFG	- default MFPR value with alternate function
++ * MFP_CFG_DRV	- default MFPR value with alternate function and
++ * 		  pin drive strength
++ * MFP_CFG_LPM	- default MFPR value with alternate function and
++ * 		  low power mode
++ * MFP_CFG_X	- default MFPR value with alternate function,
++ * 		  pin drive strength and low power mode
++ *
++ * use
++ *
++ * MFP_CFG_PIN	- to get the MFP pin index
++ * MFP_CFG_VAL	- to get the corresponding MFPR value
++ */
++
++typedef uint32_t mfp_cfg_t;
++
++#define MFP_CFG_PIN(mfp_cfg)	(((mfp_cfg) >> 16) & 0xffff)
++#define MFP_CFG_VAL(mfp_cfg)	((mfp_cfg) & 0xffff)
++
++/*
++ * MFP register defaults to
++ *   drive strength fast 3mA (010'b)
++ *   edge detection logic disabled
++ *   alternate function 0
++ */
++#define MFPR_DEFAULT	(0x0840)
++
++#define MFP_CFG(pin, af)		\
++	((MFP_PIN_##pin << 16) | MFPR_DEFAULT | (MFP_##af))
++
++#define MFP_CFG_DRV(pin, af, drv)	\
++	((MFP_PIN_##pin << 16) | (MFPR_DEFAULT & ~MFPR_DRV_MASK) |\
++	 ((MFP_##drv) << 10) | (MFP_##af))
++
++#define MFP_CFG_LPM(pin, af, lpm)	\
++	((MFP_PIN_##pin << 16) | (MFPR_DEFAULT & ~MFPR_LPM_MASK) |\
++	 (((MFP_LPM_##lpm) & 0x3) << 7)  |\
++	 (((MFP_LPM_##lpm) & 0x4) << 12) |\
++	 (((MFP_LPM_##lpm) & 0x8) << 10) |\
++	 (MFP_##af))
++
++#define MFP_CFG_X(pin, af, drv, lpm)	\
++	((MFP_PIN_##pin << 16) |\
++	 (MFPR_DEFAULT & ~(MFPR_DRV_MASK | MFPR_LPM_MASK)) |\
++	 ((MFP_##drv) << 10) | (MFP_##af) |\
++	 (((MFP_LPM_##lpm) & 0x3) << 7)  |\
++	 (((MFP_LPM_##lpm) & 0x4) << 12) |\
++	 (((MFP_LPM_##lpm) & 0x8) << 10))
++
++/*
++ * each MFP pin will have a MFPR register, since the offset of the
++ * register varies between processors, the processor specific code
++ * should initialize the pin offsets by pxa3xx_mfp_init_addr()
++ *
++ * pxa3xx_mfp_init_addr - accepts a table of "pxa3xx_mfp_addr_map"
++ * structure, which represents a range of MFP pins from "start" to
++ * "end", with the offset begining at "offset", to define a single
++ * pin, let "end" = -1
++ *
++ * use
++ *
++ * MFP_ADDR_X() to define a range of pins
++ * MFP_ADDR()   to define a single pin
++ * MFP_ADDR_END to signal the end of pin offset definitions
++ */
++struct pxa3xx_mfp_addr_map {
++	unsigned int	start;
++	unsigned int	end;
++	unsigned long	offset;
++};
++
++#define MFP_ADDR_X(start, end, offset) \
++	{ MFP_PIN_##start, MFP_PIN_##end, offset }
++
++#define MFP_ADDR(pin, offset) \
++	{ MFP_PIN_##pin, -1, offset }
++
++#define MFP_ADDR_END	{ MFP_PIN_INVALID, 0 }
++
++struct pxa3xx_mfp_pin {
++	unsigned long	mfpr_off;	/* MFPRxx register offset */
++	unsigned long	mfpr_val;	/* MFPRxx register value */
++};
++
++/*
++ * pxa3xx_mfp_read()/pxa3xx_mfp_write() - for direct read/write access
++ * to the MFPR register
++ */
++unsigned long pxa3xx_mfp_read(int mfp);
++void pxa3xx_mfp_write(int mfp, unsigned long mfpr_val);
++
++/*
++ * pxa3xx_mfp_set_afds - set MFP alternate function and drive strength
++ * pxa3xx_mfp_set_rdh  - set MFP release delay hold on/off
++ * pxa3xx_mfp_set_lpm  - set MFP low power mode state
++ * pxa3xx_mfp_set_edge - set MFP edge detection in low power mode
++ *
++ * use these functions to override/change the default configuration
++ * done by pxa3xx_mfp_set_config(s)
++ */
++void pxa3xx_mfp_set_afds(int mfp, int af, int ds);
++void pxa3xx_mfp_set_rdh(int mfp, int rdh);
++void pxa3xx_mfp_set_lpm(int mfp, int lpm);
++void pxa3xx_mfp_set_edge(int mfp, int edge);
++void pxa3xx_mfp_set_pull(int mfp, int pull);
++
++
++/*
++ * pxa3xx_mfp_config - configure the MFPR registers
++ *
++ * used by board specific initialization code
++ */
++void pxa3xx_mfp_config(mfp_cfg_t *mfp_cfgs, int num);
++
++/*
++ * pxa3xx_mfp_init_addr() - initialize the mapping between mfp pin
++ * index and MFPR register offset
++ *
++ * used by processor specific code
++ */
++void __init pxa3xx_mfp_init_addr(struct pxa3xx_mfp_addr_map *);
++void __init pxa3xx_init_mfp(void);
++
++#endif /* __ASM_ARCH_MFP_H */
+diff --git a/include/asm-arm/arch-pxa168/regs-pxa168.h b/include/asm-arm/arch-pxa168/regs-pxa168.h
+new file mode 100644
+index 0000000..33c1317
+--- /dev/null
++++ b/include/asm-arm/arch-pxa168/regs-pxa168.h
+@@ -0,0 +1,251 @@
++/*
++ *  linux/include/asm-arm/arch-pxa/pxa-regs.h
++ *
++ *  Author:	Nicolas Pitre
++ *  Created:	Jun 15, 2001
++ *  Copyright:	MontaVista Software Inc.
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License version 2 as
++ * published by the Free Software Foundation.
++ *
++ * - 2003/01/20: Robert Schwebel <r.schwebel@pengutronix.de
++ *   Original file taken from linux-2.4.19-rmk4-pxa1. Added some definitions.
++ *   Added include for hardware.h (for __REG definition)
++ */
++#ifndef _PXA_REGS_H_
++#define _PXA_REGS_H_
++
++#include "bitfield.h"
++#include "hardware.h"
++
++/* FIXME hack so that SA-1111.h will work [cb] */
++
++/*
++ * DMA Controller
++ */
++#define DCSR0		__REG(0x40000000)  /* DMA Control / Status Register for Channel 0 */
++#define DCSR1		__REG(0x40000004)  /* DMA Control / Status Register for Channel 1 */
++#define DCSR2		__REG(0x40000008)  /* DMA Control / Status Register for Channel 2 */
++#define DCSR3		__REG(0x4000000c)  /* DMA Control / Status Register for Channel 3 */
++#define DCSR4		__REG(0x40000010)  /* DMA Control / Status Register for Channel 4 */
++#define DCSR5		__REG(0x40000014)  /* DMA Control / Status Register for Channel 5 */
++#define DCSR6		__REG(0x40000018)  /* DMA Control / Status Register for Channel 6 */
++#define DCSR7		__REG(0x4000001c)  /* DMA Control / Status Register for Channel 7 */
++#define DCSR8		__REG(0x40000020)  /* DMA Control / Status Register for Channel 8 */
++#define DCSR9		__REG(0x40000024)  /* DMA Control / Status Register for Channel 9 */
++#define DCSR10		__REG(0x40000028)  /* DMA Control / Status Register for Channel 10 */
++#define DCSR11		__REG(0x4000002c)  /* DMA Control / Status Register for Channel 11 */
++#define DCSR12		__REG(0x40000030)  /* DMA Control / Status Register for Channel 12 */
++#define DCSR13		__REG(0x40000034)  /* DMA Control / Status Register for Channel 13 */
++#define DCSR14		__REG(0x40000038)  /* DMA Control / Status Register for Channel 14 */
++#define DCSR15		__REG(0x4000003c)  /* DMA Control / Status Register for Channel 15 */
++#if defined(CONFIG_CPU_MONAHANS) || defined(CONFIG_PXAXXX)
++#define DCSR16		__REG(0x40000040)  /* DMA Control / Status Register for Channel 16 */
++#define DCSR17		__REG(0x40000044)  /* DMA Control / Status Register for Channel 17 */
++#define DCSR18		__REG(0x40000048)  /* DMA Control / Status Register for Channel 18 */
++#define DCSR19		__REG(0x4000004c)  /* DMA Control / Status Register for Channel 19 */
++#define DCSR20		__REG(0x40000050)  /* DMA Control / Status Register for Channel 20 */
++#define DCSR21		__REG(0x40000054)  /* DMA Control / Status Register for Channel 21 */
++#define DCSR22		__REG(0x40000058)  /* DMA Control / Status Register for Channel 22 */
++#define DCSR23		__REG(0x4000005c)  /* DMA Control / Status Register for Channel 23 */
++#define DCSR24		__REG(0x40000060)  /* DMA Control / Status Register for Channel 24 */
++#define DCSR25		__REG(0x40000064)  /* DMA Control / Status Register for Channel 25 */
++#define DCSR26		__REG(0x40000068)  /* DMA Control / Status Register for Channel 26 */
++#define DCSR27		__REG(0x4000006c)  /* DMA Control / Status Register for Channel 27 */
++#define DCSR28		__REG(0x40000070)  /* DMA Control / Status Register for Channel 28 */
++#define DCSR29		__REG(0x40000074)  /* DMA Control / Status Register for Channel 29 */
++#define DCSR30		__REG(0x40000078)  /* DMA Control / Status Register for Channel 30 */
++#define DCSR31		__REG(0x4000007c)  /* DMA Control / Status Register for Channel 31 */
++#endif /* CONFIG_CPU_MONAHANS */
++
++#define DCSR(x)		__REG2(0x40000000, (x) << 2)
++
++#define DCSR_RUN	(1 << 31)	/* Run Bit (read / write) */
++#define DCSR_NODESC	(1 << 30)	/* No-Descriptor Fetch (read / write) */
++#define DCSR_STOPIRQEN	(1 << 29)	/* Stop Interrupt Enable (read / write) */
++
++#if defined(CONFIG_PXA27X) || defined (CONFIG_CPU_MONAHANS) || defined(CONFIG_PXAXXX)
++#define DCSR_EORIRQEN	(1 << 28)	/* End of Receive Interrupt Enable (R/W) */
++#define DCSR_EORJMPEN	(1 << 27)	/* Jump to next descriptor on EOR */
++#define DCSR_EORSTOPEN	(1 << 26)	/* STOP on an EOR */
++#define DCSR_SETCMPST	(1 << 25)	/* Set Descriptor Compare Status */
++#define DCSR_CLRCMPST	(1 << 24)	/* Clear Descriptor Compare Status */
++#define DCSR_CMPST	(1 << 10)	/* The Descriptor Compare Status */
++#define DCSR_ENRINTR	(1 << 9)	/* The end of Receive */
++#endif
++
++#define DCSR_REQPEND	(1 << 8)	/* Request Pending (read-only) */
++#define DCSR_STOPSTATE	(1 << 3)	/* Stop State (read-only) */
++#define DCSR_ENDINTR	(1 << 2)	/* End Interrupt (read / write) */
++#define DCSR_STARTINTR	(1 << 1)	/* Start Interrupt (read / write) */
++#define DCSR_BUSERR	(1 << 0)	/* Bus Error Interrupt (read / write) */
++
++#define DINT		__REG(0x400000f0)  /* DMA Interrupt Register */
++
++#define DRCMR0		__REG(0x40000100)  /* Request to Channel Map Register for DREQ 0 */
++#define DRCMR1		__REG(0x40000104)  /* Request to Channel Map Register for DREQ 1 */
++#define DRCMR2		__REG(0x40000108)  /* Request to Channel Map Register for I2S receive Request */
++#define DRCMR3		__REG(0x4000010c)  /* Request to Channel Map Register for I2S transmit Request */
++#define DRCMR4		__REG(0x40000110)  /* Request to Channel Map Register for BTUART receive Request */
++#define DRCMR5		__REG(0x40000114)  /* Request to Channel Map Register for BTUART transmit Request. */
++#define DRCMR6		__REG(0x40000118)  /* Request to Channel Map Register for FFUART receive Request */
++#define DRCMR7		__REG(0x4000011c)  /* Request to Channel Map Register for FFUART transmit Request */
++#define DRCMR8		__REG(0x40000120)  /* Request to Channel Map Register for AC97 microphone Request */
++#define DRCMR9		__REG(0x40000124)  /* Request to Channel Map Register for AC97 modem receive Request */
++#define DRCMR10		__REG(0x40000128)  /* Request to Channel Map Register for AC97 modem transmit Request */
++#define DRCMR11		__REG(0x4000012c)  /* Request to Channel Map Register for AC97 audio receive Request */
++#define DRCMR12		__REG(0x40000130)  /* Request to Channel Map Register for AC97 audio transmit Request */
++#define DRCMR13		__REG(0x40000134)  /* Request to Channel Map Register for SSP receive Request */
++#define DRCMR14		__REG(0x40000138)  /* Request to Channel Map Register for SSP transmit Request */
++#define DRCMR15		__REG(0x4000013c)  /* Reserved */
++#define DRCMR16		__REG(0x40000140)  /* Reserved */
++#define DRCMR17		__REG(0x40000144)  /* Request to Channel Map Register for ICP receive Request */
++#define DRCMR18		__REG(0x40000148)  /* Request to Channel Map Register for ICP transmit Request */
++#define DRCMR19		__REG(0x4000014c)  /* Request to Channel Map Register for STUART receive Request */
++#define DRCMR20		__REG(0x40000150)  /* Request to Channel Map Register for STUART transmit Request */
++#define DRCMR21		__REG(0x40000154)  /* Request to Channel Map Register for MMC receive Request */
++#define DRCMR22		__REG(0x40000158)  /* Request to Channel Map Register for MMC transmit Request */
++#define DRCMR23		__REG(0x4000015c)  /* Reserved */
++#define DRCMR24		__REG(0x40000160)  /* Reserved */
++#define DRCMR25		__REG(0x40000164)  /* Request to Channel Map Register for USB endpoint 1 Request */
++#define DRCMR26		__REG(0x40000168)  /* Request to Channel Map Register for USB endpoint 2 Request */
++#define DRCMR27		__REG(0x4000016C)  /* Request to Channel Map Register for USB endpoint 3 Request */
++#define DRCMR28		__REG(0x40000170)  /* Request to Channel Map Register for USB endpoint 4 Request */
++#define DRCMR29		__REG(0x40000174)  /* Reserved */
++#define DRCMR30		__REG(0x40000178)  /* Request to Channel Map Register for USB endpoint 6 Request */
++#define DRCMR31		__REG(0x4000017C)  /* Request to Channel Map Register for USB endpoint 7 Request */
++#define DRCMR32		__REG(0x40000180)  /* Request to Channel Map Register for USB endpoint 8 Request */
++#define DRCMR33		__REG(0x40000184)  /* Request to Channel Map Register for USB endpoint 9 Request */
++#define DRCMR34		__REG(0x40000188)  /* Reserved */
++#define DRCMR35		__REG(0x4000018C)  /* Request to Channel Map Register for USB endpoint 11 Request */
++#define DRCMR36		__REG(0x40000190)  /* Request to Channel Map Register for USB endpoint 12 Request */
++#define DRCMR37		__REG(0x40000194)  /* Request to Channel Map Register for USB endpoint 13 Request */
++#define DRCMR38		__REG(0x40000198)  /* Request to Channel Map Register for USB endpoint 14 Request */
++#define DRCMR39		__REG(0x4000019C)  /* Reserved */
++
++#define DRCMR68		       __REG(0x40001110)  /* Request to Channel Map Register for Camera FIFO 0 Request */
++#define DRCMR69		       __REG(0x40001114)  /* Request to Channel Map Register for Camera FIFO 1 Request */
++#define DRCMR70		       __REG(0x40001118)  /* Request to Channel Map Register for Camera FIFO 2 Request */
++
++/*
++ * Interrupt Controller
++ */
++#define ICIP		__REG(0x40D00000)  /* Interrupt Controller IRQ Pending Register */
++#define ICMR		__REG(0x40D00004)  /* Interrupt Controller Mask Register */
++#define ICLR		__REG(0x40D00008)  /* Interrupt Controller Level Register */
++#define ICFP		__REG(0x40D0000C)  /* Interrupt Controller FIQ Pending Register */
++#define ICPR		__REG(0x40D00010)  /* Interrupt Controller Pending Register */
++#define ICCR		__REG(0x40D00014)  /* Interrupt Controller Control Register */
++
++#if defined(CONFIG_CPU_MONAHANS) || defined(CONFIG_PXAXXX)
++#define ICHP		__REG(0x40D00018)  /* Interrupt Controller Highest Priority Register */
++/* Missing: 32 Interrupt priority registers
++ * These are the same as beneath for PXA27x: maybe can be merged if
++ * GPIO Stuff is same too.
++ */
++#define ICIP2		__REG(0x40D0009C)  /* Interrupt Controller IRQ Pending Register 2 */
++#define ICMR2		__REG(0x40D000A0)  /* Interrupt Controller Mask Register 2 */
++#define ICLR2		__REG(0x40D000A4)  /* Interrupt Controller Level Register 2 */
++#define ICFP2		__REG(0x40D000A8)  /* Interrupt Controller FIQ Pending Register 2 */
++#define ICPR2		__REG(0x40D000AC)  /* Interrupt Controller Pending Register 2 */
++/* Missing: 2 Interrupt priority registers */
++#endif /* CONFIG_CPU_MONAHANS */
++
++
++/* Data Flash Controller Registers */
++
++#define NDCR		__REG(0x43100000)  /* Data Flash Control register */
++#define NDTR0CS0	__REG(0x43100004)  /* Data Controller Timing Parameter 0 Register for ND_nCS0 */
++/* #define NDTR0CS1	__REG(0x43100008)  /\* Data Controller Timing Parameter 0 Register for ND_nCS1 *\/ */
++#define NDTR1CS0	__REG(0x4310000C)  /* Data Controller Timing Parameter 1 Register for ND_nCS0 */
++/* #define NDTR1CS1	__REG(0x43100010)  /\* Data Controller Timing Parameter 1 Register for ND_nCS1 *\/ */
++#define NDSR		__REG(0x43100014)  /* Data Controller Status Register */
++#define NDPCR		__REG(0x43100018)  /* Data Controller Page Count Register */
++#define NDBDR0		__REG(0x4310001C)  /* Data Controller Bad Block Register 0 */
++#define NDBDR1		__REG(0x43100020)  /* Data Controller Bad Block Register 1 */
++#define NDDB		__REG(0x43100040)  /* Data Controller Data Buffer */
++#define NDCB0		__REG(0x43100048)  /* Data Controller Command Buffer0 */
++#define NDCB1		__REG(0x4310004C)  /* Data Controller Command Buffer1 */
++#define NDCB2		__REG(0x43100050)  /* Data Controller Command Buffer2 */
++
++#define NDCR_SPARE_EN	(0x1<<31)
++#define NDCR_ECC_EN	(0x1<<30)
++#define NDCR_DMA_EN	(0x1<<29)
++#define NDCR_ND_RUN	(0x1<<28)
++#define NDCR_DWIDTH_C	(0x1<<27)
++#define NDCR_DWIDTH_M	(0x1<<26)
++#define NDCR_PAGE_SZ	(0x1<<24)
++#define NDCR_NCSX	(0x1<<23)
++#define NDCR_ND_STOP	(0x1<<22)
++/* reserved:
++ * #define NDCR_ND_MODE	(0x3<<21)
++ * #define NDCR_NAND_MODE   0x0 */
++#define NDCR_CLR_PG_CNT	(0x1<<20)
++#define NDCR_CLR_ECC	(0x1<<19)
++#define NDCR_RD_ID_CNT	(0x7<<16)
++#define NDCR_RA_START	(0x1<<15)
++#define NDCR_PG_PER_BLK	(0x1<<14)
++#define NDCR_ND_ARB_EN	(0x1<<12)
++#define NDCR_RDYM	(0x1<<11)
++#define NDCR_CS0_PAGEDM	(0x1<<10)
++#define NDCR_CS1_PAGEDM	(0x1<<9)
++#define NDCR_CS0_CMDDM	(0x1<<8)
++#define NDCR_CS1_CMDDM	(0x1<<7)
++#define NDCR_CS0_BBDM	(0x1<<6)
++#define NDCR_CS1_BBDM	(0x1<<5)
++#define NDCR_DBERRM	(0x1<<4)
++#define NDCR_SBERRM	(0x1<<3)
++#define NDCR_WRDREQM	(0x1<<2)
++#define NDCR_RDDREQM	(0x1<<1)
++#define NDCR_WRCMDREQM	(0x1)
++
++#define NDSR_RDY	(0x1<<12)
++#define NDSR_FLASH_RDY	(0x1<<11)
++#define NDSR_CS0_PAGED	(0x1<<10)
++#define NDSR_CS1_PAGED	(0x1<<9)
++#define NDSR_CS0_CMDD	(0x1<<8)
++#define NDSR_CS1_CMDD	(0x1<<7)
++#define NDSR_CS0_BBD	(0x1<<6)
++#define NDSR_CS1_BBD	(0x1<<5)
++#define NDSR_DBERR	(0x1<<4)
++#define NDSR_SBERR	(0x1<<3)
++#define NDSR_WRDREQ	(0x1<<2)
++#define NDSR_RDDREQ	(0x1<<1)
++#define NDSR_WRCMDREQ	(0x1)
++
++#define NDCB0_AUTO_RS	(0x1<<25)
++#define NDCB0_CSEL	(0x1<<24)
++#define NDCB0_NC	(0x1<<20)
++#define NDCB0_DBC	(0x1<<19)
++
++#ifdef CONFIG_PXAXXX
++#define NDCB0_CMD_TYPE_MASK	(0x7<<21)
++#define	NDCB0_CMD_TYPE(x)	(((x) << 21) & NDCB0_CMD_TYPE_MASK)
++#define NDCB0_ADDR_CYC_MASK	(0x7<<16)
++#define	NDCB0_ADDR_CYC(x)	(((x) << 16) & NDCB0_ADDR_CYC_MASK)
++#else
++#define NDCB0_CMD_TYPE	(0x7<<21)
++#define NDCB0_ADDR_CYC	(0x7<<16)
++#endif
++
++#define NDCB0_CMD2	(0xff<<8)
++#define NDCB0_CMD1	(0xff)
++#define MCMEM(s) MCMEM0
++#define MCATT(s) MCATT0
++#define MCIO(s) MCIO0
++#define MECR_CIT	(1 << 1)/* Card Is There: 0 -> no card, 1 -> card inserted */
++
++/* Maximum values for NAND Interface Timing Registers in DFC clock
++ * periods */
++#define DFC_MAX_tCH	7
++#define DFC_MAX_tCS	7
++#define DFC_MAX_tWH	7
++#define DFC_MAX_tWP	7
++#define DFC_MAX_tRH	7
++#define DFC_MAX_tRP	15
++#define DFC_MAX_tR	65535
++#define DFC_MAX_tWHR	15
++#define DFC_MAX_tAR	15
++
++#endif	/* _PXA_REGS_H_ */
+-- 
+1.6.0.4
+

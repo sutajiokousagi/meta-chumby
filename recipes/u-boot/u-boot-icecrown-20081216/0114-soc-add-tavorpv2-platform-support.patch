@@ -1,0 +1,1550 @@
+From 25b186ca5aabbb220664e1f74de178ee5255a3c8 Mon Sep 17 00:00:00 2001
+From: Lei Wen <leiwen@marvell.com>
+Date: Wed, 15 Jul 2009 11:36:52 +0800
+Subject: [PATCH] soc: add tavorpv2 platform support
+
+Signed-off-by: Lei Wen <leiwen@marvell.com>
+---
+ Makefile                              |    3 +
+ board/pxa/aspenite/aspenite_pxa168.c  |    5 -
+ board/pxa/avengers/avenger_pxa168.c   |    5 -
+ board/pxa/common/boot.c               |    2 +-
+ board/pxa/common/nand.c               |   10 +-
+ board/pxa/common/usbeth/ether-mvu2o.c |    2 +
+ board/pxa/common/usbeth/mv_u2o_ctl.c  |   70 +++++
+ board/pxa/common/usbeth/mv_u2o_ctl.h  |    6 +-
+ board/pxa/tavorEVB/tavorevb_pxa168.c  |    5 -
+ board/pxa/tavorevb3/Makefile          |   50 ++++
+ board/pxa/tavorevb3/config.mk         |    7 +
+ board/pxa/tavorevb3/tavorevb3.c       |  151 ++++++++++
+ board/pxa/tavorevb3/u-boot.lds        |   56 ++++
+ board/pxa/ttc_dkb/ttc_dkb.c           |    5 -
+ include/asm-arm/arch-pxa/common.h     |  505 +++++++++++++++++++++++++++++++++
+ include/asm-arm/arch-pxa/pxa-regs.h   |   13 +
+ include/configs/aspenite.h            |    6 +-
+ include/configs/avengers.h            |    6 +-
+ include/configs/tavorevb.h            |    6 +-
+ include/configs/tavorevb3.h           |  213 ++++++++++++++
+ include/configs/ttc_dkb.h             |    6 +-
+ include/configs/zylonite2.h           |    6 +-
+ net/Makefile                          |    4 -
+ net/net.c                             |    2 -
+ net/tftp.c                            |    2 +-
+ 25 files changed, 1102 insertions(+), 44 deletions(-)
+ create mode 100644 board/pxa/tavorevb3/Makefile
+ create mode 100644 board/pxa/tavorevb3/config.mk
+ create mode 100644 board/pxa/tavorevb3/tavorevb3.c
+ create mode 100644 board/pxa/tavorevb3/u-boot.lds
+ create mode 100644 include/asm-arm/arch-pxa/common.h
+ create mode 100644 include/configs/tavorevb3.h
+
+diff --git a/Makefile b/Makefile
+index 52d3500..1f6043f 100644
+--- a/Makefile
++++ b/Makefile
+@@ -2934,6 +2934,9 @@ xsengine_config :	unconfig
+ zylonite_config :
+ 	@$(MKCONFIG) $(@:_config=) arm pxa zylonite
+ 
++tavorevb3_config :
++	@$(MKCONFIG) $(@:_config=) arm pxa tavorevb3 pxa
++
+ #########################################################################
+ ## ARM1136 Systems
+ #########################################################################
+diff --git a/board/pxa/aspenite/aspenite_pxa168.c b/board/pxa/aspenite/aspenite_pxa168.c
+index eac148a..e9da54a 100644
+--- a/board/pxa/aspenite/aspenite_pxa168.c
++++ b/board/pxa/aspenite/aspenite_pxa168.c
+@@ -191,11 +191,6 @@ int misc_init_r (void)
+         if(!env)
+                 setenv("standalone_initrd","fsload $(default_load_addr) $(image_name);fsload $(initrd_load_addr) $(initrd_name);setenv bootargs $(bootargs) root=/dev/ram0 rw initrd=0x$(initrd_load_addr),0x$(initrd_size) ip=$(ipaddr):$(serverip)$(bootargs_end); bootm $(default_load_addr);");
+         
+-        /* MAC addresses */
+-        env = getenv("ethaddr");
+-        if(!env)
+-                setenv("ethaddr",ETHADDR);
+-
+ 	return 0;
+ }
+ 
+diff --git a/board/pxa/avengers/avenger_pxa168.c b/board/pxa/avengers/avenger_pxa168.c
+index 33f8a01..4a02568 100644
+--- a/board/pxa/avengers/avenger_pxa168.c
++++ b/board/pxa/avengers/avenger_pxa168.c
+@@ -105,11 +105,6 @@ int misc_init_r (void)
+         if(!env)
+                 setenv("standalone_initrd","fsload $(default_load_addr) $(image_name);fsload $(initrd_load_addr) $(initrd_name);setenv bootargs $(bootargs) root=/dev/ram0 rw initrd=0x$(initrd_load_addr),0x$(initrd_size) ip=$(ipaddr):$(serverip)$(bootargs_end); bootm $(default_load_addr);");
+         
+-        /* MAC addresses */
+-        env = getenv("ethaddr");
+-        if(!env)
+-                setenv("ethaddr",ETHADDR);
+-
+ 	return 0;
+ }
+ 
+diff --git a/board/pxa/common/boot.c b/board/pxa/common/boot.c
+index fb39744..53be505 100644
+--- a/board/pxa/common/boot.c
++++ b/board/pxa/common/boot.c
+@@ -60,7 +60,7 @@ int do_bootz (cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
+ 	char		cmd_buf[CONFIG_SYS_CBSIZE];
+ 
+ 	if(argc < 2)
+-		images.ep = 0x500000;
++		images.ep = CONFIG_SYS_LOAD_ADDR;
+ 	else {
+ 		if (isxdigit(*(argv[1])))
+ 			images.ep = simple_strtoul(argv[1], NULL, 16);
+diff --git a/board/pxa/common/nand.c b/board/pxa/common/nand.c
+index 5a81105..0680588 100644
+--- a/board/pxa/common/nand.c
++++ b/board/pxa/common/nand.c
+@@ -4,8 +4,12 @@
+ #include <linux/mtd/nand.h>
+ #include <linux/mtd/partitions.h>
+ #include <asm/arch/common.h>
+-#include <asm/arch/regs-pxa168.h>
+ #include <asm/errno.h>
++#ifdef CONFIG_CPU_MONAHANS
++#include <asm/arch/pxa-regs.h>
++#else
++#include <asm/arch/regs-pxa168.h>
++#endif
+ 
+ #undef	__KERNEL__
+ #include <asm/arch-pxa168/pxa3xx_bbm.h>
+@@ -19,8 +23,8 @@ nand_info_t nand_info[CONFIG_SYS_MAX_NAND_DEVICE];
+ static u64 pxa3xx_nand_dma_mask = DMA_BIT_MASK(32);
+ static struct resource pxa168_resources_nand[] = {
+ 	[0] = {
+-		.start  = 0xD4283000,
+-		.end    = 0xD4283200,
++		.start  = CONFIG_SYS_NAND_BASE,
++		.end    = CONFIG_SYS_NAND_BASE + 0x200,
+ 		.flags  = IORESOURCE_MEM,
+ 	},
+ 	[1] = {
+diff --git a/board/pxa/common/usbeth/ether-mvu2o.c b/board/pxa/common/usbeth/ether-mvu2o.c
+index 1071535..856d37d 100644
+--- a/board/pxa/common/usbeth/ether-mvu2o.c
++++ b/board/pxa/common/usbeth/ether-mvu2o.c
+@@ -258,6 +258,8 @@ static int usb_eth_init(struct eth_device *dev, bd_t *bd)
+ 
+ 	memcpy (bd->bi_enetaddr, v_mac, 6);	/* update global address to match env (allows env changing) */
+ 	memcpy(dev->enetaddr, bd->bi_enetaddr, 6);
++
++	return 0;
+ }
+ 
+ static int usb_eth_halt(struct eth_device *dev, bd_t *bd)
+diff --git a/board/pxa/common/usbeth/mv_u2o_ctl.c b/board/pxa/common/usbeth/mv_u2o_ctl.c
+index 26063d6..ad0f5d6 100644
+--- a/board/pxa/common/usbeth/mv_u2o_ctl.c
++++ b/board/pxa/common/usbeth/mv_u2o_ctl.c
+@@ -42,6 +42,10 @@
+ #include "arch/tavor_evb2.h"
+ #endif
+ 
++#ifdef CONFIG_CPU_MONAHANS
++#include <asm/arch/pxa-regs.h>
++#endif
++
+ #undef DEBUG 
+ //#define DEBUG 3
+ #if DEBUG
+@@ -236,6 +240,66 @@ static void u2o_phy_dump(unsigned *base)
+ #endif
+ }
+ 
++#if CONFIG_CPU_MONAHANS
++static void u2o_phy_init(unsigned *base)
++{
++	int count;
++
++	if (usb_debug)
++		printf("init phy\n\n");
++
++	/* check whether U2PPLL[READY] is set */
++	count = 100000;
++	do {
++		count--;
++	} while (!(u2o_get(base, U2PPLL) & U2PPLL_READY) && count);
++	if (count <= 0) {
++		printf("%s TIMEOUT for U2PPLL[READY]\n", __func__);
++	}
++
++	/* PLL VCO and TX Impedance Calibration Timing:
++	 *
++	 * PU             _____|----------------------------------|
++	 * VOCAL STAR     ______________|--|______________________|
++	 * REG_RCAL_START ___________________________|--|_________|
++	 *                     | 200us  |40| 200us   |40| 200us   |USB PHY READY
++	 */
++
++	/* SET REG_ARC_DPDM_MODE BIT OF U2PT0 */
++	u2o_set(base, U2PT0, U2PT0_REG_ARC_DPDM_MODE);
++
++	/* U2PPLL */
++	u2o_clear(base, U2PPLL, (U2PPLL_ICP_MASK | U2PPLL_KVCO_MASK));
++	u2o_set(base, U2PPLL, (0x7<<U2PPLL_ICP_SHIFT) 	\
++		| (0x7<<U2PPLL_KVCO_SHIFT) | U2PPLL_KVCO_EXT);
++
++	/* U2PRX, program squelch threshold to rise minumum 
++	 * sensitivity for receiving
++	 */
++	u2o_set(base, U2PRX, (0xf << U2PRX_SQ_THRESH_SHIFT));
++
++	/* IVREF */
++	u2o_clear(base, U2IVREF, (U2IVREF_BG_VSEL_MASK | U2IVREF_RXVDD18_MASK));
++	udelay(200);
++
++	/* U2PTX */
++	u2o_set(base, U2PTX, U2PTX_RCAL_START);
++	udelay(200);
++	u2o_clear(base, U2PTX, U2PTX_RCAL_START);
++	udelay(200);
++	
++	/* Make sure PHY is ready */
++	count = 100000;
++	do {
++		count--;
++	} while (!(u2o_get(base, U2PPLL) & U2PPLL_READY) && count);
++	if (count <= 0) {
++		printf("%s TIMEOUT for U2PPLL[READY]\n", __func__);
++	}
++	if (usb_debug)
++		u2o_phy_dump(base);
++}
++#else
+ static void u2o_phy_init(unsigned *base)
+ {
+ 	int count;
+@@ -289,6 +353,7 @@ static void u2o_phy_init(unsigned *base)
+ 
+ 	if (usb_debug) u2o_phy_dump(base);
+ }
++#endif
+ 
+ //////////////////////////////////////////////////////////////////////////////
+ // Public Interface
+@@ -609,6 +674,10 @@ int u2o_enable(void)
+ 	int error, retval, i;
+ 	u32 tmp;
+ 
++#ifdef CONFIG_CPU_MONAHANS
++	CKENC |= 0x1fe0;
++	ACCR1 |= ACCR1_PU_OTG|ACCR1_PU_PLL|ACCR1_PU;
++#else
+     	/* enable u2o clock */
+ 	writel(0x18, PMUA_USB_CLK_RES_CTRL);
+ 	writel(0x1b, PMUA_USB_CLK_RES_CTRL);
+@@ -623,6 +692,7 @@ int u2o_enable(void)
+ 	        	writel(tmp, (0xd4207004));
+ 		}
+ 	}
++#endif
+ 
+ 	mv_dev->regbase = (unsigned *)U2O_REG_BASE; 
+ 	mv_dev->phybase = (unsigned *)U2O_PHY_BASE;
+diff --git a/board/pxa/common/usbeth/mv_u2o_ctl.h b/board/pxa/common/usbeth/mv_u2o_ctl.h
+index af884df..12e5b9b 100644
+--- a/board/pxa/common/usbeth/mv_u2o_ctl.h
++++ b/board/pxa/common/usbeth/mv_u2o_ctl.h
+@@ -43,8 +43,8 @@
+ #define ETH_BUF_SIZE	1536
+ 
+ /* registers */
+-#define U2O_REG_BASE				0xd4208000
+-#define U2O_PHY_BASE				0xd4207000
++#define U2O_REG_BASE				CONFIG_U2O_REG_BASE
++#define U2O_PHY_BASE				CONFIG_U2O_PHY_BASE
+ 
+ #define U2xUSBCMD				(0x140)       /* U2O Command */
+ #define U2xUSBCMD_RST				(1<<1)      /* Reset */
+@@ -108,7 +108,7 @@
+ #define  U2xOTGSC_VD                           (0x00000001)   /* Vbus discharge */
+ 
+ /* PHY registers */
+-#if 0
++#ifdef CONFIG_CPU_MONAHANS
+ #define U2PPLL		(0x000)       /* U2O PHY PLL Control */
+ #define U2PTX		(0x004)       /* U2O PHY TX Control */
+ #define U2PRX		(0x008)       /* U2O PHY RX Control */
+diff --git a/board/pxa/tavorEVB/tavorevb_pxa168.c b/board/pxa/tavorEVB/tavorevb_pxa168.c
+index e5af7d9..0a59c90 100644
+--- a/board/pxa/tavorEVB/tavorevb_pxa168.c
++++ b/board/pxa/tavorEVB/tavorevb_pxa168.c
+@@ -309,11 +309,6 @@ int misc_init_r (void)
+         if(!env)
+                 setenv("standalone_initrd","fsload $(default_load_addr) $(image_name);fsload $(initrd_load_addr) $(initrd_name);setenv bootargs $(bootargs) root=/dev/ram0 rw initrd=0x$(initrd_load_addr),0x$(initrd_size) ip=$(ipaddr):$(serverip)$(bootargs_end); bootm $(default_load_addr);");
+         
+-        /* MAC addresses */
+-        env = getenv("ethaddr");
+-        if(!env)
+-                setenv("ethaddr",ETHADDR);
+-
+ 	return 0;
+ }
+ 
+diff --git a/board/pxa/tavorevb3/Makefile b/board/pxa/tavorevb3/Makefile
+new file mode 100644
+index 0000000..dc61853
+--- /dev/null
++++ b/board/pxa/tavorevb3/Makefile
+@@ -0,0 +1,50 @@
++#
++# (C) Copyright 2000-2006
++# Wolfgang Denk, DENX Software Engineering, wd@denx.de.
++#
++# See file CREDITS for list of people who contributed to this
++# project.
++#
++# This program is free software; you can redistribute it and/or
++# modify it under the terms of the GNU General Public License as
++# published by the Free Software Foundation; either version 2 of
++# the License, or (at your option) any later version.
++#
++# This program is distributed in the hope that it will be useful,
++# but WITHOUT ANY WARRANTY; without even the implied warranty of
++# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++# GNU General Public License for more details.
++#
++# You should have received a copy of the GNU General Public License
++# along with this program; if not, write to the Free Software
++# Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++# MA 02111-1307 USA
++#
++
++include $(TOPDIR)/config.mk
++
++LIB	= $(obj)lib$(BOARD).a
++
++COBJS	:= tavorevb3.o
++
++SRCS	:= $(SOBJS:.o=.S) $(COBJS:.o=.c)
++OBJS	:= $(addprefix $(obj),$(COBJS))
++SOBJS	:= $(addprefix $(obj),$(SOBJS))
++
++$(LIB):	$(obj).depend $(OBJS) $(SOBJS)
++	$(AR) $(ARFLAGS) $@ $(OBJS) $(SOBJS)
++
++clean:
++	rm -f $(SOBJS) $(OBJS)
++
++distclean:	clean
++	rm -f $(LIB) core *.bak $(obj).depend
++
++#########################################################################
++
++# defines $(obj).depend target
++include $(SRCTREE)/rules.mk
++
++sinclude $(obj).depend
++
++#########################################################################
+diff --git a/board/pxa/tavorevb3/config.mk b/board/pxa/tavorevb3/config.mk
+new file mode 100644
+index 0000000..e692ece
+--- /dev/null
++++ b/board/pxa/tavorevb3/config.mk
+@@ -0,0 +1,7 @@
++#
++# UBOOT relocate at 0x80200000
++# and we could safely download to 0x80800000
++# For UBOOT less than 0x600000 = (3M)
++#
++
++TEXT_BASE = 0x80200000
+diff --git a/board/pxa/tavorevb3/tavorevb3.c b/board/pxa/tavorevb3/tavorevb3.c
+new file mode 100644
+index 0000000..a087cb9
+--- /dev/null
++++ b/board/pxa/tavorevb3/tavorevb3.c
+@@ -0,0 +1,151 @@
++/*
++ * (C) Copyright 2002
++ * Kyle Harris, Nexus Technologies, Inc. kharris@nexus-tech.net
++ *
++ * (C) Copyright 2002
++ * Sysgo Real-Time Solutions, GmbH <www.elinos.com>
++ * Marius Groeger <mgroeger@sysgo.de>
++ *
++ * See file CREDITS for list of people who contributed to this
++ * project.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++#include <common.h>
++
++DECLARE_GLOBAL_DATA_PTR;
++
++/**********************************************************************
++ * set gpio for nand flash
++ */
++
++static void DfcSetGPIO()
++{
++	*(unsigned long *)0x40E10290=0x00001841;
++	*(unsigned long *)0x40E1028C=0x00001841;
++	*(unsigned long *)0x40E10288=0x00001841;
++	*(unsigned long *)0x40E10284=0x00001841;
++	*(unsigned long *)0x40E10280=0x00001841;
++	*(unsigned long *)0x40E1027C=0x00001841;
++	*(unsigned long *)0x40E10278=0x00001841;
++	*(unsigned long *)0x40E10274=0x00001841;
++	*(unsigned long *)0x40E10270=0x00001801;
++	*(unsigned long *)0x40E1026C=0x00001801;
++	*(unsigned long *)0x40E10268=0x00001801;
++	*(unsigned long *)0x40E10264=0x00001801;
++	*(unsigned long *)0x40E10248=0x00001801;
++	*(unsigned long *)0x40E10244=0x00001801;
++	*(unsigned long *)0x40E10240=0x00001801;
++	*(unsigned long *)0x40E1023C=0x00001801;
++
++	/* nCS0 */
++	*(unsigned long *)0x40E1022C=0x00001901;
++	/* nCS1 */
++	*(unsigned long *)0x40E10230=0x00001903;
++	/* nWE */
++	*(unsigned long *)0x40E10234=0x00001901;
++	/* nRE OE */
++	*(unsigned long *)0x40E10238=0x00001901;
++	/* nCLE */
++	*(unsigned long *)0x40E1020C=0x00001901;
++	/* nADV1_ALE */
++	*(unsigned long *)0x40E10218=0x00001901;
++
++	/* nADV2_ALE */
++	/* Onenand is on nCS2. nADV2 should be configured as nCS2 */
++	*(unsigned long *)0x40E10224=0x00001903;
++	/* INT_RnB */
++	*(unsigned long *)0x40E10228=0x00001901;
++	/* DF_SCLK_E */
++	*(unsigned long *)0x40E10214=0x00001801;
++	/* nLUA */
++	*(unsigned long *)0x40E10254=0x00001901;
++	/* nLLA */
++	*(unsigned long *)0x40E10258=0x00001901;
++	/* nBE0 */
++	*(unsigned long *)0x40E1021C=0x00001801;
++	/* nBE1 */
++	*(unsigned long *)0x40E10220=0x00001801;
++
++	/* RDY */
++	*(unsigned long *)0x40e10200=0x00001801;
++}
++
++/*
++ * Miscelaneous platform dependent initialisations
++ */
++
++int board_init (void)
++{
++	/* memory and cpu-speed are setup before relocation */
++	/* so we do _nothing_ here */
++
++	/* arch number of tavor evb 3 */
++	gd->bd->bi_arch_number = 1912;
++
++	/* adress of boot parameters */
++	gd->bd->bi_boot_params = 0;
++
++	DfcSetGPIO();
++
++	return 0;
++}
++
++int board_late_init(void)
++{
++	setenv("stdout", "serial");
++	setenv("stderr", "serial");
++	return 0;
++}
++
++
++int dram_init (void)
++{
++	gd->bd->bi_dram[0].start = PHYS_SDRAM_1;
++	gd->bd->bi_dram[0].size = PHYS_SDRAM_1_SIZE;
++
++	return 0;
++}
++
++int checkboard (void)
++{
++	return display_marvell_banner();
++}
++
++int display_marvell_banner (void)
++{
++   printf("\n");
++   printf(" __  __                      _ _\n");
++   printf("|  \\/  | __ _ _ ____   _____| | |\n");
++   printf("| |\\/| |/ _` | '__\\ \\ / / _ \\ | |\n");
++   printf("| |  | | (_| | |   \\ V /  __/ | |\n");
++   printf("|_|  |_|\\__,_|_|    \\_/ \\___|_|_|\n");
++   printf(" _   _     ____              _\n");
++   printf("| | | |   | __ )  ___   ___ | |_ \n");
++   printf("| | | |___|  _ \\ / _ \\ / _ \\| __| \n");
++   printf("| |_| |___| |_) | (_) | (_) | |_ \n");
++   printf(" \\___/    |____/ \\___/ \\___/ \\__| ");
++   printf("\n\nMARVELL PXAXXX series.");
++   printf("\nBased on 88SV331xV5 Core with ARM926 LE CPU."); 
++   printf("\nCode original base is u-boot-arm 2009.01-rc1.\n\n");
++
++   return 0;
++}
++
++void lowlevel_init()
++{
++}
+diff --git a/board/pxa/tavorevb3/u-boot.lds b/board/pxa/tavorevb3/u-boot.lds
+new file mode 100644
+index 0000000..7cf9fdf
+--- /dev/null
++++ b/board/pxa/tavorevb3/u-boot.lds
+@@ -0,0 +1,56 @@
++/*
++ * (C) Copyright 2000
++ * Wolfgang Denk, DENX Software Engineering, wd@denx.de.
++ *
++ * See file CREDITS for list of people who contributed to this
++ * project.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++OUTPUT_FORMAT("elf32-littlearm", "elf32-littlearm", "elf32-littlearm")
++OUTPUT_ARCH(arm)
++ENTRY(_start)
++SECTIONS
++{
++	. = 0x00000000;
++
++	. = ALIGN(4);
++	.text      :
++	{
++	  cpu/pxa/start.o	(.text)
++	  *(.text)
++	}
++
++	. = ALIGN(4);
++	.rodata : { *(.rodata) }
++
++	. = ALIGN(4);
++	.data : { *(.data) }
++
++	. = ALIGN(4);
++	.got : { *(.got) }
++
++	. = .;
++	__u_boot_cmd_start = .;
++	.u_boot_cmd : { *(.u_boot_cmd) }
++	__u_boot_cmd_end = .;
++
++	. = ALIGN(4);
++	__bss_start = .;
++	.bss (NOLOAD) : { *(.bss) . = ALIGN(4); }
++	_end = .;
++}
+diff --git a/board/pxa/ttc_dkb/ttc_dkb.c b/board/pxa/ttc_dkb/ttc_dkb.c
+index 5dd7dfc..3574924 100644
+--- a/board/pxa/ttc_dkb/ttc_dkb.c
++++ b/board/pxa/ttc_dkb/ttc_dkb.c
+@@ -336,11 +336,6 @@ int misc_init_r (void)
+         if(!env)
+                 setenv("standalone_initrd","fsload $(default_load_addr) $(image_name);fsload $(initrd_load_addr) $(initrd_name);setenv bootargs $(bootargs) root=/dev/ram0 rw initrd=0x$(initrd_load_addr),0x$(initrd_size) ip=$(ipaddr):$(serverip)$(bootargs_end); bootm $(default_load_addr);");
+         
+-        /* MAC addresses */
+-        env = getenv("ethaddr");
+-        if(!env)
+-                setenv("ethaddr",ETHADDR);
+-
+ 	return 0;
+ }
+ 
+diff --git a/include/asm-arm/arch-pxa/common.h b/include/asm-arm/arch-pxa/common.h
+new file mode 100644
+index 0000000..679fc1a
+--- /dev/null
++++ b/include/asm-arm/arch-pxa/common.h
+@@ -0,0 +1,505 @@
++#ifndef _PXA_CONFIG
++#define _PXA_CONFIG
++
++#include <common.h>
++#include <asm/io.h>
++#include <linux/types.h>
++#include <linux/err.h>
++
++#define __initdata
++#define __exit
++#define __init
++#define __deprecated
++#define module_init(...)
++#define module_param(...)
++#define module_exit(...)
++#define EXPORT_SYMBOL(...)
++#define MODULE_DESCRIPTION(...)
++#define MODULE_AUTHOR(...)
++#define MODULE_LICENSE(...)
++#define MODULE_PARM_DESC(...)
++
++#define HZ CONFIG_SYS_HZ
++#define IRQ_NONE        (0)
++#define IRQ_HANDLED     (1)
++#define IRQ_RETVAL(x)   ((x) != 0)
++#define IORESOURCE_IO           0x00000100      /* Resource type */
++#define IORESOURCE_MEM          0x00000200
++#define IORESOURCE_IRQ          0x00000400
++#define IORESOURCE_DMA          0x00000800
++#define PXA_IRQ(x)      (x)
++#define IRQ_PXA168_NAND	PXA_IRQ(45)     /* NAND Controller */
++#define IRQF_DISABLED           0x00000020
++#define free_irq(x, y)	kfree(y)
++#define IRQF_SHARED	1
++#undef	ioremap
++#define ioremap(physaddr, size) CONFIG_SYS_NAND_BASE
++#undef	iounmap
++#define iounmap(...)
++#define ARRAY_AND_SIZE(x)       (x), ARRAY_SIZE(x)
++#define msleep(a) udelay(a * 1000)
++#define dev_warn(...)
++
++#define __REG_PXA910(x)	(*((volatile u32 *)(x)))
++#define BU_U32            unsigned int
++#define BU_REG_WRITE(x,y) ((*(volatile BU_U32 *)(x)) = y )
++
++typedef int wait_queue_head_t; 
++typedef int irqreturn_t;
++typedef irqreturn_t (*irq_handler_t)(int, void *);
++typedef u32 resource_size_t;
++typedef struct pm_message {
++	        int event;
++} pm_message_t;
++typedef int spinlock_t;
++#define clk_enable(...)	
++#define clk_disable(...)
++#define DEBUG(...)
++#define del_mtd_device(...)
++
++static inline int __decalare_return(void)
++{
++	return 1;
++}
++#define DECLARE_WAITQUEUE(x, y) __decalare_return()
++#define set_current_state(...)		do { } while (0)
++#define schedule()			do { } while (0)
++#define cond_resched()
++#define	spin_lock_irqsave(x,y) y = 0;
++#define spin_unlock_irqrestore(x,y)
++#define spin_lock_init(...)
++#define spin_lock(...)
++#define spin_unlock(...)
++#define add_wait_queue(...)
++#define remove_wait_queue(...)
++#define wake_up(...)
++#define init_waitqueue_head(...)
++#define THIS_MODULE		0
++#define wait_for_completion(...)
++#define add_mtd_partitions(...)
++
++#define platform_get_irq(...)	0
++#define request_mem_region(x,y,z)	(container_of(x, struct resource, start))
++#define release_mem_region(...)
++/* Parameters used to convert the timespec values: */
++#define MSEC_PER_SEC    1000L
++#define USEC_PER_MSEC   1000L
++#define NSEC_PER_USEC   1000L
++#define NSEC_PER_MSEC   1000000L
++#define USEC_PER_SEC    1000000L
++#define NSEC_PER_SEC    1000000000L
++#define FSEC_PER_SEC    1000000000000000L
++
++#define BIT_0 (1 << 0)
++#define BIT_1 (1 << 1)
++#define BIT_2 (1 << 2)
++#define BIT_3 (1 << 3)
++#define BIT_4 (1 << 4)
++#define BIT_5 (1 << 5)
++#define BIT_6 (1 << 6)
++#define BIT_7 (1 << 7)
++#define BIT_8 (1 << 8)
++#define BIT_9 (1 << 9)
++#define BIT_10 (1 << 10)
++#define BIT_11 (1 << 11)
++#define BIT_12 (1 << 12)
++#define BIT_13 (1 << 13)
++#define BIT_14 (1 << 14)
++#define BIT_15 (1 << 15)
++#define BIT_16 (1 << 16)
++#define BIT_17 (1 << 17)
++#define BIT_18 (1 << 18)
++#define BIT_19 (1 << 19)
++#define BIT_20 (1 << 20)
++#define BIT_21 (1 << 21)
++#define BIT_22 (1 << 22)
++#define BIT_23 (1 << 23)
++#define BIT_24 (1 << 24)
++#define BIT_25 (1 << 25)
++#define BIT_26 (1 << 26)
++#define BIT_27 (1 << 27)
++#define BIT_28 (1 << 28)
++#define BIT_29 (1 << 29)
++#define BIT_30 (1 << 30)
++#define BIT_31 ((unsigned)1 << 31)
++
++#define SHIFT0(Val)  (Val)
++#define SHIFT1(Val)  ((Val) << 1)
++#define SHIFT2(Val)  ((Val) << 2)
++#define SHIFT3(Val)  ((Val) << 3)
++#define SHIFT4(Val)  ((Val) << 4)
++#define SHIFT5(Val)  ((Val) << 5)
++#define SHIFT6(Val)  ((Val) << 6)
++#define SHIFT7(Val)  ((Val) << 7)
++#define SHIFT8(Val)  ((Val) << 8)
++#define SHIFT9(Val)  ((Val) << 9)
++#define SHIFT10(Val) ((Val) << 10)
++#define SHIFT11(Val) ((Val) << 11)
++#define SHIFT12(Val) ((Val) << 12)
++#define SHIFT13(Val) ((Val) << 13)
++#define SHIFT14(Val) ((Val) << 14)
++#define SHIFT15(Val) ((Val) << 15)
++#define SHIFT16(Val) ((Val) << 16)
++#define SHIFT17(Val) ((Val) << 17)
++#define SHIFT18(Val) ((Val) << 18)
++#define SHIFT19(Val) ((Val) << 19)
++#define SHIFT20(Val) ((Val) << 20)
++#define SHIFT21(Val) ((Val) << 21)
++#define SHIFT22(Val) ((Val) << 22)
++#define SHIFT23(Val) ((Val) << 23)
++#define SHIFT24(Val) ((Val) << 24)
++#define SHIFT25(Val) ((Val) << 25)
++#define SHIFT26(Val) ((Val) << 26)
++#define SHIFT27(Val) ((Val) << 27)
++#define SHIFT28(Val) ((Val) << 28)
++#define SHIFT29(Val) ((Val) << 29)
++#define SHIFT30(Val) ((Val) << 30)
++#define SHIFT31(Val) ((Val) << 31)
++
++/*
++ *
++ *      THE BASE ADDRESSES
++ *
++ */
++#define APBC_BASE       0xD4015000
++
++#define APBC_AIB_CLK_RST                (APBC_BASE+0x003C)      /* 32 bit       Clock/Reset
++								 * Control
++								 * Register for
++								 * AIB
++								 */
++
++#define APBC_AIB_CLK_RST_FNCLK                          (1 << 1)
++
++#define APBC_AIB_CLK_RST_APBCLK                         (1 << 0)
++
++/*
++ *
++ *      THE BASE ADDRESSES
++ *
++ */
++#define SMC_BASE        0xD4283800
++
++/*
++ *
++ *      THE REGISTER DEFINES
++ *
++ */
++#define SMC_MSCX                (SMC_BASE+0x0020)       /* Static Memory Control Registers Start */
++#define SMC_SXCNFGX             (SMC_BASE+0x0030)       /* Synchronous Static Memory Control
++							 * Registers Start
++							 */
++#define SMC_MEMCLKCFG   (SMC_BASE+0x0068)       /* 32 bit       Clock Configuration
++						 * Control Register
++						 */
++#define SMC_CSDFICFGX   (SMC_BASE+0x0090)       /* DFI Configuration Control
++						 * Register for Chip
++						 * Selects Start
++						 */
++#define SMC_CLK_RET_DEL (SMC_BASE+0x00B0)       /* 32 bit       Synchronous NOR Flash
++						 * Clock Return Delay
++						 * Register
++						 */
++#define SMC_ADV_RET_DEL (SMC_BASE+0x00B4)       /* 32 bit       Synchronous NOR Flash
++						 * nADV Return Delay
++						 * Register
++						 */
++#define SMC_CSADRMAPX   (SMC_BASE+0x00C0)       /* Address Mapping Control Registers Start */
++#define SMC_TCVCFGREG   (SMC_BASE+0x00D0)       /* 32 bit       Transceiver
++						 * Configuration Control
++						 * Register 0
++						 */
++#define SMC_WE_APX              (SMC_BASE+0x00E0)       /* nWE Address Phase Control
++							 * Registers Start
++							 */
++#define SMC_OE_APX              (SMC_BASE+0x00F0)       /* nOE Address Phase Control
++							 * Registers Start
++							 */
++#define SMC_ADV_APX             (SMC_BASE+0x0100)       /* nADV Address Phase Control
++							 * Registers Start
++							 */
++
++#define typecheck(type,x) \
++	({      type __dummy; \
++	         typeof(x) __dummy2; \
++	         (void)(&__dummy == &__dummy2); \
++	         1; \
++	 })
++
++#define time_after(a,b)         \
++	(typecheck(unsigned long, a) && \
++	 typecheck(unsigned long, b) && \
++	 ((long)(b) - (long)(a) < 0))
++
++#define time_before(a,b)        time_after(b,a)
++#define jiffies			({			\
++				long ticks;		\
++				ticks = get_ticks();	\
++				ticks / 3 / 1000; 	\
++				})
++#define INIT_COMPLETION(x)      ((x).done = 0)
++
++struct ecc_layout {
++	int     offset;
++	int     length;
++};
++
++struct yaffs_oob_desc {
++	int     offset;
++	int     size;
++};
++
++struct completion {
++	        unsigned int done;
++};
++
++struct resource {
++	resource_size_t start;
++	resource_size_t end;
++	const char *name;
++	unsigned long flags;
++	struct resource *parent, *sibling, *child;
++};
++
++struct device {
++        void            *driver_data;   /* data private to the driver */
++	void            *platform_data; /* Platform specific data, device
++					   core doesn't touch it */
++	u64             *dma_mask;      /* dma mask (if dma'able device) */
++	u64             coherent_dma_mask;/* Like dma_mask, but for
++					     alloc_coherent mappings as
++					     not all hardware supports
++					     64 bit addresses for consistent
++					     allocations such descriptors. */
++};
++
++struct platform_device {
++	const char      * name;
++	int             id;
++        struct device   dev;
++	u32             num_resources;
++	struct resource * resource;
++};
++
++struct device_driver {
++	const char              *name;
++};
++
++struct platform_driver {
++	int (*probe)(struct platform_device *);
++	int (*remove)(struct platform_device *);
++	void (*shutdown)(struct platform_device *);
++	int (*suspend)(struct platform_device *, pm_message_t state);
++	int (*resume)(struct platform_device *);
++	struct device_driver driver;
++};
++
++struct timespec {
++	time_t  tv_sec;         /* seconds */
++	long    tv_nsec;        /* nanoseconds */
++};
++
++void complete(struct completion *completion);
++unsigned long wait_for_completion_timeout(struct completion *x, unsigned long timeout);
++inline unsigned long msecs_to_jiffies(int time);
++void dev_err(struct device * dev, char *msg);
++void getnstimeofday(struct timespec *tv);
++struct clk *clk_get(struct device *dev, const char *id);
++void clk_put(struct clk *clk);
++unsigned long clk_get_rate(struct clk * clk);
++#define outsl(p,d,l)                   __raw_writesl(__io(p),d,l)
++#define CPUID_ID	        0
++
++#define __stringify_1(x)        #x
++#define __stringify(x)          __stringify_1(x)
++
++#define read_cpuid(reg)							\
++	({								\
++		unsigned int __val;					\
++		asm("mrc	p15, 0, %0, c0, c0, " __stringify(reg)	\
++		    : "=r" (__val)					\
++		    :							\
++		    : "cc");						\
++		__val;							\
++	})
++
++
++#ifdef CONFIG_CPU_PXA930
++#define __cpu_is_pxa930(id)                             		\
++	({                                              		\
++	 unsigned int _id = (id) >> 4 & 0xfff;   			\
++	 _id == 0x683;           					\
++	 })
++#else
++#define __cpu_is_pxa930(id)     (0)
++#endif
++
++#ifdef CONFIG_CPU_PXA935
++#define __cpu_is_pxa935(id)                             		\
++	({                                              		\
++	 unsigned int _id = (id) >> 4 & 0xfff;   			\
++	 _id == 0x693;                           			\
++	 })
++#else
++#define __cpu_is_pxa935(id)     (0)
++#endif
++
++#ifdef CONFIG_CPU_PXA910
++#define __cpu_is_pxa910(id)                             		\
++	({                                              		\
++	 unsigned int _id = (id) >> 4 & 0xfff;   			\
++	 _id == 0x926 || _id == 0x800 || _id == 0x840;   		\
++	 })
++#else
++#define __cpu_is_pxa910(id)     (0)
++#endif
++
++#ifdef CONFIG_CPU_PXA910_910
++#define __cpu_is_pxa910_910(id)                         		\
++	({                                              		\
++	 unsigned int _id = (id) & 0xffff;       			\
++	 _id == 0x9262 || _id == 0x8000;         			\
++	 })
++#else
++#define __cpu_is_pxa910_910(id) (0)
++#endif
++
++#ifdef CONFIG_CPU_PXA910_168
++#define __cpu_is_pxa910_168(id)                         		\
++	({                                              		\
++	 unsigned int _id = (id) & 0xffff;       			\
++	 _id == 0x9263 || _id == 0x8400;         			\
++	 })
++#else
++#define __cpu_is_pxa910_168(id) (0)
++#endif
++
++#define cpu_is_pxa930()                                 		\
++	({                                              		\
++	 unsigned int id = read_cpuid(CPUID_ID); 			\
++	 __cpu_is_pxa930(id);                    			\
++	 })
++#define cpu_is_pxa935()    		                		\
++	({                              		                \
++	 unsigned int id = read_cpuid(CPUID_ID); 			\
++	 __cpu_is_pxa935(id);                    			\
++	 })
++#define cpu_is_pxa910()                                 		\
++	({                                              		\
++	 unsigned int id = read_cpuid(CPUID_ID); 			\
++	 __cpu_is_pxa910(id);                    			\
++	 })
++#define cpu_is_pxa910_910()                                     	\
++	({                                              		\
++	 unsigned int id = read_cpuid(CPUID_ID); 			\
++	 __cpu_is_pxa910_910(id);                        		\
++	 })
++#define cpu_is_pxa910_168()                                     	\
++	({                                              		\
++	 unsigned int id = read_cpuid(CPUID_ID); 			\
++	 __cpu_is_pxa910_168(id);                        		\
++	 })
++
++#define DMA_BIT_MASK(n) (((n) == 64) ? ~0ULL : ((1ULL<<(n))-1))
++
++static inline void *dev_get_drvdata(const struct device *dev)
++{
++	return dev->driver_data;
++}       
++
++static inline void dev_set_drvdata(struct device *dev, void *data)
++{       
++	dev->driver_data = data;
++}       
++
++#define platform_get_drvdata(_dev)      dev_get_drvdata(&(_dev)->dev)
++#define platform_set_drvdata(_dev,data) dev_set_drvdata(&(_dev)->dev, (data))
++
++static inline void init_completion(struct completion *x)
++{
++	x->done = 0;
++}
++
++/* non use of DMA */
++/*
++ * Descriptor structure for PXA's DMA engine
++ * Note: this structure must always be aligned to a 16-byte boundary.
++ */
++
++typedef struct pxa_dma_desc {
++	volatile u32 ddadr;     /* Points to the next descriptor + flags */
++	volatile u32 dsadr;     /* DSADR value for the current transfer */
++	volatile u32 dtadr;     /* DTADR value for the current transfer */
++	volatile u32 dcmd;      /* DCMD value for the current transfer */
++} pxa_dma_desc;
++
++typedef enum {
++	DMA_PRIO_HIGH = 0,
++	DMA_PRIO_MEDIUM = 1,
++	DMA_PRIO_LOW = 2
++} pxa_dma_prio;
++
++static inline int pxa_request_dma (char *name, pxa_dma_prio prio,
++		void (*irq_handler)(int, void *),
++		void *data)
++{
++	return 0;
++}
++
++static inline void pxa_free_dma (int dma_ch) {}
++
++static inline void
++dma_free_coherent(struct device *dev, size_t size, void *cpu_addr,
++		dma_addr_t dma_handle) {}
++
++#define DMAC_REGS_VIRT  io_p2v(0x40000000)
++#define DMAC_REG(x)     (*((volatile u32 *)(DMAC_REGS_VIRT + (x))))
++
++#define DALGN           DMAC_REG(0x00a0)  /* DMA Alignment Register */
++#define DDADR(n)        DMAC_REG(0x0200 + ((n) << 4))
++#define DSADR(n)        DMAC_REG(0x0204 + ((n) << 4))
++#define DTADR(n)        DMAC_REG(0x0208 + ((n) << 4))
++#define DCMD(n)         DMAC_REG(0x020c + ((n) << 4))
++#define DRCMR(n)        DMAC_REG((((n) < 64) ? 0x0100 : 0x1100) + \
++		                                 (((n) & 0x3f) << 2))
++
++#define DCSR_RUN        (1 << 31)       /* Run Bit (read / write) */
++#define DCSR_NODESC     (1 << 30)       /* No-Descriptor Fetch (read / write) */
++#define DCSR_STOPIRQEN  (1 << 29)       /* Stop Interrupt Enable (read / write) */
++#define DCSR_REQPEND    (1 << 8)        /* Request Pending (read-only) */
++#define DCSR_STOPSTATE  (1 << 3)        /* Stop State (read-only) */
++#define DCSR_ENDINTR    (1 << 2)        /* End Interrupt (read / write) */
++#define DCSR_STARTINTR  (1 << 1)        /* Start Interrupt (read / write) */
++#define DCSR_BUSERR     (1 << 0)        /* Bus Error Interrupt (read / write) */
++
++#define DCSR_EORIRQEN   (1 << 28)       /* End of Receive Interrupt Enable (R/W) */
++#define DCSR_EORJMPEN   (1 << 27)       /* Jump to next descriptor on EOR */
++#define DCSR_EORSTOPEN  (1 << 26)       /* STOP on an EOR */
++#define DCSR_SETCMPST   (1 << 25)       /* Set Descriptor Compare Status */
++#define DCSR_CLRCMPST   (1 << 24)       /* Clear Descriptor Compare Status */
++#define DCSR_CMPST      (1 << 10)       /* The Descriptor Compare Status */
++#define DCSR_EORINTR    (1 << 9)        /* The end of Receive */
++
++#define DRCMR_MAPVLD    (1 << 7)        /* Map Valid (read / write) */
++#define DRCMR_CHLNUM    0x1f            /* mask for Channel Number (read / write) */
++
++#define DDADR_DESCADDR  0xfffffff0      /* Address of next descriptor (mask) */
++#define DDADR_STOP      (1 << 0)        /* Stop (read / write) */
++
++#define DCMD_INCSRCADDR (1 << 31)       /* Source Address Increment Setting. */
++#define DCMD_INCTRGADDR (1 << 30)       /* Target Address Increment Setting. */
++#define DCMD_FLOWSRC    (1 << 29)       /* Flow Control by the source. */
++#define DCMD_FLOWTRG    (1 << 28)       /* Flow Control by the target. */
++#define DCMD_STARTIRQEN (1 << 22)       /* Start Interrupt Enable */
++#define DCMD_ENDIRQEN   (1 << 21)       /* End Interrupt Enable */
++#define DCMD_ENDIAN     (1 << 18)       /* Device Endian-ness. */
++#define DCMD_BURST8     (1 << 16)       /* 8 byte burst */
++#define DCMD_BURST16    (2 << 16)       /* 16 byte burst */
++#define DCMD_BURST32    (3 << 16)       /* 32 byte burst */
++#define DCMD_WIDTH1     (1 << 14)       /* 1 byte width */
++#define DCMD_WIDTH2     (2 << 14)       /* 2 byte width (HalfWord) */
++#define DCMD_WIDTH4     (3 << 14)       /* 4 byte width (Word) */
++#define DCMD_LENGTH     0x01fff         /* length mask (max = 8K - 1) */
++
++#define dma_alloc_coherent(...) 	NULL
++#endif
+diff --git a/include/asm-arm/arch-pxa/pxa-regs.h b/include/asm-arm/arch-pxa/pxa-regs.h
+index e014568..94e775e 100644
+--- a/include/asm-arm/arch-pxa/pxa-regs.h
++++ b/include/asm-arm/arch-pxa/pxa-regs.h
+@@ -1714,6 +1714,19 @@ typedef void		(*ExcpHndlr) (void) ;
+ #define CKENA		__REG(0x4134000C)  /* A Clock Enable Register */
+ #define CKENB		__REG(0x41340010)  /* B Clock Enable Register */
+ #define AC97_DIV	__REG(0x41340014)  /* AC97 clock divisor value register */
++#define ACCR1           __REG(0x41340020)       /* Application Subsystem Clock Configuration Register 1 */
++#define CKENC           __REG(0x41340024)       /* C Clock Enable Register */
++
++#define ACCR1_DIS_DRX           (1 << 31)       /* Disable DRX */
++#define ACCR1_PU_OTG            (1 << 12)       /* USB 2.0 PHY OTG power up */
++#define ACCR1_PU_PLL            (1 << 11)       /* USB 2.0 PHY PLL power up */
++#define ACCR1_PU                (1 << 10)       /* USB 2.0 PHY power up */
++#define ACCR1_I2C_33_52         (1 << 8)        /* I2C frequency control: 0 = 624/19 Mhz, 1 = 624/12 Mhz */
++#define ACCR1_MMC6_48_52        (1 << 6)        /* MMC6 frequency control: 0 = 624/13 Mhz, 1 = 624/12 Mhz */
++#define ACCR1_MMC5_48_52        (1 << 4)        /* MMC5 frequency control: 0 = 624/13 Mhz, 1 = 624/12 Mhz */
++#define ACCR1_MMC4_48_52        (1 << 2)        /* MMC4 frequency control: 0 = 624/13 Mhz, 1 = 624/12 Mhz */
++#define ACCR1_MMC3_48_52        (1 << 0)        /* MMC3 frequency control: 0 = 624/13 Mhz, 1 = 624/12 Mhz */
++
+ 
+ #define ACCR_SMC_MASK	0x03800000	/* Static Memory Controller Frequency Select */
+ #define ACCR_SRAM_MASK	0x000c0000	/* SRAM Controller Frequency Select */
+diff --git a/include/configs/aspenite.h b/include/configs/aspenite.h
+index 1f5d158..f02cb9a 100644
+--- a/include/configs/aspenite.h
++++ b/include/configs/aspenite.h
+@@ -82,7 +82,7 @@
+ 
+ #define CONFIG_SERVERIP    		192.168.1.100
+ 
+-#define ETHADDR            		"00:00:5A:9F:6D:82"
++#define CONFIG_ETHADDR			"00:00:5A:9F:6D:82"
+ 
+ /* enable passing of ATAGs  */
+ #define CONFIG_CMDLINE_TAG       	1
+@@ -182,9 +182,11 @@
+  */
+ #define CONFIG_CMD_NAND 		1
+ #define CONFIG_SYS_MAX_NAND_DEVICE	1         /* Max number of NAND devices */
+-#define CONFIG_SYS_NAND_BASE		0x0
++#define CONFIG_SYS_NAND_BASE		0xD4283000
+ #define CONFIG_SYS_ONENAND_BASE 	0x80000000  /* configure for ttc */
+ #define CONFIG_USB_ETH
++#define CONFIG_U2O_REG_BASE		0xd4208000
++#define CONFIG_U2O_PHY_BASE		0xd4207000
+ 
+ #endif
+ /* __CONFIG_H */
+diff --git a/include/configs/avengers.h b/include/configs/avengers.h
+index e1d3265..f5aa15e 100644
+--- a/include/configs/avengers.h
++++ b/include/configs/avengers.h
+@@ -82,7 +82,7 @@
+ 
+ #define CONFIG_SERVERIP    		50.1.1.1
+ 
+-#define ETHADDR            		"00:00:5A:9F:6D:82"
++#define CONFIG_ETHADDR			"00:00:5A:9F:6D:82"
+ 
+ /* enable passing of ATAGs  */
+ #define CONFIG_CMDLINE_TAG       	1
+@@ -178,7 +178,7 @@
+  */
+ #define CONFIG_CMD_NAND 		1
+ #define CONFIG_SYS_MAX_NAND_DEVICE	2         /* Max number of NAND devices */
+-#define CONFIG_SYS_NAND_BASE		0x0
++#define CONFIG_SYS_NAND_BASE		0xD4283000
+ 
+ /*-----------------------------------------------------------------------
+  * ONENAND configuration
+@@ -186,6 +186,8 @@
+ #define CONFIG_CMD_ONENAND 		1
+ #define CONFIG_SYS_ONENAND_BASE 	0x80000000  /* configure for ttc */
+ #define CONFIG_USB_ETH
++#define CONFIG_U2O_REG_BASE		0xd4208000
++#define CONFIG_U2O_PHY_BASE		0xd4207000
+ #define CONFIG_NET_RETRY_COUNT 		10000
+ 
+ #endif
+diff --git a/include/configs/tavorevb.h b/include/configs/tavorevb.h
+index 4524734..487185b 100644
+--- a/include/configs/tavorevb.h
++++ b/include/configs/tavorevb.h
+@@ -85,7 +85,7 @@
+ 
+ #define CONFIG_SERVERIP    		192.168.1.100
+ 
+-#define ETHADDR            		"00:00:5A:9F:6D:82"
++#define CONFIG_ETHADDR			"00:00:5A:9F:6D:82"
+ 
+ /* enable passing of ATAGs  */
+ #define CONFIG_CMDLINE_TAG       	1
+@@ -179,7 +179,7 @@
+  */
+ #define CONFIG_CMD_NAND 		1
+ #define CONFIG_SYS_MAX_NAND_DEVICE	1         /* Max number of NAND devices */
+-#define CONFIG_SYS_NAND_BASE		0x0
++#define CONFIG_SYS_NAND_BASE		0xD4283000
+ 
+ /*-----------------------------------------------------------------------
+  * ONENAND configuration
+@@ -196,6 +196,8 @@
+ #define TURN_ON_ETHERNET
+ #ifdef TURN_ON_ETHERNET
+ #define CONFIG_USB_ETH
++#define CONFIG_U2O_REG_BASE		0xd4208000
++#define CONFIG_U2O_PHY_BASE		0xd4207000
+ #define CONFIG_DRIVER_SMC91111 		1
+ #define CONFIG_SMC91111_BASE   		0x90000300 /* ttc */
+ #define CONFIG_SMC_USE_16_BIT
+diff --git a/include/configs/tavorevb3.h b/include/configs/tavorevb3.h
+new file mode 100644
+index 0000000..43857a4
+--- /dev/null
++++ b/include/configs/tavorevb3.h
+@@ -0,0 +1,213 @@
++/*
++ * (C) Copyright 2008
++ * Marvell Semiconductors Ltd. Shanghai, China.
++ *
++ * Configuration for Tavor EVB board.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.    See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++#ifndef __CONFIG_H
++#define __CONFIG_H
++
++/************/
++/* VERSIONS */
++/************/
++#define CONFIG_IDENT_STRING   		"\nMarvell version: 1.1.1.1 PXAxxx"
++
++/* version number passing when loading Kernel */
++#define VER_NUM 			0x01010101	/* 1.1.1.18 */
++/*
++ * High Level Configuration Options
++ * (easy to change)
++ */
++#define CONFIG_CPU_MONAHANS		1
++#define CONFIG_PXAXXX
++#define CONFIG_SKIP_LOWLEVEL_INIT
++#define CONFIG_FFUART
++
++#define CONFIG_SYS_BOARD_NAME		"88SV331xV5 based PXAxxx"
++#define CONFIG_SYS_VENDOR_NAME     	"MARVELL"
++
++#define CONFIG_SYS_MEMTEST_START      	0x00100000
++#define CONFIG_SYS_MEMTEST_END        	0x00F00000
++
++#define CONFIG_SYS_HZ   		(3250000)      /* KV - Timer 0 is clocked at 3.25 MHz */
++/* Monahans Core Frequency */
++#define CONFIG_SYS_MONAHANS_RUN_MODE_OSC_RATIO          16 /* valid values: 8, 16, 24, 31 */
++#define CONFIG_SYS_MONAHANS_TURBO_RUN_MODE_RATIO        1  /* valid values: 1, 2 */
++
++#define CONFIG_SYS_TIMERBASE 		0xD4014000 
++#define CONFIG_SYS_CPUSPEED		0x161		/* set core clock to 400/200/100 MHz */
++#define CONFIG_DISPLAY_BOARDINFO
++
++#define CONFIG_CMDLINE_TAG         	1   /* enable passing of ATAGs  */
++#define CONFIG_SETUP_MEMORY_TAGS   	1
++
++/*
++ * Size of malloc() pool
++ */
++#define CONFIG_SYS_MALLOC_LEN      	(CONFIG_SYS_ENV_SIZE + 512*1024)
++#define CONFIG_SYS_GBL_DATA_SIZE   	128   /* size in bytes reserved for initial data */
++
++/*
++ *  Configuration
++ */
++#define CONFIG_AUTO_COMPLETE
++#define CONFIG_CONS_INDEX     		1
++#undef  CONFIG_SERIAL_SOFTWARE_FIFO
++#define CONFIG_SYS_NS16550
++#define CONFIG_SYS_NS16550_SERIAL
++#define CONFIG_SYS_NS16550_REG_SIZE   	-4
++#define CONFIG_SYS_NS16550_CLK        	14745600
++#define CONFIG_BAUDRATE        		115200
++#define CONFIG_SYS_BAUDRATE_TABLE     	{ 9600, 19200, 38400, 57600, 115200 }
++#define CONFIG_SYS_NS16550_COM1       	0x40100000
++
++#define CONFIG_SHOW_BOOT_PROGRESS
++
++#define CONFIG_CMD_PING
++#define CONFIG_CMD_NET
++#define CONFIG_NET_MULTI
++#define MV_ETH_DEVS 			1
++
++#define CONFIG_IPADDR      		192.168.1.101
++
++#define CONFIG_SERVERIP    		192.168.1.100
++
++#define CONFIG_ETHADDR			"00:00:5A:9F:6D:82"
++
++/* enable passing of ATAGs  */
++#define CONFIG_CMDLINE_TAG       	1
++#define CONFIG_SETUP_MEMORY_TAGS 	1
++#define CONFIG_SYS_TCLK         	0 /* not in use */
++#define CONFIG_SYS_BUS_CLK         	0 /* not in use */
++#define CONFIG_ENV_SIZE		 	0x4000
++#define CONFIG_ENV_OFFSET        	0x40000
++
++/***************************************/
++/* LINUX BOOT and other ENV PARAMETERS */
++/***************************************/
++#define CONFIG_SYS_BOOTARGS_END     	":::TAVOREVB3:eth0:none"
++#define CONFIG_SYS_BOOTARGS_ROOT    	"root=/dev/nfs rw init=/linuxrc"
++#define CONFIG_ZERO_BOOTDELAY_CHECK
++#define CONFIG_SYS_LOAD_ADDR        	0x80800000 /* default load address   */
++#define CONFIG_SYS_DEF_LOAD_ADDR    	"0x80800000"
++#define CONFIG_SYS_IMG_NAME		"zImage"
++#define CONFIG_SYS_INITRD_NAME      	"ramdisk.image.gz"
++#define CONFIG_SYS_INITRD_LOAD_ADDR 	"800000"
++#define CONFIG_SYS_INITRD_SIZE      	"400000"
++#undef  CONFIG_BOOTARGS
++
++#define CONFIG_BOOTDELAY        	10
++
++#if (CONFIG_BOOTDELAY >= 0)
++
++/* boot arguments" */
++#define CONFIG_ONENANDBOOT	     	"onenand read 0x80800000 0x920000 0x300000"
++#define CONFIG_NANDBOOT 	     	"nand read 0x80800000 0x920000 0x300000"
++#define CONFIG_BOOTCOMMAND      	"setenv autoboot boot; bootz 0x80800000; setenv autoboot none"
++#define CONFIG_ROOTPATH   		/tftpboot/rootfs_arm
++
++#endif /* #if (CONFIG_BOOTDELAY >= 0) */
++
++#define CONFIG_SYS_BARGSIZE   		CONFIG_SYS_CBSIZE   /* Boot Argument Buffer Size   */
++
++/*
++ * For booting Linux, the board info and command line data
++ * have to be in the first 8 MB of memory, since this is
++ * the maximum mapped by the Linux kernel during initialization.
++ */
++#define CONFIG_SYS_BOOTMAPSZ      	(8<<20)   /* Initial Memory map for Linux */
++
++/*
++ * Miscellaneous configurable options
++ */
++#define CONFIG_SYS_LONGHELP        	/* undef to save memory     */
++#define CONFIG_SYS_PROMPT         	"TavorPV2>> "   /* Monitor Command Prompt   */
++#define CONFIG_SYS_PROMPT_HUSH_PS2     	"> "
++/* Console I/O Buffer Size  */
++#define CONFIG_SYS_CBSIZE         	512
++/* Print Buffer Size */
++#define CONFIG_SYS_PBSIZE         	(CONFIG_SYS_CBSIZE+sizeof(CONFIG_SYS_PROMPT)+16)
++/* max number of command args   */
++#define CONFIG_SYS_MAXARGS        	16
++/* Boot Argument Buffer Size    */
++#define CONFIG_SYS_BARGSIZE       	CONFIG_SYS_CBSIZE
++#undef  CONFIG_SYS_CLKS_IN_HZ         	/* everything, incl board info, in Hz */
++#define CONFIG_ENV_OVERWRITE    	/* allow to change env parameters */
++#undef  CONFIG_INIT_CRITICAL
++#define CONFIG_CMDLINE_EDITING
++#define CONFIG_SYS_64BIT_VSPRINTF
++
++
++/*-----------------------------------------------------------------------
++ * Stack sizes
++ *
++ * The stack sizes are set up in start.S using the settings below
++ */
++#define CONFIG_STACKSIZE       		(128*1024)   /* regular stack */
++#ifdef  CONFIG_USE_IRQ
++#define CONFIG_STACKSIZE_IRQ   		(4*1024)   /* IRQ stack */
++#define CONFIG_STACKSIZE_FIQ   		(4*1024)   /* FIQ stack */
++#endif
++
++/*-----------------------------------------------------------------------
++ * Physical Memory Map
++ */
++#define CONFIG_NR_DRAM_BANKS    	1   /* we have 1 bank of DRAM */
++#define PHYS_SDRAM_1            	0x80008000 /* SDRAM Bank #1 */
++#define PHYS_SDRAM_1_SIZE       	0x08000000   /* 128 MB */
++#define PHYS_SDRAM_SIZE_DEC     	128
++#define CONFIG_SYS_ENV_SIZE            	0x10000   /* Total Size of Environment Sector */
++#define	CONFIG_ENV_IS_NOWHERE		1
++#define CONFIG_SYS_NO_FLASH		1
++#define CONFIG_BBM			1
++
++/*-----------------------------------------------------------------------
++ * NAND and DFC configuration
++ */
++#define CONFIG_CMD_NAND 		1
++#define CONFIG_SYS_MAX_NAND_DEVICE	1         /* Max number of NAND devices */
++#define CONFIG_SYS_NAND_BASE		0x43100000
++
++/*-----------------------------------------------------------------------
++ * ONENAND configuration
++ */
++#define CONFIG_CMD_ONENAND 		1
++#define CONFIG_SYS_ONENAND_BASE 	0x10000000
++
++/*-----------------------------------------------------------------------
++ * FREQUENCE configuration
++ */
++#define CONFIG_CMD_FREQUENCE		1
++
++#undef TURN_ON_ETHERNET
++#define TURN_ON_ETHERNET
++#ifdef TURN_ON_ETHERNET
++#define CONFIG_USB_ETH
++#define CONFIG_U2O_REG_BASE		0x55502000
++#define CONFIG_U2O_PHY_BASE		0x5550A000
++#define CONFIG_DRIVER_SMC91111 		1
++#define CONFIG_SMC91111_BASE   		0x14000300
++#define CONFIG_SMC_USE_16_BIT
++#undef CONFIG_SMC_USE_IOFUNCS          /* just for use with the kernel */
++#endif
++
++#define CONFIG_NET_RETRY_COUNT 		10000
++
++#endif
++/* __CONFIG_H */
+diff --git a/include/configs/ttc_dkb.h b/include/configs/ttc_dkb.h
+index 5a8fd79..cbd408e 100644
+--- a/include/configs/ttc_dkb.h
++++ b/include/configs/ttc_dkb.h
+@@ -84,7 +84,7 @@
+ 
+ #define CONFIG_SERVERIP    		192.168.1.100
+ 
+-#define ETHADDR            		"00:00:5A:9F:6D:82"
++#define CONFIG_ETHADDR			"00:00:5A:9F:6D:82"
+ 
+ /* enable passing of ATAGs  */
+ #define CONFIG_CMDLINE_TAG       	1
+@@ -180,7 +180,7 @@
+  */
+ #define CONFIG_CMD_NAND 		1
+ #define CONFIG_SYS_MAX_NAND_DEVICE	1         /* Max number of NAND devices */
+-#define CONFIG_SYS_NAND_BASE		0x0
++#define CONFIG_SYS_NAND_BASE		0xD4283000
+ 
+ /*-----------------------------------------------------------------------
+  * ONENAND configuration
+@@ -197,6 +197,8 @@
+ #define TURN_ON_ETHERNET
+ #ifdef TURN_ON_ETHERNET
+ #define CONFIG_USB_ETH			1
++#define CONFIG_U2O_REG_BASE		0xd4208000
++#define CONFIG_U2O_PHY_BASE		0xd4207000
+ #define CONFIG_DRIVER_SMC91111 		1
+ #define CONFIG_SMC91111_BASE   		0x90000300 /* PXA910*/
+ #define CONFIG_SMC_USE_16_BIT
+diff --git a/include/configs/zylonite2.h b/include/configs/zylonite2.h
+index 785f2b4..a8dd3d1 100644
+--- a/include/configs/zylonite2.h
++++ b/include/configs/zylonite2.h
+@@ -82,7 +82,7 @@
+ 
+ #define CONFIG_SERVERIP    		192.168.1.100
+ 
+-#define ETHADDR            		"00:00:5A:9F:6D:82"
++#define CONFIG_ETHADDR			"00:00:5A:9F:6D:82"
+ 
+ /* enable passing of ATAGs  */
+ #define CONFIG_CMDLINE_TAG       	1
+@@ -177,10 +177,12 @@
+  */
+ #define CONFIG_CMD_NAND 		1
+ #define CONFIG_SYS_MAX_NAND_DEVICE	1         /* Max number of NAND devices */
+-#define CONFIG_SYS_NAND_BASE		0x0
++#define CONFIG_SYS_NAND_BASE		0xD4283000
+ 
+ #define CONFIG_SYS_ONENAND_BASE 	0x80000000  /* configure for ttc */
+ #define CONFIG_USB_ETH
++#define CONFIG_U2O_REG_BASE		0xd4208000
++#define CONFIG_U2O_PHY_BASE		0xd4207000
+ 
+ #endif
+ /* __CONFIG_H */
+diff --git a/net/Makefile b/net/Makefile
+index 0c28c92..0eee330 100644
+--- a/net/Makefile
++++ b/net/Makefile
+@@ -29,15 +29,11 @@ LIB	= $(obj)libnet.a
+ 
+ COBJS-y += net.o
+ COBJS-y += tftp.o
+-ifndef CONFIG_PXAXXX
+ COBJS-y += bootp.o
+ COBJS-y += rarp.o
+-endif
+ COBJS-y += eth.o
+-ifndef CONFIG_PXAXXX
+ COBJS-y += nfs.o
+ COBJS-y += sntp.o
+-endif
+ 
+ COBJS	:= $(COBJS-y)
+ SRCS	:= $(COBJS:.o=.c)
+diff --git a/net/net.c b/net/net.c
+index a599274..0d5f449 100644
+--- a/net/net.c
++++ b/net/net.c
+@@ -431,7 +431,6 @@ restart:
+ 			DhcpRequest();		/* Basically same as BOOTP */
+ 			break;
+ #endif
+-#ifndef CONFIG_PXAXXX
+ 		case BOOTP:
+ 			BootpTry = 0;
+ 			BootpRequest ();
+@@ -441,7 +440,6 @@ restart:
+ 			RarpTry = 0;
+ 			RarpRequest ();
+ 			break;
+-#endif
+ #if defined(CONFIG_CMD_PING)
+ 		case PING:
+ 			PingStart();
+diff --git a/net/tftp.c b/net/tftp.c
+index 3dac3d8..f713b05 100644
+--- a/net/tftp.c
++++ b/net/tftp.c
+@@ -15,7 +15,7 @@
+ #if defined(CONFIG_CMD_NET)
+ 
+ #define WELL_KNOWN_PORT	69		/* Well known TFTP port #		*/
+-#define TIMEOUT		5000UL		/* Millisecs to timeout for lost pkt */
++#define TIMEOUT		500000UL		/* Millisecs to timeout for lost pkt */
+ #ifndef	CONFIG_NET_RETRY_COUNT
+ # define TIMEOUT_COUNT	10		/* # of timeouts before giving up  */
+ #else
+-- 
+1.6.0.4
+

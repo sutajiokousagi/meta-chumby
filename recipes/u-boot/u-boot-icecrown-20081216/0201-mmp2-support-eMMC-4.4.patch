@@ -1,0 +1,71 @@
+From 1ec471cc1e6b763bab96a288caa330a058dbb373 Mon Sep 17 00:00:00 2001
+From: Zhangfei Gao <zgao6@marvell.com>
+Date: Sat, 19 Jun 2010 08:41:18 +0800
+Subject: [PATCH] mmp2: support eMMC 4.4
+
+Signed-off-by: Zhangfei Gao <zgao6@marvell.com>
+---
+ drivers/mmc/mmc.c |   18 ++++++++++++++++--
+ include/mmc.h     |    1 +
+ 2 files changed, 17 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/mmc/mmc.c b/drivers/mmc/mmc.c
+index 59ddcfb..82fe61f 100644
+--- a/drivers/mmc/mmc.c
++++ b/drivers/mmc/mmc.c
+@@ -652,6 +652,7 @@ int mmc_change_freq(struct mmc *mmc)
+ 	char ext_csd[512];
+ 	char cardtype;
+ 	int err;
++	struct mmc_csd *csd = &mmc->bcsd;
+ 
+ 	mmc->card_caps = 0;
+ 
+@@ -669,6 +670,17 @@ int mmc_change_freq(struct mmc *mmc)
+ 	if (err)
+ 		return err;
+ 
++       /* Version is coded in the CSD_STRUCTURE byte in the EXT_CSD register */
++       if (csd->csd_structure == 3) {
++               int ext_csd_struct = ext_csd[EXT_CSD_STRUCTURE];
++               if (ext_csd_struct > 2) {
++                       printf("unrecognised EXT_CSD structure "
++                               "version %d\n", ext_csd_struct);
++		       return -1;
++               }
++       }
++
++
+ 	if (ext_csd[212] || ext_csd[213] || ext_csd[214] || ext_csd[215]) {
+ 		mmc->high_capacity = 1;
+ 		mmc->sectors = ext_csd[212] | (ext_csd[213] << 8)
+@@ -1022,10 +1034,12 @@ static int mmc_decode_csd(struct mmc *mmc)
+ 		/*
+ 		 * We only understand MMC CSD structure v1.1 and v1.2.
+ 		 * v1.2 has extra information in bits 15, 11 and 10.
++		 * also support the for eMMC v4.4 & v4.41.
+ 		 */
+-		if (csd->csd_structure != 1 && csd->csd_structure != 2) {
++
++		if (csd->csd_structure == 0) {
+ 			printf("unrecognised MMC CSD structure version %d\n",
+-				csd->csd_structure);
++					csd->csd_structure);
+ 			return -1;
+ 		}
+ 
+diff --git a/include/mmc.h b/include/mmc.h
+index ccd07d3..4f50153 100644
+--- a/include/mmc.h
++++ b/include/mmc.h
+@@ -139,6 +139,7 @@
+ #define EXT_CSD_BUS_WIDTH	183	/* R/W */
+ #define EXT_CSD_HS_TIMING	185	/* R/W */
+ #define EXT_CSD_CARD_TYPE	196	/* RO */
++#define EXT_CSD_STRUCTURE      	194     /* RO */
+ #define EXT_CSD_REV		192	/* RO */
+ #define EXT_CSD_SEC_CNT		212	/* RO, 4 bytes */
+ 
+-- 
+1.6.0.4
+

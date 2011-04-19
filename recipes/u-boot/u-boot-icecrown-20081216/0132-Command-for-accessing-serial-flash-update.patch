@@ -1,0 +1,29 @@
+From 5dbcf1ceca6f88648846f2bc9749ac1dfa146e0a Mon Sep 17 00:00:00 2001
+From: TsiChung Liew <tsicliew@gmail.com>
+Date: Tue, 30 Jun 2009 14:30:19 +0000
+Subject: [PATCH] Command for accessing serial flash update
+
+Change strtoul number base of argv 3 from 0 to 16
+
+Signed-off-by: TsiChung Liew <tsicliew@gmail.com>
+Signed-off-by: Lei Wen <leiwen@marvell.com>
+---
+ common/cmd_sf.c |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/common/cmd_sf.c b/common/cmd_sf.c
+index 8c0a751..3353f27 100644
+--- a/common/cmd_sf.c
++++ b/common/cmd_sf.c
+@@ -48,7 +48,7 @@ static int do_spi_flash_probe(int argc, char *argv[])
+ 			goto usage;
+ 	}
+ 	if (argc >= 4) {
+-		mode = simple_strtoul(argv[3], &endp, 0);
++		mode = simple_strtoul(argv[3], &endp, 16);
+ 		if (*argv[3] == 0 || *endp != 0)
+ 			goto usage;
+ 	}
+-- 
+1.6.0.4
+

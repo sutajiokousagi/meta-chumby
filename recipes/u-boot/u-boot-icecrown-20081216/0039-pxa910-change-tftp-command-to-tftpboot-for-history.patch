@@ -1,0 +1,36 @@
+From 84a5a4848808c66fc9a8eba6c81af6990cba577a Mon Sep 17 00:00:00 2001
+From: Lei Wen <leiwen@marvell.com>
+Date: Tue, 14 Apr 2009 11:45:04 +0800
+Subject: [PATCH] pxa910: change tftp command to tftpboot for history issue
+
+---
+ board/pxa/common/tftp.c |    6 +++---
+ 1 files changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/board/pxa/common/tftp.c b/board/pxa/common/tftp.c
+index 888d5ed..5cc803d 100644
+--- a/board/pxa/common/tftp.c
++++ b/board/pxa/common/tftp.c
+@@ -78,7 +78,7 @@ int do_switch (cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
+ 
+ U_BOOT_CMD(
+ 	switch,	CONFIG_SYS_MAXARGS,	1,	do_switch,
+-	"switch-\tswitch the download by USB or Ethernet, and config conresponsed IP\n",
++	"switch\t-switch the download by USB or Ethernet, and config conresponsed IP\n",
+ 	"[hostIPaddr] [clientIP addr]\n"
+ );
+ 
+@@ -120,8 +120,8 @@ int do_tftp (cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
+ }
+ 
+ U_BOOT_CMD(
+-	tftp,	CONFIG_SYS_MAXARGS,	1,	do_tftp,
+-	"tftp-\tdownload image via network using TFTP protocol\n",
++	tftpboot,	CONFIG_SYS_MAXARGS,	1,	do_tftp,
++	"tftpboot\t-download image via network using TFTP protocol\n",
+ 	"[loadAddress] [[hostIPaddr:]filename]\n"
+ );
+ 
+-- 
+1.6.0.4
+

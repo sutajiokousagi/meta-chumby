@@ -1,0 +1,63 @@
+From 8353cf11f39a8a970ec468ff2960b5e888a18bbc Mon Sep 17 00:00:00 2001
+From: Lei Wen <leiwen@marvell.com>
+Date: Thu, 21 May 2009 16:43:45 +0800
+Subject: [PATCH] pxa910: add verify function for yaffs image in onenand
+
+Signed-off-by: Lei Wen <leiwen@marvell.com>
+---
+ drivers/mtd/onenand/onenand_base.c |   14 +++++++++++---
+ 1 files changed, 11 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/mtd/onenand/onenand_base.c b/drivers/mtd/onenand/onenand_base.c
+index 9f22c0c..7847f47 100644
+--- a/drivers/mtd/onenand/onenand_base.c
++++ b/drivers/mtd/onenand/onenand_base.c
+@@ -1282,13 +1282,16 @@ static int onenand_verify_oob(struct mtd_info *mtd, const u_char *buf, loff_t to
+  * @param addr         offset to read from
+  * @param len          number of bytes to read and compare
+  */
+-static int onenand_verify(struct mtd_info *mtd, const u_char *buf, loff_t addr, size_t len)
++static int onenand_verify(struct mtd_info *mtd, const u_char *buf, loff_t addr, size_t len, int is_yaffs)
+ {
+ 	struct onenand_chip *this = mtd->priv;
+ 	void __iomem *dataram;
+ 	int ret = 0;
+ 	int thislen, column;
+ 
++	if (is_yaffs)
++		buf -= mtd->oobsize;
++
+ 	while (len != 0) {
+ 		thislen = min_t(int, this->writesize, len);
+ 		column = addr & (this->writesize - 1);
+@@ -1308,12 +1311,17 @@ static int onenand_verify(struct mtd_info *mtd, const u_char *buf, loff_t addr,
+ 		dataram = this->base + ONENAND_DATARAM;
+ 		dataram += onenand_bufferram_offset(mtd, ONENAND_DATARAM);
+ 
+-		if (memcmp(buf, dataram + column, thislen))
++		if (memcmp(buf, dataram + column, thislen)) {
++			printk("Verify failed at 0x%x!!!\n", buf);
+ 			return -EBADMSG;
++		}
+ 
+ 		len -= thislen;
+ 		buf += thislen;
+ 		addr += thislen;
++
++		if (is_yaffs)
++			buf += mtd->oobsize;
+ 	}
+ 
+ 	return 0;
+@@ -1592,7 +1600,7 @@ static int onenand_write_ops_nolock(struct mtd_info *mtd, loff_t to,
+ 		}
+ 
+ 		/* Only check verify write turn on */
+-		ret = onenand_verify(mtd, buf, to, thislen);
++		ret = onenand_verify(mtd, buf, to, thislen, is_yaffs);
+ 		if (ret) {
+ 			printk(KERN_ERR "onenand_write_ops_nolock: verify failed %d\n", ret);
+ 			break;
+-- 
+1.6.0.4
+

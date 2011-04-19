@@ -1,0 +1,242 @@
+From 8c1c1c05fa6998ab3c4bf8f162c50938f4923414 Mon Sep 17 00:00:00 2001
+From: Lei Wen <leiwen@marvell.com>
+Date: Tue, 15 Sep 2009 15:15:10 +0800
+Subject: [PATCH] nand: fix read 4K page NAND bug intro by eliminate warns
+
+Signed-off-by: Lei Wen <leiwen@marvell.com>
+---
+ drivers/mtd/nand/pxa3xx_nand.c |  175 ++++++++++++++++++++++++++--------------
+ 1 files changed, 113 insertions(+), 62 deletions(-)
+
+diff --git a/drivers/mtd/nand/pxa3xx_nand.c b/drivers/mtd/nand/pxa3xx_nand.c
+index fec6a89..b9cc1f8 100644
+--- a/drivers/mtd/nand/pxa3xx_nand.c
++++ b/drivers/mtd/nand/pxa3xx_nand.c
+@@ -156,6 +156,31 @@ static void pxa3xx_nand_start(struct pxa3xx_nand_info *info)
+ 	nand_writel(nand, NDCR, ndcr);
+ }
+ 
++static void pxa3xx_nand_stop(struct pxa3xx_nand* nand)
++{
++	uint32_t ndcr, ndeccctrl;
++
++	/* clear status bits */
++	nand_writel(nand, NDSR, NDSR_MASK);
++
++	ndcr = nand_readl(nand, NDCR);
++
++	if (ndcr & NDCR_ND_RUN) {
++		ndcr &= ~NDCR_ND_RUN;
++		nand_writel(nand, NDCR, ndcr);
++
++		/* wait RUN bit in NDCR become 0 */
++		do {
++			ndcr = nand_readl(nand, NDCR);
++		} while (ndcr & NDCR_ND_RUN);
++	}
++
++	/* clear the ECC control register */
++	ndeccctrl = nand_readl(nand, NDECCCTRL);
++	ndeccctrl &=  ~(NDECCCTRL_BCH_EN | NDECCCTRL_ECC_THR_MSK);
++	nand_writel(nand, NDECCCTRL, ndeccctrl);
++}
++
+ static void handle_data_pio(struct pxa3xx_nand *nand)
+ {
+ 	unsigned int mmio_base = nand->mmio_base;
+@@ -205,13 +230,14 @@ static void handle_data_pio(struct pxa3xx_nand *nand)
+ 	info->oob_column += OOB_CHUNK_SIZE;
+ }
+ 
+-static int pxa3xx_nand_polling(struct pxa3xx_nand *nand, unsigned long timeout)
++static int pxa3xx_nand_irq(void *devid)
+ {
++	struct pxa3xx_nand *nand = devid;
+ 	struct pxa3xx_nand_info *info;
+ 	struct mtd_info *mtd;
+ 	unsigned int status;
+ 	int chip_select, cmd_done, ready, page_done, badblock_detect;
+-	int ndcb1, ndcb2, i;
++	int cmd_seqs, ndcb1, ndcb2;
+ 
+ 	chip_select 	= nand->chip_select;
+ 	ready		= (chip_select) ? NDSR_RDY : NDSR_FLASH_RDY;
+@@ -220,83 +246,106 @@ static int pxa3xx_nand_polling(struct pxa3xx_nand *nand, unsigned long timeout)
+ 	badblock_detect	= (chip_select) ? NDSR_CS1_BBD : NDSR_CS0_BBD;
+ 	mtd		= nand->mtd[chip_select];
+ 	info		= (struct pxa3xx_nand_info *)(mtd->priv);
++	cmd_seqs	= info->current_cmd_seqs;
+ 
+-	for (i = 0; i < timeout; i ++) {
+-		status = nand_readl(nand, NDSR);
++	status = nand_readl(nand, NDSR);
+ 
+-		if ((status & NDSR_WRDREQ) || (status & NDSR_RDDREQ)) {
++	if ((status & NDSR_WRDREQ) || (status & NDSR_RDDREQ)) {
+ 
+-			nand->state |= 2;
+-			handle_data_pio(nand);
+-		}
++		nand->state |= 2;
++		handle_data_pio(nand);
+ 
+-		if (status & cmd_done) {
++	}
+ 
+-			nand->state |= 4;
+-			/* complete the command cycle when all command
+-			 * done, and don't wait for ready signal
+-			 */
+-			if ((info->current_cmd_seqs == info->total_cmds)	\
+-			&& !(info->current_cmd_seqs == info->need_wait_ready))
+-				return 1;
++	if (status & cmd_done) {
++
++		nand->state |= 4;
++		/* complete the command cycle when all command
++		 * done, and don't wait for ready signal
++		 */
++		if ((cmd_seqs == info->total_cmds)	\
++				&& !(cmd_seqs == info->need_wait_ready)) {
+ 
++			return 1;
+ 		}
++	}
+ 
+-		if (status & ready) {
+-			nand->state |= 8;
+-			/* 
+-			 * wait for the ready signal, 
+-			 * then leavl the command cycle
+-			 */
+-			if ((info->current_cmd_seqs == info->total_cmds) \
+-			&& (info->current_cmd_seqs == info->need_wait_ready))
+-				return 1;
++	if (status & ready) {
++		nand->state |= 8;
++		/* 
++		 * wait for the ready signal, 
++		 * then leavl the command cycle
++		 */
++		if ((cmd_seqs == info->total_cmds) \
++				&& (cmd_seqs == info->need_wait_ready)) {
+ 
+-			nand->is_ready = 1;
++			return 1;
+ 		}
+ 
+-		if (status & NDSR_TRUSTVIO)
+-			nand->errcode |= ERR_TRUSTVIO;
+-
+-		if (status & NDSR_ERR_CNT_MASK)
+-			nand->bad_count = (status & NDSR_ERR_CNT_MASK) >> 16;
+-
+-		if (status & NDSR_CORERR)
+-			nand->errcode |= ERR_CORERR;
+-
+-		if (status & NDSR_UNCERR)
+-			nand->errcode |= ERR_DBERR;
+-
+-		if (status & badblock_detect)
+-			nand->errcode |= ERR_BBERR;
+-
+-		if (status & NDSR_WRCMDREQ) {
+-			if (info->current_cmd_seqs < info->total_cmds) {
+-				if (info->current_cmd_seqs == info->need_addressing) {
+-					ndcb1 = info->ndcb1;
+-					ndcb2 = info->ndcb2;
+-				}
+-				else {
+-					ndcb1 = 0;
+-					ndcb2 = 0;
+-				}
+-
+-				nand->state |= 1;
+-				nand_writel(nand, NDCB0, info->ndcb0[info->current_cmd_seqs]);
+-				nand_writel(nand, NDCB0, ndcb1);
+-				nand_writel(nand, NDCB0, ndcb2);
+-				info->current_cmd_seqs ++;
++		nand->is_ready = 1;
++	}
++
++	if (status & NDSR_TRUSTVIO) {
++		nand->errcode |= ERR_TRUSTVIO;
++	}
++
++	if (status & NDSR_ERR_CNT_MASK) {
++		nand->bad_count = (status & NDSR_ERR_CNT_MASK) >> 16;
++	}
++
++	if (status & NDSR_CORERR) {
++		nand->errcode |= ERR_CORERR;
++	}
++
++	if (status & NDSR_UNCERR) {
++		nand->errcode |= ERR_DBERR;
++	}
++
++	if (status & badblock_detect) {
++		nand->errcode |= ERR_BBERR;
++	}
++
++	if (status & page_done) {
++	}
++
++	if (status & NDSR_WRCMDREQ) {
++		if (cmd_seqs < info->total_cmds) {
++
++			info->current_cmd_seqs ++;
++			if (cmd_seqs == info->need_addressing) {
++				ndcb1 = info->ndcb1;
++				ndcb2 = info->ndcb2;
+ 			}
+-			else
+-				return 1;
++			else {
++				ndcb1 = 0;
++				ndcb2 = 0;
++			}
++
++			nand->state |= 1;
++			nand_writel(nand, NDCB0, info->ndcb0[cmd_seqs]);
++			nand_writel(nand, NDCB0, ndcb1);
++			nand_writel(nand, NDCB0, ndcb2);
+ 		}
++		else
++			return 1;
++	}
++
++	/* clear NDSR to let the controller exit the IRQ */
++	nand_writel(nand, NDSR, status);
++	return 0;
++}
++static int pxa3xx_nand_polling(struct pxa3xx_nand *nand, unsigned long timeout)
++{
++	int i, ret = 0;
+ 
+-		/* clear NDSR to let the controller exit the IRQ */
+-		nand_writel(nand, NDSR, status);
++	for (i = 0; i < timeout; i++) {
++		ret = pxa3xx_nand_irq(nand);
++		if (ret)
++			break;
+ 		udelay(10);
+ 	}
+ 
+-	return 0;
++	return ret;
+ }
+ 
+ static int pxa3xx_nand_dev_ready(struct mtd_info *mtd)
+@@ -593,6 +642,8 @@ RETRY:
+ 	if (exec_cmd) {
+ 		pxa3xx_nand_start(info);
+ 		ret = pxa3xx_nand_polling(nand, CHIP_DELAY_TIMEOUT);
++		/* Stop State Machine for next command cycle */
++		pxa3xx_nand_stop(nand);
+ 		if (!ret && !nand->errcode) {
+ 			printf("IRQ timeout, command %x, ndcb1 %x, \
+ 					\nndcb2 %x, state %x, cmd seqs %x\n", \
+-- 
+1.6.0.4
+

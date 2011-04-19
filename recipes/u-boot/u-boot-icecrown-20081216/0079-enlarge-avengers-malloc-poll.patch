@@ -1,0 +1,26 @@
+From 1387ab82a6c55875d8ad15f883ef9b2f9dafbc7b Mon Sep 17 00:00:00 2001
+From: Lei Wen <leiwen@marvell.com>
+Date: Mon, 8 Jun 2009 09:18:43 +0800
+Subject: [PATCH] enlarge avengers' malloc poll
+
+Signed-off-by: Lei Wen <leiwen@marvell.com>
+---
+ include/configs/avengers.h |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/include/configs/avengers.h b/include/configs/avengers.h
+index 8649278..c7b24db 100644
+--- a/include/configs/avengers.h
++++ b/include/configs/avengers.h
+@@ -54,7 +54,7 @@
+ /*
+  * Size of malloc() pool
+  */
+-#define CONFIG_SYS_MALLOC_LEN      	(CONFIG_SYS_ENV_SIZE + 512*1024)
++#define CONFIG_SYS_MALLOC_LEN      	(CONFIG_SYS_ENV_SIZE + 1024*1024)
+ #define CONFIG_SYS_GBL_DATA_SIZE   	128   /* size in bytes reserved for initial data */
+ 
+ /*
+-- 
+1.6.0.4
+

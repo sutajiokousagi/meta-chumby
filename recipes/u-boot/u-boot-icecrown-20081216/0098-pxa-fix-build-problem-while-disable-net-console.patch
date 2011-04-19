@@ -1,0 +1,28 @@
+From f8964902b842065c0b01940c4ec511db888d8213 Mon Sep 17 00:00:00 2001
+From: Bin Yang <bin.yang@marvell.com>
+Date: Fri, 3 Jul 2009 11:20:33 +0800
+Subject: [PATCH] pxa: fix build problem while disable net console
+
+Signed-off-by: Bin Yang <bin.yang@marvell.com>
+---
+ common/console.c |    2 ++
+ 1 files changed, 2 insertions(+), 0 deletions(-)
+
+diff --git a/common/console.c b/common/console.c
+index f0d4722..495fbdd 100644
+--- a/common/console.c
++++ b/common/console.c
+@@ -284,8 +284,10 @@ int getc (void)
+ int netconsole = 0;
+ int tstc (void)
+ {
++#ifdef CONFIG_NETCONSOLE
+ 	if (netconsole)
+ 		return nc_tstc();
++#endif
+ 
+ #ifdef CONFIG_DISABLE_CONSOLE
+ 	if (gd->flags & GD_FLG_DISABLE_CONSOLE)
+-- 
+1.6.0.4
+

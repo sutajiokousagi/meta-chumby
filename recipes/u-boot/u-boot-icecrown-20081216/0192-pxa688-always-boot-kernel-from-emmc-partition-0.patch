@@ -1,0 +1,29 @@
+From 4fddae5b426bc43402810afb930750b7a127a15b Mon Sep 17 00:00:00 2001
+From: Mingliang Hu <mhu4@marvell.com>
+Date: Mon, 17 May 2010 10:17:57 +0800
+Subject: [PATCH] pxa688: always boot kernel from emmc partition 0
+
+Signed-off-by: Mingliang Hu <mhu4@marvell.com>
+---
+ board/pxa/common/boot.c |    4 +++-
+ 1 files changed, 3 insertions(+), 1 deletions(-)
+
+diff --git a/board/pxa/common/boot.c b/board/pxa/common/boot.c
+index 6cfc1b9..3f0ab2a 100644
+--- a/board/pxa/common/boot.c
++++ b/board/pxa/common/boot.c
+@@ -90,8 +90,10 @@ int do_bootz (cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
+ #else
+ 		printf("read zImage from eMMC\n");
+ #ifdef CONFIG_CMD_MMC
+-		if (find_mmc_device(0))
++		if (find_mmc_device(0)){
++			run_command("mmc sw_part 0", 0);
+ 			run_command(CONFIG_MMCBOOT, 0);
++		}
+ 		else
+ #endif
+ 			printf("No eMMC device, fail to AUTOBOOT!!!\n\n");
+-- 
+1.6.0.4
+

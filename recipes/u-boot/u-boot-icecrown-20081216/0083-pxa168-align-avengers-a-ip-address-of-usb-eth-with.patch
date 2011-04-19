@@ -1,0 +1,29 @@
+From f0a722fe5ce202ad8b8447c3f9ce875669e2a47d Mon Sep 17 00:00:00 2001
+From: Lei Wen <leiwen@marvell.com>
+Date: Tue, 9 Jun 2009 15:30:15 +0800
+Subject: [PATCH] pxa168: align avengers-a ip address of usb eth with kernel
+
+Signed-off-by: Mingwei Wang <mwwang@marvell.com>
+---
+ include/configs/avengers.h |    4 ++--
+ 1 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/include/configs/avengers.h b/include/configs/avengers.h
+index 38eb19d..65ee657 100644
+--- a/include/configs/avengers.h
++++ b/include/configs/avengers.h
+@@ -79,9 +79,9 @@
+ #define CONFIG_NETCONSOLE
+ #define MV_ETH_DEVS 			1
+ 
+-#define CONFIG_IPADDR      		192.168.1.101
++#define CONFIG_IPADDR      		50.1.1.10
+ 
+-#define CONFIG_SERVERIP    		192.168.1.100
++#define CONFIG_SERVERIP    		50.1.1.1
+ 
+ #define ETHADDR            		"00:00:5A:9F:6D:82"
+ 
+-- 
+1.6.0.4
+

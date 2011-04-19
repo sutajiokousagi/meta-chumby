@@ -1,0 +1,57 @@
+From bd89f724471688d553c6dcce4d6989a77edda2fb Mon Sep 17 00:00:00 2001
+From: Wen Lei <leiwen@marvell.com>
+Date: Fri, 27 Feb 2009 10:25:02 +0800
+Subject: [PATCH] pxa910: enable ns16550 and reserve a log buf to debug
+
+---
+ drivers/serial/ns16550.c |   16 +++++++++++++++-
+ 1 files changed, 15 insertions(+), 1 deletions(-)
+
+diff --git a/drivers/serial/ns16550.c b/drivers/serial/ns16550.c
+index 93c2243..488eea6 100644
+--- a/drivers/serial/ns16550.c
++++ b/drivers/serial/ns16550.c
+@@ -16,7 +16,11 @@
+ 
+ void NS16550_init (NS16550_t com_port, int baud_divisor)
+ {
+-	com_port->ier = 0x00;
++#ifdef CONFIG_PXAXXX
++       com_port->ier = 0x40;
++#else
++       com_port->ier = 0x00;
++#endif
+ #ifdef CONFIG_OMAP
+ 	com_port->mdr1 = 0x7;	/* mode select reset TL16C750*/
+ #endif
+@@ -41,7 +45,11 @@ void NS16550_init (NS16550_t com_port, int baud_divisor)
+ 
+ void NS16550_reinit (NS16550_t com_port, int baud_divisor)
+ {
++#ifdef CONFIG_PXAXXX
++       com_port->ier = 0x40;
++#else
+ 	com_port->ier = 0x00;
++#endif
+ 	com_port->lcr = LCR_BKSE | LCRVAL;
+ 	com_port->dll = 0;
+ 	com_port->dlm = 0;
+@@ -53,9 +61,15 @@ void NS16550_reinit (NS16550_t com_port, int baud_divisor)
+ 	com_port->dlm = (baud_divisor >> 8) & 0xff;
+ 	com_port->lcr = LCRVAL;
+ }
++ 
++static char __log_buf[1000];
++static int __count = 0;
+ 
+ void NS16550_putc (NS16550_t com_port, char c)
+ {
++	if(__count < 1000)
++		__log_buf[__count ++] = c;
++
+ 	while ((com_port->lsr & LSR_THRE) == 0);
+ 	com_port->thr = c;
+ }
+-- 
+1.6.0.4
+

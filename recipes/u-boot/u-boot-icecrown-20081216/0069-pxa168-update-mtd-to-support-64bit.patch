@@ -1,0 +1,621 @@
+From b2361b04c71206313ae53b0ef0427915a25a8240 Mon Sep 17 00:00:00 2001
+From: Lei Wen <leiwen@marvell.com>
+Date: Sun, 31 May 2009 00:01:56 +0800
+Subject: [PATCH] pxa168: update mtd to support 64bit
+
+Signed-off-by: Lei Wen <leiwen@marvell.com>
+---
+ drivers/mtd/nand/nand_base.c                 |   35 +++++++++------
+ drivers/mtd/nand/nand_bbt.c                  |   59 +++++++++++++-------------
+ drivers/mtd/nand/pxa3xx_nand.c               |    9 ++--
+ drivers/mtd/onenand/onenand_base.c           |   10 ++--
+ drivers/mtd/onenand/onenand_bbt.c            |    4 +-
+ drivers/mtd/pxa3xx_bbm.c                     |   12 +++---
+ include/asm-arm/arch-pxa168/nand_supported.h |    2 +-
+ include/linux/mtd/mtd.h                      |   38 +++++++++++++----
+ include/linux/mtd/nand.h                     |    2 +-
+ 9 files changed, 99 insertions(+), 72 deletions(-)
+
+diff --git a/drivers/mtd/nand/nand_base.c b/drivers/mtd/nand/nand_base.c
+index 8387eac..a4caf1a 100644
+--- a/drivers/mtd/nand/nand_base.c
++++ b/drivers/mtd/nand/nand_base.c
+@@ -1498,7 +1498,7 @@ static int nand_do_read_oob(struct mtd_info *mtd, loff_t from,
+ 
+ 	/* Do not allow reads past end of device */
+ 	if (unlikely(from >= mtd->size ||
+-		     ops->ooboffs + readlen > ((mtd->size >> chip->page_shift) -
++		     ops->ooboffs + readlen > (mtd_div_by_ws(mtd->size, mtd) -
+ 					(from >> chip->page_shift)) * len)) {
+ 		MTDDEBUG (MTD_DEBUG_LEVEL0, "nand_read_oob: "
+ 		          "Attempt read beyond end of device\n");
+@@ -2008,7 +2008,7 @@ static int nand_do_write_oob(struct mtd_info *mtd, loff_t to,
+ 	/* Do not allow reads past end of device */
+ 	if (unlikely(to >= mtd->size ||
+ 		     ops->ooboffs + ops->ooblen >
+-			((mtd->size >> chip->page_shift) -
++			(mtd_div_by_ws(mtd->size, mtd) -
+ 			 (to >> chip->page_shift)) * len)) {
+ 		MTDDEBUG (MTD_DEBUG_LEVEL0, "nand_read_oob: "
+ 		          "Attempt write beyond end of device\n");
+@@ -2151,13 +2151,14 @@ static int nand_erase(struct mtd_info *mtd, struct erase_info *instr)
+ int nand_erase_nand(struct mtd_info *mtd, struct erase_info *instr,
+ 		    int allowbbt)
+ {
+-	int page, len, status, pages_per_block, ret, chipnr;
++	int page, status, pages_per_block, blocks_per_block, ret, chipnr;
+ 	struct nand_chip *chip = mtd->priv;
+-	int rewrite_bbt[NAND_MAX_CHIPS]={0};
++	loff_t rewrite_bbt[NAND_MAX_CHIPS]={0};
+ 	unsigned int bbt_masked_page = 0xffffffff;
++	loff_t len;
+ 
+-	MTDDEBUG (MTD_DEBUG_LEVEL3, "nand_erase: start = 0x%08x, len = %i\n",
+-	          (unsigned int) instr->addr, (unsigned int) instr->len);
++	MTDDEBUG (MTD_DEBUG_LEVEL3, "nand_erase: start = 0x%012llx, len = %llu\n",
++	      (unsigned long long)instr->addr, (unsigned long long)instr->len);
+ 
+ 	/* Start address must align on block boundary */
+ 	if (instr->addr & ((1 << chip->phys_erase_shift) - 1)) {
+@@ -2185,8 +2186,9 @@ int nand_erase_nand(struct mtd_info *mtd, struct erase_info *instr,
+ 	nand_get_device(chip, mtd, FL_ERASING);
+ 
+ 	/* Shift to get first page */
+-	page = (int)(instr->addr >> chip->page_shift);
+-	chipnr = (int)(instr->addr >> chip->chip_shift);
++	page = mtd_div_by_ws(instr->addr, mtd);
++	blocks_per_block = mtd_div_by_eb(chip->chipsize, mtd);
++	chipnr = mtd_div_by_eb(instr->addr, mtd) / blocks_per_block;
+ 
+ 	/* Calculate pages in each block */
+ 	pages_per_block = 1 << (chip->phys_erase_shift - chip->page_shift);
+@@ -2253,7 +2255,8 @@ int nand_erase_nand(struct mtd_info *mtd, struct erase_info *instr,
+ 			MTDDEBUG (MTD_DEBUG_LEVEL0, "nand_erase: "
+ 			          "Failed erase, page 0x%08x\n", page);
+ 			instr->state = MTD_ERASE_FAILED;
+-			instr->fail_addr = (page << chip->page_shift);
++			instr->fail_addr =
++				((loff_t)page << chip->page_shift);
+ 			goto erase_exit;
+ 		}
+ 
+@@ -2263,7 +2266,8 @@ int nand_erase_nand(struct mtd_info *mtd, struct erase_info *instr,
+ 		 */
+ 		if (bbt_masked_page != 0xffffffff &&
+ 		    (page & BBT_PAGE_MASK) == bbt_masked_page)
+-			    rewrite_bbt[chipnr] = (page << chip->page_shift);
++			    rewrite_bbt[chipnr] =
++					((loff_t)page << chip->page_shift);
+ 
+ 		/* Increment page address and decrement length */
+ 		len -= (1 << chip->phys_erase_shift);
+@@ -2310,7 +2314,7 @@ int nand_erase_nand(struct mtd_info *mtd, struct erase_info *instr,
+ 			continue;
+ 		/* update the BBT for chip */
+ 		MTDDEBUG (MTD_DEBUG_LEVEL0, "nand_erase_nand: nand_update_bbt "
+-		          "(%d:0x%0x 0x%0x)\n", chipnr, rewrite_bbt[chipnr],
++		          "(%d:0x%0llx 0x%0x)\n", chipnr, rewrite_bbt[chipnr],
+ 		          chip->bbt_td->pages[chipnr]);
+ 		nand_update_bbt(mtd, rewrite_bbt[chipnr]);
+ 	}
+@@ -2506,7 +2510,7 @@ static struct nand_flash_dev *nand_get_flash_type(struct mtd_info *mtd,
+ 	if (!mtd->name)
+ 		mtd->name = type->name;
+ 
+-	chip->chipsize = type->chipsize << 20;
++	chip->chipsize = (uint64_t)type->chipsize << 20;
+ 
+ 	/* Newer devices have all the information in additional id bytes */
+ 	if (!type->pagesize) {
+@@ -2560,11 +2564,14 @@ static struct nand_flash_dev *nand_get_flash_type(struct mtd_info *mtd,
+ 	/* Calculate the address shift from the page size */
+ 	chip->page_shift = ffs(mtd->writesize) - 1;
+ 	/* Convert chipsize to number of pages per chip -1. */
+-	chip->pagemask = (chip->chipsize >> chip->page_shift) - 1;
++	chip->pagemask = mtd_div_by_ws(chip->chipsize, mtd) - 1;
+ 
+ 	chip->bbt_erase_shift = chip->phys_erase_shift =
+ 		ffs(mtd->erasesize) - 1;
+-	chip->chip_shift = ffs(chip->chipsize) - 1;
++	if (chip->chipsize & 0xffffffff)
++		chip->chip_shift = ffs((unsigned)chip->chipsize) - 1;
++	else
++		chip->chip_shift = ffs((unsigned)(chip->chipsize >> 32)) + 32 - 1;
+ 
+ 	/* Set the bad block position */
+ 	chip->badblockpos = mtd->writesize > 512 ?
+diff --git a/drivers/mtd/nand/nand_bbt.c b/drivers/mtd/nand/nand_bbt.c
+index 93a37cb..929196b 100644
+--- a/drivers/mtd/nand/nand_bbt.c
++++ b/drivers/mtd/nand/nand_bbt.c
+@@ -182,16 +182,16 @@ static int read_bbt(struct mtd_info *mtd, uint8_t *buf, int page, int num,
+ 				if (tmp == msk)
+ 					continue;
+ 				if (reserved_block_code && (tmp == reserved_block_code)) {
+-					printk(KERN_DEBUG "nand_read_bbt: Reserved block at 0x%08x\n",
+-					       ((offs << 2) + (act >> 1)) << this->bbt_erase_shift);
++					printk(KERN_DEBUG "nand_read_bbt: Reserved block at 0x%012llx\n",
++					       (loff_t)((offs << 2) + (act >> 1)) << this->bbt_erase_shift);
+ 					this->bbt[offs + (act >> 3)] |= 0x2 << (act & 0x06);
+ 					mtd->ecc_stats.bbtblocks++;
+ 					continue;
+ 				}
+ 				/* Leave it for now, if its matured we can move this
+ 				 * message to MTD_DEBUG_LEVEL0 */
+-				printk(KERN_DEBUG "nand_read_bbt: Bad block at 0x%08x\n",
+-				       ((offs << 2) + (act >> 1)) << this->bbt_erase_shift);
++				printk(KERN_DEBUG "nand_read_bbt: Bad block at 0x%012llx\n",
++				       (loff_t)((offs << 2) + (act >> 1)) << this->bbt_erase_shift);
+ 				/* Factory marked bad or worn out ? */
+ 				if (tmp == 0)
+ 					this->bbt[offs + (act >> 3)] |= 0x3 << (act & 0x06);
+@@ -228,13 +228,13 @@ static int read_abs_bbt(struct mtd_info *mtd, uint8_t *buf, struct nand_bbt_desc
+ 		int offs = 0;
+ 		for (i = 0; i < this->numchips; i++) {
+ 			if (chip == -1 || chip == i)
+-				res = read_bbt (mtd, buf, td->pages[i], this->chipsize >> this->bbt_erase_shift, bits, offs, td->reserved_block_code);
++				res = read_bbt (mtd, buf, td->pages[i], mtd_div_by_eb(this->chipsize, mtd), bits, offs, td->reserved_block_code);
+ 			if (res)
+ 				return res;
+-			offs += this->chipsize >> (this->bbt_erase_shift + 2);
++			offs += mtd_div_by_eb(this->chipsize, mtd)>> 2;
+ 		}
+ 	} else {
+-		res = read_bbt (mtd, buf, td->pages[0], mtd->size >> this->bbt_erase_shift, bits, 0, td->reserved_block_code);
++		res = read_bbt (mtd, buf, td->pages[0], mtd_div_by_eb(mtd->size, mtd), bits, 0, td->reserved_block_code);
+ 		if (res)
+ 			return res;
+ 	}
+@@ -295,7 +295,7 @@ static int read_abs_bbts(struct mtd_info *mtd, uint8_t *buf,
+ 
+ 	/* Read the primary version, if available */
+ 	if (td->options & NAND_BBT_VERSION) {
+-		scan_read_raw(mtd, buf, td->pages[0] << this->page_shift,
++		scan_read_raw(mtd, buf, (loff_t)td->pages[0] << this->page_shift,
+ 			      mtd->writesize);
+ 		td->version[0] = buf[mtd->writesize + td->veroffs];
+ 		printk(KERN_DEBUG "Bad block table at page %d, version 0x%02X\n",
+@@ -304,7 +304,7 @@ static int read_abs_bbts(struct mtd_info *mtd, uint8_t *buf,
+ 
+ 	/* Read the mirror version, if available */
+ 	if (md && (md->options & NAND_BBT_VERSION)) {
+-		scan_read_raw(mtd, buf, md->pages[0] << this->page_shift,
++		scan_read_raw(mtd, buf, (loff_t)md->pages[0] << this->page_shift,
+ 			      mtd->writesize);
+ 		md->version[0] = buf[mtd->writesize + md->veroffs];
+ 		printk(KERN_DEBUG "Bad block table at page %d, version 0x%02X\n",
+@@ -410,7 +410,7 @@ static int create_bbt(struct mtd_info *mtd, uint8_t *buf,
+ 	if (chip == -1) {
+ 		/* Note that numblocks is 2 * (real numblocks) here, see i+=2
+ 		 * below as it makes shifting and masking less painful */
+-		numblocks = mtd->size >> (this->bbt_erase_shift - 1);
++		numblocks = mtd_div_by_eb(mtd->size, mtd) * 2;
+ 		startblock = 0;
+ 		from = 0;
+ 	} else {
+@@ -419,10 +419,10 @@ static int create_bbt(struct mtd_info *mtd, uint8_t *buf,
+ 			       chip + 1, this->numchips);
+ 			return -EINVAL;
+ 		}
+-		numblocks = this->chipsize >> (this->bbt_erase_shift - 1);
++		numblocks = mtd_div_by_eb(this->chipsize, mtd) << 1;
+ 		startblock = chip * numblocks;
+ 		numblocks += startblock;
+-		from = startblock << (this->bbt_erase_shift - 1);
++		from = (loff_t)startblock << (this->bbt_erase_shift - 1);
+ 	}
+ 
+ 	for (i = startblock; i < numblocks;) {
+@@ -440,8 +440,8 @@ static int create_bbt(struct mtd_info *mtd, uint8_t *buf,
+ 		if (ret) {
+ 			this->bbt[i >> 3] |= 0x03 << (i & 0x6);
+ 			MTDDEBUG (MTD_DEBUG_LEVEL0,
+-			          "Bad eraseblock %d at 0x%08x\n",
+-			          i >> 1, (unsigned int)from);
++			          "Bad eraseblock %d at 0x%012llx\n",
++			          i >> 1, (unsigned long long)from);
+ 			mtd->ecc_stats.badblocks++;
+ 		}
+ 
+@@ -479,7 +479,7 @@ static int search_bbt(struct mtd_info *mtd, uint8_t *buf, struct nand_bbt_descr
+ 
+ 	/* Search direction top -> down ? */
+ 	if (td->options & NAND_BBT_LASTBLOCK) {
+-		startblock = (mtd->size >> this->bbt_erase_shift) - 1;
++		startblock = mtd_div_by_eb(mtd->size, mtd) - 1;
+ 		dir = -1;
+ 	} else {
+ 		startblock = 0;
+@@ -489,11 +489,11 @@ static int search_bbt(struct mtd_info *mtd, uint8_t *buf, struct nand_bbt_descr
+ 	/* Do we have a bbt per chip ? */
+ 	if (td->options & NAND_BBT_PERCHIP) {
+ 		chips = this->numchips;
+-		bbtblocks = this->chipsize >> this->bbt_erase_shift;
++		bbtblocks = mtd_div_by_eb(this->chipsize, mtd);
+ 		startblock &= bbtblocks - 1;
+ 	} else {
+ 		chips = 1;
+-		bbtblocks = mtd->size >> this->bbt_erase_shift;
++		bbtblocks = mtd_div_by_eb(mtd->size, mtd);
+ 	}
+ 
+ 	/* Number of bits for each erase block in the bbt */
+@@ -507,7 +507,7 @@ static int search_bbt(struct mtd_info *mtd, uint8_t *buf, struct nand_bbt_descr
+ 		for (block = 0; block < td->maxblocks; block++) {
+ 
+ 			int actblock = startblock + dir * block;
+-			loff_t offs = actblock << this->bbt_erase_shift;
++			loff_t offs = (loff_t)actblock << this->bbt_erase_shift;
+ 
+ 			/* Read first page */
+ 			scan_read_raw(mtd, buf, offs, mtd->writesize);
+@@ -519,7 +519,7 @@ static int search_bbt(struct mtd_info *mtd, uint8_t *buf, struct nand_bbt_descr
+ 				break;
+ 			}
+ 		}
+-		startblock += this->chipsize >> this->bbt_erase_shift;
++		startblock += mtd_div_by_eb(this->chipsize, mtd);
+ 	}
+ 	/* Check, if we found a bbt for each requested chip */
+ 	for (i = 0; i < chips; i++) {
+@@ -590,7 +590,7 @@ static int write_bbt(struct mtd_info *mtd, uint8_t *buf,
+ 		rcode = 0xff;
+ 	/* Write bad block table per chip rather than per device ? */
+ 	if (td->options & NAND_BBT_PERCHIP) {
+-		numblocks = (int)(this->chipsize >> this->bbt_erase_shift);
++		numblocks = mtd_div_by_eb(this->chipsize, mtd);
+ 		/* Full device write or specific chip ? */
+ 		if (chipsel == -1) {
+ 			nrchips = this->numchips;
+@@ -599,7 +599,7 @@ static int write_bbt(struct mtd_info *mtd, uint8_t *buf,
+ 			chip = chipsel;
+ 		}
+ 	} else {
+-		numblocks = (int)(mtd->size >> this->bbt_erase_shift);
++		numblocks = mtd_div_by_eb(mtd->size, mtd);
+ 		nrchips = 1;
+ 	}
+ 
+@@ -731,7 +731,7 @@ static int write_bbt(struct mtd_info *mtd, uint8_t *buf,
+ 
+ 		memset(&einfo, 0, sizeof(einfo));
+ 		einfo.mtd = mtd;
+-		einfo.addr = (unsigned long)to;
++		einfo.addr = to;
+ 		einfo.len = 1 << this->bbt_erase_shift;
+ 		res = nand_erase_nand(mtd, &einfo, 1);
+ 		if (res < 0)
+@@ -741,8 +741,8 @@ static int write_bbt(struct mtd_info *mtd, uint8_t *buf,
+ 		if (res < 0)
+ 			goto outerr;
+ 
+-		printk(KERN_DEBUG "Bad block table written to 0x%08x, version "
+-		       "0x%02X\n", (unsigned int)to, td->version[chip]);
++		printk(KERN_DEBUG "Bad block table written to 0x%012llx, version "
++		       "0x%02X\n", (unsigned long long)to, td->version[chip]);
+ 
+ 		/* Mark it as used */
+ 		td->pages[chip] = page;
+@@ -905,10 +905,10 @@ static void mark_bbt_region(struct mtd_info *mtd, struct nand_bbt_descr *td)
+ 	/* Do we have a bbt per chip ? */
+ 	if (td->options & NAND_BBT_PERCHIP) {
+ 		chips = this->numchips;
+-		nrblocks = (int)(this->chipsize >> this->bbt_erase_shift);
++		nrblocks = mtd_div_by_eb(this->chipsize, mtd);
+ 	} else {
+ 		chips = 1;
+-		nrblocks = (int)(mtd->size >> this->bbt_erase_shift);
++		nrblocks = mtd_div_by_eb(mtd->size, mtd);
+ 	}
+ 
+ 	for (i = 0; i < chips; i++) {
+@@ -922,7 +922,7 @@ static void mark_bbt_region(struct mtd_info *mtd, struct nand_bbt_descr *td)
+ 			newval = oldval | (0x2 << (block & 0x06));
+ 			this->bbt[(block >> 3)] = newval;
+ 			if ((oldval != newval) && td->reserved_block_code)
+-				nand_update_bbt(mtd, block << (this->bbt_erase_shift - 1));
++				nand_update_bbt(mtd, (loff_t)block << (this->bbt_erase_shift - 1));
+ 			continue;
+ 		}
+ 		update = 0;
+@@ -943,7 +943,7 @@ static void mark_bbt_region(struct mtd_info *mtd, struct nand_bbt_descr *td)
+ 		   new ones have been marked, then we need to update the stored
+ 		   bbts.  This should only happen once. */
+ 		if (update && td->reserved_block_code)
+-			nand_update_bbt(mtd, (block - 2) << (this->bbt_erase_shift - 1));
++			nand_update_bbt(mtd, (loff_t)(block - 2) << (this->bbt_erase_shift - 1));
+ 	}
+ }
+ 
+@@ -969,7 +969,7 @@ int nand_scan_bbt(struct mtd_info *mtd, struct nand_bbt_descr *bd)
+ 	struct nand_bbt_descr *td = this->bbt_td;
+ 	struct nand_bbt_descr *md = this->bbt_md;
+ 
+-	len = mtd->size >> (this->bbt_erase_shift + 2);
++	len = mtd_div_by_eb(mtd->size, mtd) >> 2;
+ 	/* Allocate memory (2bit per block) and clear the memory bad block table */
+ 	this->bbt = kzalloc(len, GFP_KERNEL);
+ 	if (!this->bbt) {
+@@ -1039,7 +1039,6 @@ int nand_update_bbt(struct mtd_info *mtd, loff_t offs)
+ 	if (!this->bbt || !td)
+ 		return -EINVAL;
+ 
+-	len = mtd->size >> (this->bbt_erase_shift + 2);
+ 	/* Allocate a temporary buffer for one eraseblock incl. oob */
+ 	len = (1 << this->bbt_erase_shift);
+ 	len += (len >> this->page_shift) * mtd->oobsize;
+diff --git a/drivers/mtd/nand/pxa3xx_nand.c b/drivers/mtd/nand/pxa3xx_nand.c
+index 5f8b06e..9f7140e 100644
+--- a/drivers/mtd/nand/pxa3xx_nand.c
++++ b/drivers/mtd/nand/pxa3xx_nand.c
+@@ -928,8 +928,8 @@ static void pxa3xx_nand_init_mtd(struct mtd_info *mtd)
+ 	this->ecc.correct	= pxa3xx_nand_ecc_correct;
+ 	this->ecc.size		= f->page_size;
+ 
+-	this->chipsize 		= f->num_blocks 	* \
+-				  f->page_per_block 	* \
++	this->chipsize 		= (uint64_t)f->num_blocks 	* \
++				  f->page_per_block 		* \
+ 				  f->page_size;
+ 
+ 	this->chip_shift 	= ffs(this->chipsize) - 1;
+@@ -939,8 +939,7 @@ static void pxa3xx_nand_init_mtd(struct mtd_info *mtd)
+ 	this->page_shift = ffs(mtd->writesize) - 1;
+ 
+ 	/* temporary workaround for limited support 64bit */
+-//	this->pagemask = (this->chipsize >> this->page_shift) - 1;
+-	this->pagemask = 0xfffff;
++	this->pagemask = mtd_div_by_ws(this->chipsize, mtd) - 1;
+ 
+ 	this->bbt_erase_shift = this->phys_erase_shift =
+ 		ffs(mtd->erasesize) - 1;
+@@ -951,7 +950,7 @@ static void pxa3xx_nand_init_mtd(struct mtd_info *mtd)
+ 
+ 	/* Get chip options, preserve non chip based options */
+ 	this->options &= ~NAND_CHIPOPTIONS_MSK;
+-	this->controller        = &this->hwcontrol;
++	this->controller = &this->hwcontrol;
+ 	spin_lock_init(&this->controller->lock);
+ 	init_waitqueue_head(&this->controller->wq);
+ 
+diff --git a/drivers/mtd/onenand/onenand_base.c b/drivers/mtd/onenand/onenand_base.c
+index 371e25d..b8e9038 100644
+--- a/drivers/mtd/onenand/onenand_base.c
++++ b/drivers/mtd/onenand/onenand_base.c
+@@ -1041,7 +1041,7 @@ static int onenand_read_oob_nolock(struct mtd_info *mtd, loff_t from,
+ 
+ 	/* Do not allow reads past end of device */
+ 	if (unlikely(from >= mtd->size ||
+-		     column + len > ((mtd->size >> this->page_shift) -
++		     column + len > (mtd_div_by_ws(mtd->size, mtd) -
+ 				     (from >> this->page_shift)) * oobsize)) {
+ 		printk(KERN_ERR "onenand_read_oob_nolock: Attempted to read beyond end of device\n");
+ 		return -EINVAL;
+@@ -1716,7 +1716,7 @@ static int onenand_write_oob_nolock(struct mtd_info *mtd, loff_t to,
+ 
+ 	/* Do not allow reads past end of device */
+ 	if (unlikely(to >= mtd->size ||
+-		     column + len > ((mtd->size >> this->page_shift) -
++		     column + len > ((mtd_div_by_ws(mtd->size, mtd) -
+ 				     (to >> this->page_shift)) * oobsize)) {
+ 		printk(KERN_ERR "onenand_write_oob_nolock: Attempted to write past end of device\n");
+ 		return -EINVAL;
+@@ -1898,7 +1898,7 @@ int onenand_erase(struct mtd_info *mtd, struct erase_info *instr)
+ 	int len;
+ 	int ret = 0;
+ 
+-	DEBUG(MTD_DEBUG_LEVEL3, "onenand_erase: start = 0x%08x, len = %i\n", (unsigned int) instr->addr, (unsigned int) instr->len);
++	DEBUG(MTD_DEBUG_LEVEL3, "onenand_erase: start = 0x%012llx, len = %llu\n", (unsigned long long) instr->addr, (unsigned long long) instr->len);
+ 
+ 	block_size = (1 << this->erase_shift);
+ 
+@@ -1936,7 +1936,7 @@ int onenand_erase(struct mtd_info *mtd, struct erase_info *instr)
+ 
+ 		/* Check if we have a bad block, we do not erase bad blocks */
+ 		if (onenand_block_isbad_nolock(mtd, addr, 0)) {
+-			printk (KERN_WARNING "onenand_erase: attempt to erase a bad block at addr 0x%08x\n", (unsigned int) addr);
++			printk (KERN_WARNING "onenand_erase: attempt to erase a bad block at addr 0x%012llx\n", (unsigned long long) addr);
+ 			instr->state = MTD_ERASE_FAILED;
+ 			goto erase_exit;
+ 		}
+@@ -2155,7 +2155,7 @@ static int onenand_do_lock_cmd(struct mtd_info *mtd, loff_t ofs, size_t len, int
+  *
+  * Lock one or more blocks
+  */
+-static int onenand_lock(struct mtd_info *mtd, loff_t ofs, size_t len)
++static int onenand_lock(struct mtd_info *mtd, loff_t ofs, uint64_t len)
+ {
+ 	int ret;
+ 
+diff --git a/drivers/mtd/onenand/onenand_bbt.c b/drivers/mtd/onenand/onenand_bbt.c
+index f6092b9..48934c1 100644
+--- a/drivers/mtd/onenand/onenand_bbt.c
++++ b/drivers/mtd/onenand/onenand_bbt.c
+@@ -82,7 +82,7 @@ static int create_bbt(struct mtd_info *mtd, uint8_t * buf,
+ 	/* Note that numblocks is 2 * (real numblocks) here;
+ 	 * see i += 2 below as it makses shifting and masking less painful
+ 	 */
+-	numblocks = mtd->size >> (bbm->bbt_erase_shift - 1);
++	numblocks = mtd_div_by_eb(mtd->size, mtd) * 2;
+ 	startblock = 0;
+ 	from = 0;
+ 
+@@ -191,7 +191,7 @@ int onenand_scan_bbt(struct mtd_info *mtd, struct nand_bbt_descr *bd)
+ 	struct bbm_info *bbm = this->bbm;
+ 	int len, ret = 0;
+ 
+-	len = mtd->size >> (this->erase_shift + 2);
++	len = mtd_div_by_eb(ntd->size, mtd) >> 2;
+ 	/* Allocate memory (2bit per block) */
+ 	bbm->bbt = malloc(len);
+ 	if (!bbm->bbt) {
+diff --git a/drivers/mtd/pxa3xx_bbm.c b/drivers/mtd/pxa3xx_bbm.c
+index 415179f..5a229a5 100644
+--- a/drivers/mtd/pxa3xx_bbm.c
++++ b/drivers/mtd/pxa3xx_bbm.c
+@@ -38,7 +38,7 @@ static int pxa3xx_init_reloc_tb(struct mtd_info *mtd)
+ 	bbm->erase_shift = ffs(mtd->erasesize) - 1;
+ 
+ 	pages = mtd->erasesize >> bbm->page_shift;
+-	slots = mtd->size >> bbm->erase_shift;
++	slots = mtd_div_by_eb(mtd->size, mtd);
+ 	slots = (slots * 2) / 100;
+ 	slots = (slots < PXA_MAX_RELOC_ENTRY) ? slots : PXA_MAX_RELOC_ENTRY;
+ 
+@@ -105,7 +105,7 @@ int update_reloc_tb(struct mtd_info *mtd, int block)
+ 	for (i = 0; i < table->total; i ++) {
+ 		int _rel = (item[i].to != 65535) ? item[i].to : item[i].from;
+ 
+-		rel_dist[(_rel - (mtd->size  >> bbm->erase_shift) + bbm->max_reloc_entry)] = 1;
++		rel_dist[(_rel - mtd_div_by_eb(mtd->size, mtd) + bbm->max_reloc_entry)] = 1;
+ 	}
+ 
+ 	while (1) {
+@@ -116,9 +116,9 @@ int update_reloc_tb(struct mtd_info *mtd, int block)
+ 			}
+ 		}
+ 
+-		reloc_block = reloc_block + (mtd->size  >> bbm->erase_shift) - bbm->max_reloc_entry;
++		reloc_block = reloc_block + mtd_div_by_eb(mtd->size, mtd) - bbm->max_reloc_entry;
+ 
+-		if (reloc_block < ((mtd->size  >> bbm->erase_shift) - bbm->max_reloc_entry)) {
++		if (reloc_block < (mtd_div_by_eb(mtd->size, mtd) - bbm->max_reloc_entry)) {
+ 			if (entry_num >= 0) {
+ 				item[entry_num].from = item[entry_num].to;
+ 				item[entry_num].to = 65535;
+@@ -143,7 +143,7 @@ int update_reloc_tb(struct mtd_info *mtd, int block)
+ 
+ 				item[table->total].to = 65535;
+ 				table->total++;
+-				rel_dist[(reloc_block - ((mtd->size  >> bbm->erase_shift) + bbm->max_reloc_entry))] = 1;;
++				rel_dist[(reloc_block - (mtd_div_by_eb(mtd->size, mtd) + bbm->max_reloc_entry))] = 1;;
+ 				continue;
+ 			} else
+ 				return -EINVAL;
+@@ -270,7 +270,7 @@ static loff_t pxa3xx_search_reloc_tb(struct mtd_info *mtd, loff_t ofs)
+ 	int i, max, block, max_allow_relocated;
+ 
+ 	block = ofs >> bbm->erase_shift;
+-	max_allow_relocated = (mtd->size  >> bbm->erase_shift)
++	max_allow_relocated = mtd_div_by_eb(mtd->size, mtd)
+ 				- bbm->max_reloc_entry;
+ 
+ 	if ((bbm->table_init == 0)
+diff --git a/include/asm-arm/arch-pxa168/nand_supported.h b/include/asm-arm/arch-pxa168/nand_supported.h
+index e4cab22..27baa88 100644
+--- a/include/asm-arm/arch-pxa168/nand_supported.h
++++ b/include/asm-arm/arch-pxa168/nand_supported.h
+@@ -143,7 +143,7 @@ static struct pxa3xx_nand_flash samsung32GbX8 = {
+ 	.page_size	= 4096,
+ 	.flash_width	= 8,
+ 	.dfc_width	= 8,
+-	.num_blocks	= 6144,		/* UBOOT currently not support 32Gib */
++	.num_blocks	= 8192,
+ 	.chip_id	= 0xd7ec,
+ 	.ecc_type	= ECC_BCH,
+ };
+diff --git a/include/linux/mtd/mtd.h b/include/linux/mtd/mtd.h
+index db2f96f..15c553e 100644
+--- a/include/linux/mtd/mtd.h
++++ b/include/linux/mtd/mtd.h
+@@ -9,6 +9,7 @@
+ 
+ #include <linux/types.h>
+ #include <linux/mtd/mtd-abi.h>
++#include <div64.h>
+ 
+ #define MTD_CHAR_MAJOR 90
+ #define MTD_BLOCK_MAJOR 31
+@@ -20,15 +21,15 @@
+ #define MTD_ERASE_DONE          0x08
+ #define MTD_ERASE_FAILED        0x10
+ 
+-#define MTD_FAIL_ADDR_UNKNOWN 0xffffffff
++#define MTD_FAIL_ADDR_UNKNOWN -1LL
+ /* If the erase fails, fail_addr might indicate exactly which block failed.  If
+    fail_addr = 0xffffffff, the failure was not at the device level or was not
+    specific to any particular block. */
+ struct erase_info {
+ 	struct mtd_info *mtd;
+-	u_int32_t addr;
+-	u_int32_t len;
+-	u_int32_t fail_addr;
++	uint64_t addr;
++	uint64_t len;
++	uint64_t fail_addr;
+ 	u_long time;
+ 	u_long retries;
+ 	u_int dev;
+@@ -40,7 +41,7 @@ struct erase_info {
+ };
+ 
+ struct mtd_erase_region_info {
+-	u_int32_t offset;			/* At which this region starts, from the beginning of the MTD */
++	uint64_t offset;			/* At which this region starts, from the beginning of the MTD */
+ 	u_int32_t erasesize;		/* For this region */
+ 	u_int32_t numblocks;		/* Number of blocks of erasesize in this region */
+ 	unsigned long *lockmap;		/* If keeping bitmap of locks */
+@@ -95,7 +96,7 @@ struct mtd_oob_ops {
+ struct mtd_info {
+ 	u_char type;
+ 	u_int32_t flags;
+-	u_int32_t size;	 /* Total size of the MTD */
++	uint64_t size;	 /* Total size of the MTD */
+ 
+ 	/* "Major" erase size for the device. Naïve users may take this
+ 	 * to be the only erase size available, or may use the more detailed
+@@ -187,8 +188,8 @@ struct mtd_info {
+ 	void (*sync) (struct mtd_info *mtd);
+ 
+ 	/* Chip-supported device locking */
+-	int (*lock) (struct mtd_info *mtd, loff_t ofs, size_t len);
+-	int (*unlock) (struct mtd_info *mtd, loff_t ofs, size_t len);
++	int (*lock) (struct mtd_info *mtd, loff_t ofs, uint64_t len);
++	int (*unlock) (struct mtd_info *mtd, loff_t ofs, uint64_t len);
+ 
+ 	/* Power Management functions */
+ 	int (*suspend) (struct mtd_info *mtd);
+@@ -222,6 +223,27 @@ struct mtd_info {
+ 	void (*put_device) (struct mtd_info *mtd);
+ };
+ 
++static inline u_int32_t mtd_div_by_eb(uint64_t sz, struct mtd_info *mtd)
++{
++	do_div(sz, mtd->erasesize);
++	return sz;
++}
++
++static inline u_int32_t mtd_mod_by_eb(uint64_t sz, struct mtd_info *mtd)
++{
++	return do_div(sz, mtd->erasesize);
++}
++
++static inline u_int32_t mtd_div_by_ws(uint64_t sz, struct mtd_info *mtd)
++{
++	do_div(sz, mtd->writesize);
++	return sz;
++}
++
++static inline u_int32_t mtd_mod_by_ws(uint64_t sz, struct mtd_info *mtd)
++{
++	return do_div(sz, mtd->writesize);
++}
+ 
+ 	/* Kernel-side ioctl definitions */
+ 
+diff --git a/include/linux/mtd/nand.h b/include/linux/mtd/nand.h
+index 905d866..df00f86 100644
+--- a/include/linux/mtd/nand.h
++++ b/include/linux/mtd/nand.h
+@@ -415,7 +415,7 @@ struct nand_chip {
+ 	int		bbt_erase_shift;
+ 	int		chip_shift;
+ 	int		numchips;
+-	unsigned long	chipsize;
++	uint64_t	chipsize;
+ 	int		pagemask;
+ 	int		pagebuf;
+ 	int		subpagesize;
+-- 
+1.6.0.4
+

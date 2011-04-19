@@ -1,0 +1,65 @@
+From c45e453abcf9d86304c98232f8ae7cbb414f7e67 Mon Sep 17 00:00:00 2001
+From: Bin Yang <bin.yang@marvell.com>
+Date: Thu, 2 Jul 2009 16:49:49 +0800
+Subject: [PATCH] pxa: fix issue of i2c read/write failure due to timer uninitialed
+
+Signed-off-by: Jack Ren <jack.ren@marvell.com>
+Signed-off-by: Bin Yang <bin.yang@marvell.com>
+---
+ board/pxa/tavorEVB/tavorevb_pxa168.c |    7 ++++---
+ board/pxa/ttc_dkb/ttc_dkb.c          |    7 ++++---
+ 2 files changed, 8 insertions(+), 6 deletions(-)
+
+diff --git a/board/pxa/tavorEVB/tavorevb_pxa168.c b/board/pxa/tavorEVB/tavorevb_pxa168.c
+index 296d38d..e5af7d9 100644
+--- a/board/pxa/tavorEVB/tavorevb_pxa168.c
++++ b/board/pxa/tavorEVB/tavorevb_pxa168.c
+@@ -255,9 +255,6 @@ int board_init (void)
+     *(volatile unsigned int *)0xd4282804=0x0ffd96d8;
+     reg = *(volatile unsigned int *)0xd4282804;
+ 
+-    /* set voltage to 1300mV by default */
+-    set_volt(1300);
+-
+     return 0;
+ }
+ 
+@@ -265,6 +262,10 @@ int misc_init_r (void)
+ {
+         char *env;
+                                                                                                                                                
++	/* set voltage to 1300mV by default */
++	set_volt(1300);
++	dummy_delay(99999);
++	set_volt(1300);
+         /* primary network interface */
+         env = getenv("ethprime");
+         if(!env)
+diff --git a/board/pxa/ttc_dkb/ttc_dkb.c b/board/pxa/ttc_dkb/ttc_dkb.c
+index a830c54..edb23f2 100644
+--- a/board/pxa/ttc_dkb/ttc_dkb.c
++++ b/board/pxa/ttc_dkb/ttc_dkb.c
+@@ -264,9 +264,6 @@ int board_init (void)
+     *(volatile unsigned int *)0xd4282804=0x0ffd96d8;
+     reg = *(volatile unsigned int *)0xd4282804;
+ 
+-    /* set voltage to 1300mV by default */
+-    set_volt(1300);
+-
+     return 0;
+ }
+ 
+@@ -274,6 +271,10 @@ int misc_init_r (void)
+ {
+         char *env;
+                                                                                                                                                
++	/* set voltage to 1300mV by default */
++	set_volt(1300);
++	dummy_delay(99999);
++	set_volt(1300);
+         /* primary network interface */
+         env = getenv("ethprime");
+         if(!env)
+-- 
+1.6.0.4
+

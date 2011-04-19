@@ -1,0 +1,66 @@
+From 86ad3d48be65d8a8a96a3b581eadaf492eb380c1 Mon Sep 17 00:00:00 2001
+From: Mingliang Hu <mingliang.hu@marvell.com>
+Date: Thu, 22 Oct 2009 13:45:20 +0800
+Subject: [PATCH] pxa688: add micron 8Gx8 nand support
+
+Signed-off-by: Mingliang Hu <mingliang.hu@marvell.com>
+---
+ drivers/mtd/nand/pxa3xx_nand.c               |    6 ------
+ include/asm-arm/arch-pxa688/nand_supported.h |   14 ++++++++++++++
+ 2 files changed, 14 insertions(+), 6 deletions(-)
+ mode change 100644 => 100755 include/asm-arm/arch-pxa688/nand_supported.h
+
+diff --git a/drivers/mtd/nand/pxa3xx_nand.c b/drivers/mtd/nand/pxa3xx_nand.c
+index fce52c8..bb04c32 100644
+--- a/drivers/mtd/nand/pxa3xx_nand.c
++++ b/drivers/mtd/nand/pxa3xx_nand.c
+@@ -65,12 +65,6 @@ static void pxa3xx_nand_set_timing(struct pxa3xx_nand_info *info,
+ 	unsigned long nand_clk = NAND_DEF_CLOCK;
+ 	uint32_t ndtr0, ndtr1, tRP;
+ 
+-#ifdef CONFIG_CPU_PXA688
+-	nand_writel(nand, NDTR0CS0, 0x4000909 | (1<<26));
+-	nand_writel(nand, NDTR1CS0, 0xff080ff | (1<<15));
+-	return;
+-#endif
+-
+ 	ndtr0 = ndtr1 = 0;
+ 	tRP = (t->tRP > 0xf) ? 0xf : t->tRP;
+ 	if (tRP > 0x7) {
+diff --git a/include/asm-arm/arch-pxa688/nand_supported.h b/include/asm-arm/arch-pxa688/nand_supported.h
+old mode 100644
+new mode 100755
+index f5cd7ef..120e3a7
+--- a/include/asm-arm/arch-pxa688/nand_supported.h
++++ b/include/asm-arm/arch-pxa688/nand_supported.h
+@@ -238,6 +238,19 @@ static struct pxa3xx_nand_flash micron4GbX16 = {
+ 	.ecc_type	= ECC_HAMMIN,
+ };
+ 
++static struct pxa3xx_nand_flash micron8GbX8 = {
++	.timing		= &micron_timing,
++	.cmdset         = &largepage_cmdset,
++	.name		= "Micron 8Gibx8",
++	.page_per_block	= 128,
++	.page_size	= 4096,
++	.flash_width	= 8,
++	.dfc_width	= 8,
++	.num_blocks	= 2048,
++	.chip_id	= 0x282c,
++	.ecc_type	= ECC_HAMMIN,
++};
++
+ static struct pxa3xx_nand_flash stm2GbX16 = {
+ 	.timing 	= &stm2GbX16_timing,
+ 	.cmdset         = &largepage_cmdset,
+@@ -262,6 +275,7 @@ static struct pxa3xx_nand_flash *builtin_flash_types[] = {
+ 	&micron1GbX16,
+ 	&micron2GbX16,
+ 	&micron4GbX16,
++	&micron8GbX8,
+ 	&stm2GbX16,
+ };
+ 
+-- 
+1.6.0.4
+

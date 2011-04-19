@@ -1,0 +1,42 @@
+From 9e93212de1f33034213d9b356e4db8380018d54b Mon Sep 17 00:00:00 2001
+From: Lei Wen <leiwen@marvell.com>
+Date: Tue, 28 Apr 2009 14:21:34 +0800
+Subject: [PATCH] pxa910: fix onenand write memory align 32 bug
+
+In onenand, it should write 32bit align to memory.
+Or, it would cause data lose. The deep root cause is unknown.
+
+Signed-off-by: Lei Wen <leiwen@marvell.com>
+---
+ drivers/mtd/onenand/onenand_base.c |   15 +++++++++++++++
+ 1 files changed, 15 insertions(+), 0 deletions(-)
+
+diff --git a/drivers/mtd/onenand/onenand_base.c b/drivers/mtd/onenand/onenand_base.c
+index 678b05a..ebdcaa2 100644
+--- a/drivers/mtd/onenand/onenand_base.c
++++ b/drivers/mtd/onenand/onenand_base.c
+@@ -28,6 +28,21 @@
+ 
+ #include <asm/io.h>
+ 
++void * memcpy_32_aligned(void * dest,const void *src,size_t count)
++{
++	uint32_t *tmp = (uint32_t  *) dest, *s = (uint32_t *) src;
++	int size = count / 4;
++
++	while (size--)
++		*tmp++ = *s++;
++
++	if(4 * size != count)
++		*tmp = *s;
++
++	return dest;
++}
++
++#define memcpy memcpy_32_aligned
+ /**
+  * onenand_oob_64 - oob info for large (2KB) page
+  */
+-- 
+1.6.0.4
+

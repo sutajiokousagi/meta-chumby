@@ -1,0 +1,27 @@
+From 91de789e426b041ae98bfe42c6854dde78954aad Mon Sep 17 00:00:00 2001
+From: Ning Jiang <ning.jiang@marvell.com>
+Date: Mon, 10 Aug 2009 18:23:25 +0800
+Subject: [PATCH] pxa168: use ADTV1 as VCC_APPS for aspenite
+
+---
+ board/pxa/common/freq.c |    4 ++--
+ 1 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/board/pxa/common/freq.c b/board/pxa/common/freq.c
+index 61628ef..fa6d962 100644
+--- a/board/pxa/common/freq.c
++++ b/board/pxa/common/freq.c
+@@ -1315,8 +1315,8 @@ int set_volt(u32 vol)
+ 	res = i2c_writeb(0x30, 0x20, 0x01);	/* let it go ramping */
+ #elif CONFIG_ASPENITE
+ 	res = i2c_writeb(0x34, 0x00, 0x0);	/* dummy write */
+-	res = i2c_writeb(0x34, 0x24, cnt);	/* set V3 voltage in ADTV2 */
+-	res = i2c_writeb(0x34, 0x20, 0x03);	/* select ADTV2 and let it go ramping */
++	res = i2c_writeb(0x34, 0x23, cnt);	/* set V3 voltage in ADTV1 */
++	res = i2c_writeb(0x34, 0x20, 0x01);	/* select ADTV1 and let it go ramping */
+ #endif
+ 	i2c_base = i2c_base_saved;
+ 	return res;
+-- 
+1.6.0.4
+

@@ -1,0 +1,30 @@
+From 63714f2eb7fbdd3a8e9c76a8d180a9b7a1f96d47 Mon Sep 17 00:00:00 2001
+From: Mingliang Hu <mingliang.hu@marvell.com>
+Date: Mon, 1 Mar 2010 11:09:23 +0800
+Subject: [PATCH] pxa688: update eMMC info print on console
+
+Signed-off-by: Mingliang Hu <mingliang.hu@marvell.com>
+---
+ drivers/mmc/mmc.c |    5 ++---
+ 1 files changed, 2 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/mmc/mmc.c b/drivers/mmc/mmc.c
+index b9033e8..1b00a88 100644
+--- a/drivers/mmc/mmc.c
++++ b/drivers/mmc/mmc.c
+@@ -1255,10 +1255,9 @@ int mmc_startup(struct mmc *mmc)
+ 	sprintf(mmc->block_dev.product, "%s", mmc->bcid.prod_name);
+ 	sprintf(mmc->block_dev.revision, "%d.%d", (mmc->bcid.prod_ver >> 4) & 0xf,
+ 			mmc->bcid.prod_ver & 0xf);
+-	printf("MMC: Man %06x Snr %08x", mmc->bcid.manu_id,
++	printf("Man %06x Snr %08x\n", mmc->bcid.manu_id,
+                         mmc->bcid.prod_sn);
+-	printf("MMC PNM:  %s", mmc->bcid.prod_name);
+-	printf("MMC PRV: %d.%d", (mmc->bcid.prod_ver >> 4) & 0xf,
++	printf("MMC PRV: %d.%d version\n", (mmc->bcid.prod_ver >> 4) & 0xf,
+                         mmc->bcid.prod_ver & 0xf);
+ 	init_part(&mmc->block_dev);
+ 
+-- 
+1.6.0.4
+

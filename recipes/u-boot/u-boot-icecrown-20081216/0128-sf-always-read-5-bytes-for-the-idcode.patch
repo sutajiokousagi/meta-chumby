@@ -1,0 +1,46 @@
+From 4598618a2693dbf9c4ce656b196908ac6af268a3 Mon Sep 17 00:00:00 2001
+From: Mike Frysinger <vapier@gentoo.org>
+Date: Sat, 28 Mar 2009 06:41:09 -0400
+Subject: [PATCH] sf: always read 5 bytes for the idcode
+
+Some SPI flash drivers like to have extended id information
+available (like the spansion flash), so rather than making
+it re-issue the ID cmd to get at the last 2 bytes, have the
+common code read 5 bytes rather than just 3. This also matches
+the Linux behavior where it always reads 5 id bytes from all flashes.
+
+Signed-off-by: Mike Frysinger <vapier@gentoo.org>
+Acked-by: Haavard Skinnemoen <haavard.skinnemoen@atmel.com>
+CC: Mingkai Hu <Mingkai.hu@freescale.com>
+Signed-off-by: Lei Wen <leiwen@marvell.com>
+---
+ drivers/mtd/spi/spi_flash.c |    6 +++---
+ 1 files changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/mtd/spi/spi_flash.c b/drivers/mtd/spi/spi_flash.c
+index d1d81af..f111dac 100644
+--- a/drivers/mtd/spi/spi_flash.c
++++ b/drivers/mtd/spi/spi_flash.c
+@@ -101,7 +101,7 @@ struct spi_flash *spi_flash_probe(unsigned int bus, unsigned int cs,
+ 	struct spi_slave *spi;
+ 	struct spi_flash *flash;
+ 	int ret;
+-	u8 idcode[3];
++	u8 idcode[5];
+ 
+ 	spi = spi_setup_slave(bus, cs, max_hz, spi_mode);
+ 	if (!spi) {
+@@ -120,8 +120,8 @@ struct spi_flash *spi_flash_probe(unsigned int bus, unsigned int cs,
+ 	if (ret)
+ 		goto err_read_id;
+ 
+-	debug("SF: Got idcode %02x %02x %02x\n", idcode[0],
+-			idcode[1], idcode[2]);
++	debug("SF: Got idcode %02x %02x %02x %02x %02x\n", idcode[0],
++			idcode[1], idcode[2], idcode[3], idcode[4]);
+ 
+ 	switch (idcode[0]) {
+ #ifdef CONFIG_SPI_FLASH_SPANSION
+-- 
+1.6.0.4
+

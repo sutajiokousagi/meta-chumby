@@ -1,0 +1,50 @@
+From 1854ec18a9782c24aac4a844f3a07a6ca1fecbe3 Mon Sep 17 00:00:00 2001
+From: Mingliang Hu <mhu4@marvell.com>
+Date: Thu, 22 Jul 2010 15:56:34 +0800
+Subject: [PATCH] mmp2: add mmp2 stepping print
+
+Signed-off-by: Mingliang Hu <mhu4@marvell.com>
+---
+ board/pxa/brownstone/brownstone.c |    7 ++++++-
+ board/pxa/jasper/jasper.c         |    7 ++++++-
+ 2 files changed, 12 insertions(+), 2 deletions(-)
+
+diff --git a/board/pxa/brownstone/brownstone.c b/board/pxa/brownstone/brownstone.c
+index d2d3939..373d26c 100644
+--- a/board/pxa/brownstone/brownstone.c
++++ b/board/pxa/brownstone/brownstone.c
+@@ -413,7 +413,12 @@ int display_marvell_banner (void)
+    printf("| |_| |___| |_) | (_) | (_) | |_ \n");
+    printf(" \\___/    |____/ \\___/ \\___/ \\__| ");
+    printf("\n\nMARVELL MMP2 AP.");
+-   printf("\nBased on Feroceon Core with ARM1176 JZF CPU.\n\n"); 
++   if(cpu_is_pxa688_a0())
++   	printf("\nBased on MMP2 A0 CPU.\n\n"); 
++   else if(cpu_is_pxa688_z1())
++   	printf("\nBased on MMP2 Z1 CPU.\n\n"); 
++   else if(cpu_is_pxa688_z0())
++   	printf("\nBased on MMP2 Z0 CPU.\n\n"); 
+ 
+    return 0;
+ }
+diff --git a/board/pxa/jasper/jasper.c b/board/pxa/jasper/jasper.c
+index bf5b604..bba4efb 100644
+--- a/board/pxa/jasper/jasper.c
++++ b/board/pxa/jasper/jasper.c
+@@ -438,7 +438,12 @@ int display_marvell_banner (void)
+    printf("| |_| |___| |_) | (_) | (_) | |_ \n");
+    printf(" \\___/    |____/ \\___/ \\___/ \\__| ");
+    printf("\n\nMARVELL MMP2 AP.");
+-   printf("\nBased on Feroceon Core with ARM1176 JZF CPU.\n\n"); 
++   if(cpu_is_pxa688_a0())
++   	printf("\nBased on MMP2 A0 CPU.\n\n"); 
++   else if(cpu_is_pxa688_z1())
++   	printf("\nBased on MMP2 Z1 CPU.\n\n"); 
++   else if(cpu_is_pxa688_z0())
++   	printf("\nBased on MMP2 Z0 CPU.\n\n"); 
+ 
+    return 0;
+ }
+-- 
+1.6.0.4
+

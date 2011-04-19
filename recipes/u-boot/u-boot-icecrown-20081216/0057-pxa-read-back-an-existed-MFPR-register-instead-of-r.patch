@@ -1,0 +1,79 @@
+From 7ae0f19f7f6440652411906ad17adfc810b4a65c Mon Sep 17 00:00:00 2001
+From: Ning Jiang <ning.jiang@marvell.com>
+Date: Fri, 17 Apr 2009 17:02:45 +0800
+Subject: [PATCH] pxa: read back an existed MFPR register instead of random one
+
+Signed-off-by: Ning Jiang <ning.jiang@marvell.com>
+---
+ board/pxa/common/freq.c     |   23 ++++++++++++++++-------
+ cpu/88SV331xV5/pxa168/mfp.c |    2 +-
+ 2 files changed, 17 insertions(+), 8 deletions(-)
+
+diff --git a/board/pxa/common/freq.c b/board/pxa/common/freq.c
+index f196d7f..74f5b8f 100644
+--- a/board/pxa/common/freq.c
++++ b/board/pxa/common/freq.c
+@@ -21,11 +21,11 @@
+ 
+ #define CONFIG_AP_ALONE
+ #define CONFIG_MIPS
+-//#define CONFIG_OPTEST
+-//#define CONFIG_CPUID
+-//#define CONFIG_READ_WRITE
++#define CONFIG_OPTEST
++#define CONFIG_CPUID
++#define CONFIG_READ_WRITE
+ #define CONFIG_SETVOL
+-//#define CONFIG_WFI
++#define CONFIG_WFI
+ 
+ #define u32_t	unsigned int
+ #define u16_t	unsigned short
+@@ -656,19 +656,28 @@ static void writei2c(u32 slave_addr, u32 addr, u32 data)
+ 	temp |= 0x9;				/* START & TB */
+ 	temp &= 0xffffeffd;			/* ~(STOP | ALDIE) */
+ 	reg_write(ICR, temp);		/* ICR */
+-	if (waiti2c()) return;
++	if (waiti2c()) {
++		printf("i2c error: could not start condition\n");
++		return;
++	}
+ 
+ 	/* send first byte(register address) */
+ 	reg_write(IDBR, addr);
+ 	temp = reg_read(ICR);
+ 	reg_write(ICR, ((temp | 0x1008) & 0xfffffffe) & 0xfffffffd);
+-	if (waiti2c()) return;
++	if (waiti2c()) {
++		printf("i2c error: write register address failed\n");
++		return;
++	}
+ 
+ 	/* send second byte(register value) */
+ 	reg_write(IDBR, data);
+ 	temp = reg_read(ICR);
+ 	reg_write(ICR, ((temp | 0x1008) & 0xfffffffe) | 0x2);
+-	if (waiti2c()) return;
++	if (waiti2c()) {
++		printf("i2c error: write register value failed\n");
++		return;
++	}
+ }
+ 
+ static void set_volt(u32 vol)
+diff --git a/cpu/88SV331xV5/pxa168/mfp.c b/cpu/88SV331xV5/pxa168/mfp.c
+index 84ac83b..e46eac1 100644
+--- a/cpu/88SV331xV5/pxa168/mfp.c
++++ b/cpu/88SV331xV5/pxa168/mfp.c
+@@ -42,7 +42,7 @@ static struct pxa3xx_mfp_pin mfp_table[MFP_PIN_MAX];
+  * perform a read-back of any MFPR register to make sure the
+  * previous writings are finished
+  */
+-#define mfpr_sync()	(void)__raw_readl(mfpr_mmio_base + 0)
++#define mfpr_sync()	(void)__raw_readl(mfpr_mmio_base + 0x0204)
+ 
+ static inline void __mfp_config(int pin, unsigned long val)
+ {
+-- 
+1.6.0.4
+

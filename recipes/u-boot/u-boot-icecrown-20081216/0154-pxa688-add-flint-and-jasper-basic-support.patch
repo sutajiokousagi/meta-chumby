@@ -1,0 +1,1442 @@
+From 04ec4e6783bcd4d02d855027f944f5583b846024 Mon Sep 17 00:00:00 2001
+From: Mingliang Hu <mingliang.hu@marvell.com>
+Date: Wed, 21 Oct 2009 15:59:50 +0800
+Subject: [PATCH] pxa688: add flint and jasper basic support
+
+Signed-off-by: Mingliang Hu <mingliang.hu@marvell.com>
+---
+ Makefile                             |    6 +
+ board/pxa/flint/Makefile             |   49 ++++++
+ board/pxa/flint/config.mk            |   14 ++
+ board/pxa/flint/flint.c              |  302 ++++++++++++++++++++++++++++++++++
+ board/pxa/flint/u-boot.lds           |   50 ++++++
+ board/pxa/jasper/Makefile            |   49 ++++++
+ board/pxa/jasper/config.mk           |   14 ++
+ board/pxa/jasper/jasper.c            |  302 ++++++++++++++++++++++++++++++++++
+ board/pxa/jasper/u-boot.lds          |   50 ++++++
+ include/asm-arm/arch-pxa688/common.h |    2 +-
+ include/configs/mmp2_flint.h         |  244 +++++++++++++++++++++++++++
+ include/configs/mmp2_jasper.h        |  244 +++++++++++++++++++++++++++
+ 12 files changed, 1325 insertions(+), 1 deletions(-)
+ create mode 100755 board/pxa/flint/Makefile
+ create mode 100644 board/pxa/flint/config.mk
+ create mode 100755 board/pxa/flint/flint.c
+ create mode 100644 board/pxa/flint/u-boot.lds
+ create mode 100755 board/pxa/jasper/Makefile
+ create mode 100644 board/pxa/jasper/config.mk
+ create mode 100755 board/pxa/jasper/jasper.c
+ create mode 100644 board/pxa/jasper/u-boot.lds
+ create mode 100644 include/configs/mmp2_flint.h
+ create mode 100644 include/configs/mmp2_jasper.h
+
+diff --git a/Makefile b/Makefile
+index 1cbbf38..c280f34 100644
+--- a/Makefile
++++ b/Makefile
+@@ -2986,6 +2986,12 @@ smdk6400_config	:	unconfig
+ mmp2_fpga_config	:	unconfig
+ 	@$(MKCONFIG) $(@:_config=) arm 88SV581xV6 mmp2fpga	pxa	pxa688
+ 
++mmp2_flint_config	:	unconfig
++	@$(MKCONFIG) $(@:_config=) arm 88SV581xV6 flint	pxa	pxa688
++
++mmp2_jasper_config	:	unconfig
++	@$(MKCONFIG) $(@:_config=) arm 88SV581xV6 jasper pxa pxa688
++
+ #========================================================================
+ # i386
+ #========================================================================
+diff --git a/board/pxa/flint/Makefile b/board/pxa/flint/Makefile
+new file mode 100755
+index 0000000..faf0734
+--- /dev/null
++++ b/board/pxa/flint/Makefile
+@@ -0,0 +1,49 @@
++#
++# (C) Copyright 2008
++# Marvell Inc.
++# Lei Wen, <leiwen@marvell.com>
++#
++# See file CREDITS for list of people who contributed to this
++# project.
++#
++# This program is free software; you can redistribute it and/or
++# modify it under the terms of the GNU General Public License as
++# published by the Free Software Foundation; either version 2 of
++# the License, or (at your option) any later version.
++#
++# This program is distributed in the hope that it will be useful,
++# but WITHOUT ANY WARRANTY; without even the implied warranty of
++# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++# GNU General Public License for more details.
++#
++# You should have received a copy of the GNU General Public License
++# along with this program; if not, write to the Free Software
++# Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++# MA 02111-1307 USA
++#
++
++include $(TOPDIR)/config.mk
++
++LIB	= $(obj)lib$(BOARD).a
++
++COBJS	:= flint.o
++
++OBJS	:= $(addprefix $(obj),$(COBJS))
++
++$(LIB):	$(obj).depend $(OBJS)
++	$(AR) $(ARFLAGS) $@ $(OBJS) $(SOBJS)
++
++clean:
++	rm -f $(OBJS)
++
++distclean:	clean
++	rm -f $(LIB) core *.bak $(obj).depend
++
++#########################################################################
++
++# defines $(obj).depend target
++include $(SRCTREE)/rules.mk
++ 
++sinclude $(obj).depend
++
++#########################################################################
+diff --git a/board/pxa/flint/config.mk b/board/pxa/flint/config.mk
+new file mode 100644
+index 0000000..90b8531
+--- /dev/null
++++ b/board/pxa/flint/config.mk
+@@ -0,0 +1,14 @@
++#
++# image should be loaded at 0x00F00000
++#
++# UBOOT relocate at 0x1100000
++# and we could safely download to 0x1200000
++# For UBOOT less than 0x100000 = (512K)
++#
++
++ifeq ($(CONFIG_PJ4_NON_SECURE_MODE),y)
++TEXT_BASE = 0x1100000
++else
++TEXT_BASE = 0xF00000
++endif
++
+diff --git a/board/pxa/flint/flint.c b/board/pxa/flint/flint.c
+new file mode 100755
+index 0000000..f7db6cf
+--- /dev/null
++++ b/board/pxa/flint/flint.c
+@@ -0,0 +1,302 @@
++/*
++ * (C) Copyright 2005
++ * Marvell Semiconductors Ltd. <www.marvell.com>
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++#include <common.h>
++#include <asm/arch/common.h>
++#include <asm/arch/mfp.h>
++#include <asm/arch/mfp-pxa688.h>
++
++static mfp_cfg_t flint_pin_config[] __initdata = {
++	/* UART2 */
++	GPIO47_UART2_RXD,
++	GPIO48_UART2_TXD,
++
++	/* SMC */
++	SM_nCS0_nCS0,
++	SM_ADV_SM_ADV,
++	SM_SCLK_SM_SCLK,
++	SM_SCLK_SM_SCLK,
++	SM_BE0_SM_BE0,
++	SM_BE1_SM_BE1,
++
++	/* DFI */
++	PXA910_DF_IO0_ND_IO0,
++	PXA910_DF_IO1_ND_IO1,
++	PXA910_DF_IO2_ND_IO2,
++	PXA910_DF_IO3_ND_IO3,
++	PXA910_DF_IO4_ND_IO4,
++	PXA910_DF_IO5_ND_IO5,
++	PXA910_DF_IO6_ND_IO6,
++	PXA910_DF_IO7_ND_IO7,
++	PXA910_DF_IO8_ND_IO8,
++	PXA910_DF_IO9_ND_IO9,
++	PXA910_DF_IO10_ND_IO10,
++	PXA910_DF_IO11_ND_IO11,
++	PXA910_DF_IO12_ND_IO12,
++	PXA910_DF_IO13_ND_IO13,
++	PXA910_DF_IO14_ND_IO14,
++	PXA910_DF_IO15_ND_IO15,
++	DF_nCS0_SM_nCS2_nCS0,
++	DF_ALE_SM_WEn_ND_ALE,
++	DF_CLE_SM_OEn_ND_CLE,
++	DF_WEn_DF_WEn,
++	DF_REn_DF_REn,
++	DF_RDY0_DF_RDY0,
++};
++
++static struct pxa3xx_mfp_addr_map pxa688_mfp_addr_map[] __initdata = {
++
++	MFP_ADDR_X(GPIO0, GPIO54, 0xdc),
++	MFP_ADDR_X(GPIO67, GPIO98, 0x1b8),
++	MFP_ADDR_X(GPIO100, GPIO109, 0x238),
++
++	MFP_ADDR(GPIO123, 0xcc),
++	MFP_ADDR(GPIO124, 0xd0),
++
++	MFP_ADDR(DF_IO0, 0x40),
++	MFP_ADDR(DF_IO1, 0x3c),
++	MFP_ADDR(DF_IO2, 0x38),
++	MFP_ADDR(DF_IO3, 0x34),
++	MFP_ADDR(DF_IO4, 0x30),
++	MFP_ADDR(DF_IO5, 0x2c),
++	MFP_ADDR(DF_IO6, 0x28),
++	MFP_ADDR(DF_IO7, 0x24),
++	MFP_ADDR(DF_IO8, 0x20),
++	MFP_ADDR(DF_IO9, 0x1c),
++	MFP_ADDR(DF_IO10, 0x18),
++	MFP_ADDR(DF_IO11, 0x14),
++	MFP_ADDR(DF_IO12, 0x10),
++	MFP_ADDR(DF_IO13, 0xc),
++	MFP_ADDR(DF_IO14, 0x8),
++	MFP_ADDR(DF_IO15, 0x4),
++
++	MFP_ADDR(DF_nCS0_SM_nCS2, 0x44),
++	MFP_ADDR(DF_nCS1_SM_nCS3, 0x48),
++	MFP_ADDR(SM_nCS0, 0x4c),
++	MFP_ADDR(SM_nCS1, 0x50),
++	MFP_ADDR(DF_WEn, 0x54),
++	MFP_ADDR(DF_REn, 0x58),
++	MFP_ADDR(DF_CLE_SM_OEn, 0x5c),
++	MFP_ADDR(DF_ALE_SM_WEn, 0x60),
++	MFP_ADDR(SM_SCLK, 0x64),
++	MFP_ADDR(DF_RDY0, 0x68),
++	MFP_ADDR(SM_BE0, 0x6c),
++	MFP_ADDR(SM_BE1, 0x70),
++	MFP_ADDR(SM_ADV, 0x74),
++	MFP_ADDR(DF_RDY1, 0x78),
++	MFP_ADDR(SM_ADVMUX, 0x7c),
++	MFP_ADDR(SM_RDY, 0x80),
++
++
++	MFP_ADDR_END,
++};
++
++void
++dummy_delay(unsigned  int delay)
++{
++    volatile unsigned int i;
++    for(i = 0; i < delay; i++);
++}
++
++unsigned long initdram (int board_type)
++{
++    return (PHYS_SDRAM_SIZE_DEC*1024*1024);
++}
++
++int board_init (void)
++{
++    DECLARE_GLOBAL_DATA_PTR;
++    volatile unsigned int reg;
++
++    /* TODO: Should only enable the bits that make sense at this point */
++    /* Turn on clock gating (PMUM_CGR_SP) */
++    /**(volatile unsigned int *)0xd4050024 = 0x0818e33c;*/
++    /* Turn on clock gating (PMUM_CGR_PJ) */
++    *(volatile unsigned int *)0xd4051024 = 0x0818e33c;
++
++    /* Below is for IRE */
++    *(volatile unsigned int *)0xd4282848 = 0x00000008;
++    *(volatile unsigned int *)0xd4282848 = 0x00000009;
++	
++    /* UART2 clk */
++    *(volatile unsigned int *)0xD4015030 = 0x3; 
++
++    /* TWSI1 clk*/
++    *(volatile unsigned int *)0xD4015004 = 0x3; 
++    dummy_delay(99999);
++	
++    /* no clock gated*/
++    *(volatile unsigned int *)0xd405000c=0x80E50FFF;
++
++    /* audio bus clock*/
++    *(volatile unsigned int *)0xd42820c=0x1710;
++    *(volatile unsigned int *)0xd42820c=0x1712;
++
++    /* vmeta clock*/
++    *(volatile unsigned int *)0xd4282a4=0x718;
++    *(volatile unsigned int *)0xd4282a4=0x71B;
++
++    /* enable GPIO clock */
++    *(volatile unsigned int *)0xd4015038=0x03;
++
++    __asm__ __volatile__ ("                     \n\
++         @ Enable MMX                           \n\
++	 @mrc     p15, 0, r0, c1, c0, 2        \n\
++	 @orr     r0,  r0, #f	@ cp0, cp1      \n\
++	 @mcr     p15, 0, r0, c1, c0, 2        \n\
++                                                \n\
++	 @ Allow access of performance counters \n\
++         @ (PMU) from user space                \n\
++	 mov	r0, #0x1                        \n\
++	 mrc	p15, 0, r0, c9, c14, 0          \n\
++	 orr	r0, r0, #0x1                    \n\
++	 mcr	p15, 0, r0, c9, c14, 0          \n\
++                                                \n\
++	 @ Ensure branch prediction is          \n\
++         @ enabled - BPU (Default)              \n\
++	 mrc	p15, 0, r0, c1, c0, 0           \n\
++	 orr	r0, r0, #(1<<11)                \n\
++	 mcr	p15, 0, r0, c1, c0, 0           \n\
++         " : "=r" (reg));
++
++
++    gd->bd->bi_dram[0].start = PHYS_SDRAM_1;
++    gd->bd->bi_dram[0].size  = PHYS_SDRAM_1_SIZE;
++
++    /* arch number of FPGA Board */
++    gd->bd->bi_arch_number = 2383;  // MACH_TYPE_FLINT
++    
++    /* adress of boot parameters */
++#ifdef CONFIG_PJ4_NON_SECURE_MODE
++    gd->bd->bi_boot_params = 0x00200100;
++#else
++    gd->bd->bi_boot_params = 0x00000100;
++#endif
++    gd->baudrate = CONFIG_BAUDRATE;
++
++	BU_REG_WRITE( APBC_AIB_CLK_RST, APBC_AIB_CLK_RST_FNCLK  |
++		APBC_AIB_CLK_RST_APBCLK );
++
++    BU_REG_WRITE( SMC_CSDFICFGX, 0x51890009 );              // SMC_CSDFICFG0
++    BU_REG_WRITE( SMC_CSADRMAPX, 0x10000F00 );              // SMC_CSADRMAP0
++	//BU_REG_WRITE(0xd4283824, 0xC6CFF2C9 );
++	//BU_REG_WRITE(0xd4283894, 0x11000009 );
++
++	BU_REG_WRITE(0xd4015000, 0x83 );
++	BU_REG_WRITE(0xd4015074, 0x3 );
++	BU_REG_WRITE(0xd4282864, 0x9 );
++	BU_REG_WRITE(0xd4282860, 0x3f|(0<<6));
++
++	/*configure for MFP*/
++	pxa3xx_init_mfp();
++    pxa3xx_mfp_init_addr(pxa688_mfp_addr_map);
++
++    pxa3xx_mfp_config(ARRAY_AND_SIZE(flint_pin_config));
++    pxa3xx_mfp_set_pull(MFP_CFG_PIN(GPIO47_UART2_RXD), MFP_PULL_HIGH);
++    pxa3xx_mfp_set_pull(MFP_CFG_PIN(GPIO48_UART2_TXD), MFP_PULL_HIGH);
++    pxa3xx_mfp_set_pull(MFP_CFG_PIN(DF_RDY0_DF_RDY0), MFP_PULL_HIGH);
++
++    return 0;
++}
++
++int misc_init_r (void)
++{
++        char *env;
++                                                                                                                                               
++        /* primary network interface */
++        env = getenv("ethprime");
++        if(!env)
++               setenv("ethprime","eth0");
++
++        /* default usb mode */
++	env = getenv("usbMode");
++        if(!env)
++               setenv("usbMode","host");
++
++        /* linux boot arguments */
++   	env = getenv("default_load_addr");
++   	if(!env)
++      		setenv("default_load_addr",CONFIG_SYS_DEF_LOAD_ADDR);
++
++        env = getenv("image_name");
++        if(!env)
++                setenv("image_name",CONFIG_SYS_IMG_NAME);
++
++        env = getenv("bootfile");
++        if(!env)
++                setenv("bootfile",CONFIG_SYS_IMG_NAME);
++                
++   	env = getenv("initrd_name");
++       	if(!env)
++                setenv("initrd_name",CONFIG_SYS_INITRD_NAME);
++ 
++   	env = getenv("initrd_load_addr");
++       	if(!env)
++               	setenv("initrd_load_addr",CONFIG_SYS_INITRD_LOAD_ADDR);
++
++   	env = getenv("initrd_size");
++        if(!env)
++                setenv("initrd_size",CONFIG_SYS_INITRD_SIZE);
++ 
++        env = getenv("standalone_mtd");
++        if(!env)
++                setenv("standalone_mtd","fsload $(default_load_addr) $(image_name);setenv bootargs $(bootargs) root=/dev/mtdblock0 rw rootfstype=jffs2 ip=$(ipaddr):$(serverip)$(bootargs_end);bootm $(default_load_addr);");
++
++        env = getenv("standalone_initrd");
++        if(!env)
++                setenv("standalone_initrd","fsload $(default_load_addr) $(image_name);fsload $(initrd_load_addr) $(initrd_name);setenv bootargs $(bootargs) root=/dev/ram0 rw initrd=0x$(initrd_load_addr),0x$(initrd_size) ip=$(ipaddr):$(serverip)$(bootargs_end); bootm $(default_load_addr);");
++        
++	return 0;
++}
++
++
++int dram_init (void)
++{
++	return 0;
++}
++
++int checkboard (void)
++{
++	return display_marvell_banner();
++}
++
++int display_marvell_banner (void)
++{
++   printf("\n");
++   printf(" __  __                      _ _\n");
++   printf("|  \\/  | __ _ _ ____   _____| | |\n");
++   printf("| |\\/| |/ _` | '__\\ \\ / / _ \\ | |\n");
++   printf("| |  | | (_| | |   \\ V /  __/ | |\n");
++   printf("|_|  |_|\\__,_|_|    \\_/ \\___|_|_|\n");
++   printf(" _   _     ____              _\n");
++   printf("| | | |   | __ )  ___   ___ | |_ \n");
++   printf("| | | |___|  _ \\ / _ \\ / _ \\| __| \n");
++   printf("| |_| |___| |_) | (_) | (_) | |_ \n");
++   printf(" \\___/    |____/ \\___/ \\___/ \\__| ");
++   printf("\n\nMARVELL MMP2 AP.");
++   printf("\nBased on Feroceon Core with ARM1176 JZF CPU.\n\n"); 
++
++   return 0;
++}
++
++void lowlevel_init()
++{
++	return;
++}
+diff --git a/board/pxa/flint/u-boot.lds b/board/pxa/flint/u-boot.lds
+new file mode 100644
+index 0000000..5f6067b
+--- /dev/null
++++ b/board/pxa/flint/u-boot.lds
+@@ -0,0 +1,50 @@
++/*
++ * (C) Copyright 2002
++ * Gary Jennejohn, DENX Software Engineering, <gj@denx.de>
++ *
++ * See file CREDITS for list of people who contributed to this
++ * project.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++OUTPUT_FORMAT("elf32-littlearm", "elf32-littlearm", "elf32-littlearm")
++OUTPUT_ARCH(arm)
++ENTRY(_start)
++SECTIONS
++{
++	. = 0x00000000;
++	. = ALIGN(4);
++	.text	:
++	{
++	  cpu/88SV581xV6/start.o	(.text)	  
++	  *(.text)
++	}
++	.rodata : { *(.rodata) }
++	. = ALIGN(4);
++	.data : { *(.data) }
++	. = ALIGN(4);
++	.got : { *(.got) }
++	. = ALIGN(4);
++	__u_boot_cmd_start = .;
++	.u_boot_cmd : { *(.u_boot_cmd) }
++	__u_boot_cmd_end = .;
++
++	. = ALIGN(4);
++	__bss_start = .;
++	.bss : { *(.bss) }
++	_end = .;
++}
+diff --git a/board/pxa/jasper/Makefile b/board/pxa/jasper/Makefile
+new file mode 100755
+index 0000000..5172cb7
+--- /dev/null
++++ b/board/pxa/jasper/Makefile
+@@ -0,0 +1,49 @@
++#
++# (C) Copyright 2008
++# Marvell Inc.
++# Lei Wen, <leiwen@marvell.com>
++#
++# See file CREDITS for list of people who contributed to this
++# project.
++#
++# This program is free software; you can redistribute it and/or
++# modify it under the terms of the GNU General Public License as
++# published by the Free Software Foundation; either version 2 of
++# the License, or (at your option) any later version.
++#
++# This program is distributed in the hope that it will be useful,
++# but WITHOUT ANY WARRANTY; without even the implied warranty of
++# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++# GNU General Public License for more details.
++#
++# You should have received a copy of the GNU General Public License
++# along with this program; if not, write to the Free Software
++# Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++# MA 02111-1307 USA
++#
++
++include $(TOPDIR)/config.mk
++
++LIB	= $(obj)lib$(BOARD).a
++
++COBJS	:= jasper.o
++
++OBJS	:= $(addprefix $(obj),$(COBJS))
++
++$(LIB):	$(obj).depend $(OBJS)
++	$(AR) $(ARFLAGS) $@ $(OBJS) $(SOBJS)
++
++clean:
++	rm -f $(OBJS)
++
++distclean:	clean
++	rm -f $(LIB) core *.bak $(obj).depend
++
++#########################################################################
++
++# defines $(obj).depend target
++include $(SRCTREE)/rules.mk
++ 
++sinclude $(obj).depend
++
++#########################################################################
+diff --git a/board/pxa/jasper/config.mk b/board/pxa/jasper/config.mk
+new file mode 100644
+index 0000000..90b8531
+--- /dev/null
++++ b/board/pxa/jasper/config.mk
+@@ -0,0 +1,14 @@
++#
++# image should be loaded at 0x00F00000
++#
++# UBOOT relocate at 0x1100000
++# and we could safely download to 0x1200000
++# For UBOOT less than 0x100000 = (512K)
++#
++
++ifeq ($(CONFIG_PJ4_NON_SECURE_MODE),y)
++TEXT_BASE = 0x1100000
++else
++TEXT_BASE = 0xF00000
++endif
++
+diff --git a/board/pxa/jasper/jasper.c b/board/pxa/jasper/jasper.c
+new file mode 100755
+index 0000000..337a85c
+--- /dev/null
++++ b/board/pxa/jasper/jasper.c
+@@ -0,0 +1,302 @@
++/*
++ * (C) Copyright 2005
++ * Marvell Semiconductors Ltd. <www.marvell.com>
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++#include <common.h>
++#include <asm/arch/common.h>
++#include <asm/arch/mfp.h>
++#include <asm/arch/mfp-pxa688.h>
++
++static mfp_cfg_t jasper_pin_config[] __initdata = {
++	/* UART2 */
++	GPIO47_UART2_RXD,
++	GPIO48_UART2_TXD,
++
++	/* SMC */
++	SM_nCS0_nCS0,
++	SM_ADV_SM_ADV,
++	SM_SCLK_SM_SCLK,
++	SM_SCLK_SM_SCLK,
++	SM_BE0_SM_BE0,
++	SM_BE1_SM_BE1,
++
++	/* DFI */
++	PXA910_DF_IO0_ND_IO0,
++	PXA910_DF_IO1_ND_IO1,
++	PXA910_DF_IO2_ND_IO2,
++	PXA910_DF_IO3_ND_IO3,
++	PXA910_DF_IO4_ND_IO4,
++	PXA910_DF_IO5_ND_IO5,
++	PXA910_DF_IO6_ND_IO6,
++	PXA910_DF_IO7_ND_IO7,
++	PXA910_DF_IO8_ND_IO8,
++	PXA910_DF_IO9_ND_IO9,
++	PXA910_DF_IO10_ND_IO10,
++	PXA910_DF_IO11_ND_IO11,
++	PXA910_DF_IO12_ND_IO12,
++	PXA910_DF_IO13_ND_IO13,
++	PXA910_DF_IO14_ND_IO14,
++	PXA910_DF_IO15_ND_IO15,
++	DF_nCS0_SM_nCS2_nCS0,
++	DF_ALE_SM_WEn_ND_ALE,
++	DF_CLE_SM_OEn_ND_CLE,
++	DF_WEn_DF_WEn,
++	DF_REn_DF_REn,
++	DF_RDY0_DF_RDY0,
++};
++
++static struct pxa3xx_mfp_addr_map pxa688_mfp_addr_map[] __initdata = {
++
++	MFP_ADDR_X(GPIO0, GPIO54, 0xdc),
++	MFP_ADDR_X(GPIO67, GPIO98, 0x1b8),
++	MFP_ADDR_X(GPIO100, GPIO109, 0x238),
++
++	MFP_ADDR(GPIO123, 0xcc),
++	MFP_ADDR(GPIO124, 0xd0),
++
++	MFP_ADDR(DF_IO0, 0x40),
++	MFP_ADDR(DF_IO1, 0x3c),
++	MFP_ADDR(DF_IO2, 0x38),
++	MFP_ADDR(DF_IO3, 0x34),
++	MFP_ADDR(DF_IO4, 0x30),
++	MFP_ADDR(DF_IO5, 0x2c),
++	MFP_ADDR(DF_IO6, 0x28),
++	MFP_ADDR(DF_IO7, 0x24),
++	MFP_ADDR(DF_IO8, 0x20),
++	MFP_ADDR(DF_IO9, 0x1c),
++	MFP_ADDR(DF_IO10, 0x18),
++	MFP_ADDR(DF_IO11, 0x14),
++	MFP_ADDR(DF_IO12, 0x10),
++	MFP_ADDR(DF_IO13, 0xc),
++	MFP_ADDR(DF_IO14, 0x8),
++	MFP_ADDR(DF_IO15, 0x4),
++
++	MFP_ADDR(DF_nCS0_SM_nCS2, 0x44),
++	MFP_ADDR(DF_nCS1_SM_nCS3, 0x48),
++	MFP_ADDR(SM_nCS0, 0x4c),
++	MFP_ADDR(SM_nCS1, 0x50),
++	MFP_ADDR(DF_WEn, 0x54),
++	MFP_ADDR(DF_REn, 0x58),
++	MFP_ADDR(DF_CLE_SM_OEn, 0x5c),
++	MFP_ADDR(DF_ALE_SM_WEn, 0x60),
++	MFP_ADDR(SM_SCLK, 0x64),
++	MFP_ADDR(DF_RDY0, 0x68),
++	MFP_ADDR(SM_BE0, 0x6c),
++	MFP_ADDR(SM_BE1, 0x70),
++	MFP_ADDR(SM_ADV, 0x74),
++	MFP_ADDR(DF_RDY1, 0x78),
++	MFP_ADDR(SM_ADVMUX, 0x7c),
++	MFP_ADDR(SM_RDY, 0x80),
++
++
++	MFP_ADDR_END,
++};
++
++void
++dummy_delay(unsigned  int delay)
++{
++    volatile unsigned int i;
++    for(i = 0; i < delay; i++);
++}
++
++unsigned long initdram (int board_type)
++{
++    return (PHYS_SDRAM_SIZE_DEC*1024*1024);
++}
++
++int board_init (void)
++{
++    DECLARE_GLOBAL_DATA_PTR;
++    volatile unsigned int reg;
++
++    /* TODO: Should only enable the bits that make sense at this point */
++    /* Turn on clock gating (PMUM_CGR_SP) */
++    /**(volatile unsigned int *)0xd4050024 = 0x0818e33c;*/
++    /* Turn on clock gating (PMUM_CGR_PJ) */
++    *(volatile unsigned int *)0xd4051024 = 0x0818e33c;
++
++    /* Below is for IRE */
++    *(volatile unsigned int *)0xd4282848 = 0x00000008;
++    *(volatile unsigned int *)0xd4282848 = 0x00000009;
++	
++    /* UART2 clk */
++    *(volatile unsigned int *)0xD4015030 = 0x3; 
++
++    /* TWSI1 clk*/
++    *(volatile unsigned int *)0xD4015004 = 0x3; 
++    dummy_delay(99999);
++	
++    /* no clock gated*/
++    *(volatile unsigned int *)0xd405000c=0x80E50FFF;
++
++    /* audio bus clock*/
++    *(volatile unsigned int *)0xd42820c=0x1710;
++    *(volatile unsigned int *)0xd42820c=0x1712;
++
++    /* vmeta clock*/
++    *(volatile unsigned int *)0xd4282a4=0x718;
++    *(volatile unsigned int *)0xd4282a4=0x71B;
++
++    /* enable GPIO clock */
++    *(volatile unsigned int *)0xd4015038=0x03;
++
++    __asm__ __volatile__ ("                     \n\
++         @ Enable MMX                           \n\
++	 @mrc     p15, 0, r0, c1, c0, 2        \n\
++	 @orr     r0,  r0, #f	@ cp0, cp1      \n\
++	 @mcr     p15, 0, r0, c1, c0, 2        \n\
++                                                \n\
++	 @ Allow access of performance counters \n\
++         @ (PMU) from user space                \n\
++	 mov	r0, #0x1                        \n\
++	 mrc	p15, 0, r0, c9, c14, 0          \n\
++	 orr	r0, r0, #0x1                    \n\
++	 mcr	p15, 0, r0, c9, c14, 0          \n\
++                                                \n\
++	 @ Ensure branch prediction is          \n\
++         @ enabled - BPU (Default)              \n\
++	 mrc	p15, 0, r0, c1, c0, 0           \n\
++	 orr	r0, r0, #(1<<11)                \n\
++	 mcr	p15, 0, r0, c1, c0, 0           \n\
++         " : "=r" (reg));
++
++
++    gd->bd->bi_dram[0].start = PHYS_SDRAM_1;
++    gd->bd->bi_dram[0].size  = PHYS_SDRAM_1_SIZE;
++
++    /* arch number of FPGA Board */
++    gd->bd->bi_arch_number = 2382;  // MACH_TYPE_JASPER
++    
++    /* adress of boot parameters */
++#ifdef CONFIG_PJ4_NON_SECURE_MODE
++    gd->bd->bi_boot_params = 0x00200100;
++#else
++    gd->bd->bi_boot_params = 0x00000100;
++#endif
++    gd->baudrate = CONFIG_BAUDRATE;
++
++	BU_REG_WRITE( APBC_AIB_CLK_RST, APBC_AIB_CLK_RST_FNCLK  |
++		APBC_AIB_CLK_RST_APBCLK );
++
++    BU_REG_WRITE( SMC_CSDFICFGX, 0x51890009 );              // SMC_CSDFICFG0
++    BU_REG_WRITE( SMC_CSADRMAPX, 0x10000F00 );              // SMC_CSADRMAP0
++	//BU_REG_WRITE(0xd4283824, 0xC6CFF2C9 );
++	//BU_REG_WRITE(0xd4283894, 0x11000009 );
++
++	BU_REG_WRITE(0xd4015000, 0x83 );
++	BU_REG_WRITE(0xd4015074, 0x3 );
++	BU_REG_WRITE(0xd4282864, 0x9 );
++	BU_REG_WRITE(0xd4282860, 0x3f|(0<<6));
++
++	/*configure for MFP*/
++	pxa3xx_init_mfp();
++    pxa3xx_mfp_init_addr(pxa688_mfp_addr_map);
++
++    pxa3xx_mfp_config(ARRAY_AND_SIZE(jasper_pin_config));
++    pxa3xx_mfp_set_pull(MFP_CFG_PIN(GPIO47_UART2_RXD), MFP_PULL_HIGH);
++    pxa3xx_mfp_set_pull(MFP_CFG_PIN(GPIO48_UART2_TXD), MFP_PULL_HIGH);
++    pxa3xx_mfp_set_pull(MFP_CFG_PIN(DF_RDY0_DF_RDY0), MFP_PULL_HIGH);
++
++    return 0;
++}
++
++int misc_init_r (void)
++{
++        char *env;
++                                                                                                                                               
++        /* primary network interface */
++        env = getenv("ethprime");
++        if(!env)
++               setenv("ethprime","eth0");
++
++        /* default usb mode */
++	env = getenv("usbMode");
++        if(!env)
++               setenv("usbMode","host");
++
++        /* linux boot arguments */
++   	env = getenv("default_load_addr");
++   	if(!env)
++      		setenv("default_load_addr",CONFIG_SYS_DEF_LOAD_ADDR);
++
++        env = getenv("image_name");
++        if(!env)
++                setenv("image_name",CONFIG_SYS_IMG_NAME);
++
++        env = getenv("bootfile");
++        if(!env)
++                setenv("bootfile",CONFIG_SYS_IMG_NAME);
++                
++   	env = getenv("initrd_name");
++       	if(!env)
++                setenv("initrd_name",CONFIG_SYS_INITRD_NAME);
++ 
++   	env = getenv("initrd_load_addr");
++       	if(!env)
++               	setenv("initrd_load_addr",CONFIG_SYS_INITRD_LOAD_ADDR);
++
++   	env = getenv("initrd_size");
++        if(!env)
++                setenv("initrd_size",CONFIG_SYS_INITRD_SIZE);
++ 
++        env = getenv("standalone_mtd");
++        if(!env)
++                setenv("standalone_mtd","fsload $(default_load_addr) $(image_name);setenv bootargs $(bootargs) root=/dev/mtdblock0 rw rootfstype=jffs2 ip=$(ipaddr):$(serverip)$(bootargs_end);bootm $(default_load_addr);");
++
++        env = getenv("standalone_initrd");
++        if(!env)
++                setenv("standalone_initrd","fsload $(default_load_addr) $(image_name);fsload $(initrd_load_addr) $(initrd_name);setenv bootargs $(bootargs) root=/dev/ram0 rw initrd=0x$(initrd_load_addr),0x$(initrd_size) ip=$(ipaddr):$(serverip)$(bootargs_end); bootm $(default_load_addr);");
++        
++	return 0;
++}
++
++
++int dram_init (void)
++{
++	return 0;
++}
++
++int checkboard (void)
++{
++	return display_marvell_banner();
++}
++
++int display_marvell_banner (void)
++{
++   printf("\n");
++   printf(" __  __                      _ _\n");
++   printf("|  \\/  | __ _ _ ____   _____| | |\n");
++   printf("| |\\/| |/ _` | '__\\ \\ / / _ \\ | |\n");
++   printf("| |  | | (_| | |   \\ V /  __/ | |\n");
++   printf("|_|  |_|\\__,_|_|    \\_/ \\___|_|_|\n");
++   printf(" _   _     ____              _\n");
++   printf("| | | |   | __ )  ___   ___ | |_ \n");
++   printf("| | | |___|  _ \\ / _ \\ / _ \\| __| \n");
++   printf("| |_| |___| |_) | (_) | (_) | |_ \n");
++   printf(" \\___/    |____/ \\___/ \\___/ \\__| ");
++   printf("\n\nMARVELL MMP2 AP.");
++   printf("\nBased on Feroceon Core with ARM1176 JZF CPU.\n\n"); 
++
++   return 0;
++}
++
++void lowlevel_init()
++{
++	return;
++}
+diff --git a/board/pxa/jasper/u-boot.lds b/board/pxa/jasper/u-boot.lds
+new file mode 100644
+index 0000000..5f6067b
+--- /dev/null
++++ b/board/pxa/jasper/u-boot.lds
+@@ -0,0 +1,50 @@
++/*
++ * (C) Copyright 2002
++ * Gary Jennejohn, DENX Software Engineering, <gj@denx.de>
++ *
++ * See file CREDITS for list of people who contributed to this
++ * project.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++OUTPUT_FORMAT("elf32-littlearm", "elf32-littlearm", "elf32-littlearm")
++OUTPUT_ARCH(arm)
++ENTRY(_start)
++SECTIONS
++{
++	. = 0x00000000;
++	. = ALIGN(4);
++	.text	:
++	{
++	  cpu/88SV581xV6/start.o	(.text)	  
++	  *(.text)
++	}
++	.rodata : { *(.rodata) }
++	. = ALIGN(4);
++	.data : { *(.data) }
++	. = ALIGN(4);
++	.got : { *(.got) }
++	. = ALIGN(4);
++	__u_boot_cmd_start = .;
++	.u_boot_cmd : { *(.u_boot_cmd) }
++	__u_boot_cmd_end = .;
++
++	. = ALIGN(4);
++	__bss_start = .;
++	.bss : { *(.bss) }
++	_end = .;
++}
+diff --git a/include/asm-arm/arch-pxa688/common.h b/include/asm-arm/arch-pxa688/common.h
+index 0e5be49..f788c62 100644
+--- a/include/asm-arm/arch-pxa688/common.h
++++ b/include/asm-arm/arch-pxa688/common.h
+@@ -164,7 +164,7 @@ static inline int __decalare_return(void)
+  */
+ #define APBC_BASE       0xD4015000
+ 
+-#define APBC_AIB_CLK_RST                (APBC_BASE+0x003C)      /* 32 bit       Clock/Reset
++#define APBC_AIB_CLK_RST                (APBC_BASE+0x0064)      /* 32 bit       Clock/Reset
+ 								 * Control
+ 								 * Register for
+ 								 * AIB
+diff --git a/include/configs/mmp2_flint.h b/include/configs/mmp2_flint.h
+new file mode 100644
+index 0000000..c9b65d9
+--- /dev/null
++++ b/include/configs/mmp2_flint.h
+@@ -0,0 +1,244 @@
++/*
++ * (C) Copyright 2008
++ * Marvell Semiconductors Ltd. Shanghai, China.
++ *
++ * Configuration for Tavor EVB board.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.    See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++#ifndef __CONFIG_H
++#define __CONFIG_H
++
++/************/
++/* VERSIONS */
++/************/
++#define CONFIG_IDENT_STRING   		"\nMarvell version: 1.1.1.1 MMP2"
++
++/* version number passing when loading Kernel */
++#define VER_NUM 			0x01010101	/* 1.1.1.18 */
++/*
++ * High Level Configuration Options
++ * (easy to change)
++ */
++#define CONFIG_CPU_PXA910		1 /* This is an pxa910 core*/
++#define CONFIG_CPU_PXA688		1 /* This is an pxa410 core*/
++#define CONFIG_PXAXXX      		1 /*  pxa family */
++#define CONFIG_MMP2_FLINT	    		1
++#define CONFIG_FFUART
++
++#define CONFIG_SYS_BOARD_NAME		"ARM1176JZF based"
++#define CONFIG_SYS_VENDOR_NAME     	"MARVELL"
++
++#ifdef CONFIG_PJ4_NON_SECURE_MODE
++#define CONFIG_SYS_UBOOT_BASE		0x1100000	
++#define CONFIG_SYS_MEMTEST_START      	0x00300000
++#define CONFIG_SYS_MEMTEST_END        	0x01100000
++#else
++#define CONFIG_SYS_UBOOT_BASE		0xf00000	
++#define CONFIG_SYS_MEMTEST_START      	0x00100000
++#define CONFIG_SYS_MEMTEST_END        	0x00f00000
++#endif
++
++#define CONFIG_SYS_HZ   		(32768)      /* KV - Timer 0 is clocked at 3.25 MHz */
++#define CONFIG_SYS_TIMERBASE 		0xD4014000 
++#define CONFIG_SYS_CPUSPEED		0x161		/* set core clock to 400/200/100 MHz */
++#define CONFIG_DISPLAY_BOARDINFO
++
++#define CONFIG_CMDLINE_TAG         	1   /* enable passing of ATAGs  */
++#define CONFIG_SETUP_MEMORY_TAGS   	1
++#define CONFIG_MISC_INIT_R         	1   /* call misc_init_r during start up */
++
++/*
++ * Size of malloc() pool
++ */
++#define CONFIG_SYS_MALLOC_LEN      	(CONFIG_SYS_ENV_SIZE + 512*1024)
++#define CONFIG_SYS_GBL_DATA_SIZE   	128   /* size in bytes reserved for initial data */
++
++/*
++ *  Configuration
++ */
++#define CONFIG_AUTO_COMPLETE
++#define CONFIG_CONS_INDEX     		1
++#undef  CONFIG_SERIAL_SOFTWARE_FIFO
++#define CONFIG_SYS_NS16550
++#define CONFIG_SYS_NS16550_SERIAL
++#define CONFIG_SYS_NS16550_REG_SIZE   	-4
++#define CONFIG_SYS_NS16550_CLK        	14745600
++#define CONFIG_BAUDRATE        		115200
++#define CONFIG_SYS_BAUDRATE_TABLE     	{ 9600, 19200, 38400, 57600, 115200 }
++#define CONFIG_SYS_NS16550_COM1       	0xD4017000 /* configure for PXA910*/
++
++#define CONFIG_SHOW_BOOT_PROGRESS
++
++#define CONFIG_CMD_NET
++#define CONFIG_NET_MULTI
++#define MV_ETH_DEVS 			1
++
++#define CONFIG_IPADDR      		192.168.1.101
++
++#define CONFIG_SERVERIP    		192.168.1.100
++
++#define CONFIG_ETHADDR			"00:00:5A:9F:6D:82"
++
++/* enable passing of ATAGs  */
++#define CONFIG_CMDLINE_TAG       	1
++#define CONFIG_SETUP_MEMORY_TAGS 	1
++#define CONFIG_SYS_TCLK         	0 /* not in use */
++#define CONFIG_SYS_BUS_CLK         	0 /* not in use */
++#define CONFIG_ENV_SIZE		 	0x4000
++#define CONFIG_ENV_OFFSET        	0x40000
++
++/***************************************/
++/* LINUX BOOT and other ENV PARAMETERS */
++/***************************************/
++#define CONFIG_SYS_BOOTARGS_END     	":::MMP2:eth0:none"
++#define CONFIG_SYS_BOOTARGS_ROOT    	"root=/dev/nfs rw init=/linuxrc"
++#define CONFIG_ZERO_BOOTDELAY_CHECK
++#ifdef CONFIG_PJ4_NON_SECURE_MODE
++#define CONFIG_SYS_LOAD_ADDR        	0x00700000   /* default load address   */
++#define CONFIG_SYS_DEF_LOAD_ADDR    	"0x00700000"
++#else
++#define CONFIG_SYS_LOAD_ADDR        	0x00500000   /* default load address   */
++#define CONFIG_SYS_DEF_LOAD_ADDR    	"0x00500000"
++#endif
++#define CONFIG_SYS_IMG_NAME		"zImage"
++#define CONFIG_SYS_INITRD_NAME      	"ramdisk.image.gz"
++#ifdef CONFIG_PJ4_NON_SECURE_MODE
++#define CONFIG_SYS_INITRD_LOAD_ADDR 	"a00000"
++#else
++#define CONFIG_SYS_INITRD_LOAD_ADDR 	"800000"
++#endif
++#define CONFIG_SYS_INITRD_SIZE      	"400000"
++#undef  CONFIG_BOOTARGS
++
++#define CONFIG_BOOTDELAY        	10
++
++#if (CONFIG_BOOTDELAY >= 0)
++
++/* boot arguments" */
++#ifdef CONFIG_PJ4_NON_SECURE_MODE
++#define CONFIG_ONENANDBOOT	     	"onenand read 0x700000 0x920000 0x300000"
++#define CONFIG_NANDBOOT 	     	"nand read 0x700000 0x920000 0x300000"
++#define CONFIG_BOOTCOMMAND      	"setenv autoboot boot; bootz 0x700000; setenv autoboot none"
++#else
++#define CONFIG_ONENANDBOOT	     	"onenand read 0x500000 0x920000 0x300000"
++#define CONFIG_NANDBOOT 	     	"nand read 0x500000 0x920000 0x300000"
++#define CONFIG_BOOTCOMMAND      	"setenv autoboot boot; bootz 0x500000; setenv autoboot none"
++#endif
++#define CONFIG_ROOTPATH   		/tftpboot/rootfs_arm
++
++#endif /* #if (CONFIG_BOOTDELAY >= 0) */
++
++#define CONFIG_SYS_BARGSIZE   		CONFIG_SYS_CBSIZE   /* Boot Argument Buffer Size   */
++
++/*
++ * For booting Linux, the board info and command line data
++ * have to be in the first 8 MB of memory, since this is
++ * the maximum mapped by the Linux kernel during initialization.
++ */
++#define CONFIG_SYS_BOOTMAPSZ      	(8<<20)   /* Initial Memory map for Linux */
++
++/*
++ * Miscellaneous configurable options
++ */
++#define CONFIG_SYS_LONGHELP        	/* undef to save memory     */
++#define CONFIG_SYS_PROMPT         	"MMP2>> "   /* Monitor Command Prompt   */
++#define CONFIG_SYS_PROMPT_HUSH_PS2     	"> "
++/* Console I/O Buffer Size  */
++#define CONFIG_SYS_CBSIZE         	512
++/* Print Buffer Size */
++#define CONFIG_SYS_PBSIZE         	(CONFIG_SYS_CBSIZE+sizeof(CONFIG_SYS_PROMPT)+16)
++/* max number of command args   */
++#define CONFIG_SYS_MAXARGS        	16
++/* Boot Argument Buffer Size    */
++#define CONFIG_SYS_BARGSIZE       	CONFIG_SYS_CBSIZE
++#undef  CONFIG_SYS_CLKS_IN_HZ         	/* everything, incl board info, in Hz */
++#define CONFIG_ENV_OVERWRITE    	/* allow to change env parameters */
++#undef  CONFIG_INIT_CRITICAL
++#define CONFIG_CMDLINE_EDITING
++#define CONFIG_COMMAND_HISTORY
++#define CONFIG_COMMAND_EDIT
++#define CONFIG_SYS_64BIT_VSPRINTF
++
++
++/*-----------------------------------------------------------------------
++ * Stack sizes
++ *
++ * The stack sizes are set up in start.S using the settings below
++ */
++#define CONFIG_STACKSIZE       		(128*1024)   /* regular stack */
++#ifdef  CONFIG_USE_IRQ
++#define CONFIG_STACKSIZE_IRQ   		(4*1024)   /* IRQ stack */
++#define CONFIG_STACKSIZE_FIQ   		(4*1024)   /* FIQ stack */
++#endif
++
++/*-----------------------------------------------------------------------
++ * Physical Memory Map
++ */
++#define CONFIG_NR_DRAM_BANKS    	1   /* we have 1 bank of DRAM */
++#ifdef CONFIG_PJ4_NON_SECURE_MODE
++#define PHYS_SDRAM_1            	0x00200000   /* SDRAM Bank #1 */
++#define PHYS_SDRAM_1_SIZE       	0x07e00000   /* 126 MB */
++#define PHYS_SDRAM_SIZE_DEC     	126
++#else
++#define PHYS_SDRAM_1            	0x00000000   /* SDRAM Bank #1 */
++#define PHYS_SDRAM_1_SIZE       	0x08000000   /* 126 MB */
++#define PHYS_SDRAM_SIZE_DEC     	128
++#endif
++#define CONFIG_SYS_ENV_SIZE            	0x10000   /* Total Size of Environment Sector */
++#define	CONFIG_ENV_IS_NOWHERE		1
++#define CONFIG_SYS_NO_FLASH		1
++#define CONFIG_BBM			1
++
++/*-----------------------------------------------------------------------
++ * NAND and DFC configuration
++ */
++#define CONFIG_CMD_NAND 		1
++#define CONFIG_SYS_MAX_NAND_DEVICE	1         /* Max number of NAND devices */
++#define CONFIG_SYS_NAND_BASE		0xD4283000
++
++/*-----------------------------------------------------------------------
++ * ONENAND configuration
++ */
++#define CONFIG_CMD_ONENAND 		1
++#define CONFIG_SYS_ONENAND_BASE 	0x80000000  /* configure for PXA910*/
++
++/*-----------------------------------------------------------------------
++ * FREQUENCE configuration
++ */
++#define CONFIG_CMD_FREQUENCE		1
++
++#undef TURN_ON_ETHERNET
++#define TURN_ON_ETHERNET
++#ifdef TURN_ON_ETHERNET
++#define CONFIG_USB_ETH			1
++#define CONFIG_U2O_REG_BASE		0xd4208000
++#define CONFIG_U2O_PHY_BASE		0xd4207000
++#define CONFIG_DRIVER_SMC91111 		1
++#define CONFIG_SMC91111_BASE   		0x90000300 /* PXA910*/
++#define CONFIG_SMC_USE_16_BIT
++#undef CONFIG_SMC_USE_IOFUNCS          /* just for use with the kernel */
++#endif
++#define CONFIG_NET_RETRY_COUNT 		10000
++
++/*-----------------------------------------------------------------------
++ * cache set/way configuration
++ */
++#undef CONFIG_FLUSH_ALL_REPLACEMENT
++
++#endif
++/* __CONFIG_H */
+diff --git a/include/configs/mmp2_jasper.h b/include/configs/mmp2_jasper.h
+new file mode 100644
+index 0000000..5fb2573
+--- /dev/null
++++ b/include/configs/mmp2_jasper.h
+@@ -0,0 +1,244 @@
++/*
++ * (C) Copyright 2008
++ * Marvell Semiconductors Ltd. Shanghai, China.
++ *
++ * Configuration for Tavor EVB board.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.    See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++#ifndef __CONFIG_H
++#define __CONFIG_H
++
++/************/
++/* VERSIONS */
++/************/
++#define CONFIG_IDENT_STRING   		"\nMarvell version: 1.1.1.1 MMP2"
++
++/* version number passing when loading Kernel */
++#define VER_NUM 			0x01010101	/* 1.1.1.18 */
++/*
++ * High Level Configuration Options
++ * (easy to change)
++ */
++#define CONFIG_CPU_PXA910		1 /* This is an pxa910 core*/
++#define CONFIG_CPU_PXA688		1 /* This is an pxa410 core*/
++#define CONFIG_PXAXXX      		1 /*  pxa family */
++#define CONFIG_MMP2_JASPER	    		1
++#define CONFIG_FFUART
++
++#define CONFIG_SYS_BOARD_NAME		"ARM1176JZF based"
++#define CONFIG_SYS_VENDOR_NAME     	"MARVELL"
++
++#ifdef CONFIG_PJ4_NON_SECURE_MODE
++#define CONFIG_SYS_UBOOT_BASE		0x1100000	
++#define CONFIG_SYS_MEMTEST_START      	0x00300000
++#define CONFIG_SYS_MEMTEST_END        	0x01100000
++#else
++#define CONFIG_SYS_UBOOT_BASE		0xf00000	
++#define CONFIG_SYS_MEMTEST_START      	0x00100000
++#define CONFIG_SYS_MEMTEST_END        	0x00f00000
++#endif
++
++#define CONFIG_SYS_HZ   		(32768)      /* KV - Timer 0 is clocked at 3.25 MHz */
++#define CONFIG_SYS_TIMERBASE 		0xD4014000 
++#define CONFIG_SYS_CPUSPEED		0x161		/* set core clock to 400/200/100 MHz */
++#define CONFIG_DISPLAY_BOARDINFO
++
++#define CONFIG_CMDLINE_TAG         	1   /* enable passing of ATAGs  */
++#define CONFIG_SETUP_MEMORY_TAGS   	1
++#define CONFIG_MISC_INIT_R         	1   /* call misc_init_r during start up */
++
++/*
++ * Size of malloc() pool
++ */
++#define CONFIG_SYS_MALLOC_LEN      	(CONFIG_SYS_ENV_SIZE + 512*1024)
++#define CONFIG_SYS_GBL_DATA_SIZE   	128   /* size in bytes reserved for initial data */
++
++/*
++ *  Configuration
++ */
++#define CONFIG_AUTO_COMPLETE
++#define CONFIG_CONS_INDEX     		1
++#undef  CONFIG_SERIAL_SOFTWARE_FIFO
++#define CONFIG_SYS_NS16550
++#define CONFIG_SYS_NS16550_SERIAL
++#define CONFIG_SYS_NS16550_REG_SIZE   	-4
++#define CONFIG_SYS_NS16550_CLK        	14745600
++#define CONFIG_BAUDRATE        		115200
++#define CONFIG_SYS_BAUDRATE_TABLE     	{ 9600, 19200, 38400, 57600, 115200 }
++#define CONFIG_SYS_NS16550_COM1       	0xD4017000 /* configure for PXA910*/
++
++#define CONFIG_SHOW_BOOT_PROGRESS
++
++#define CONFIG_CMD_NET
++#define CONFIG_NET_MULTI
++#define MV_ETH_DEVS 			1
++
++#define CONFIG_IPADDR      		192.168.1.101
++
++#define CONFIG_SERVERIP    		192.168.1.100
++
++#define CONFIG_ETHADDR			"00:00:5A:9F:6D:82"
++
++/* enable passing of ATAGs  */
++#define CONFIG_CMDLINE_TAG       	1
++#define CONFIG_SETUP_MEMORY_TAGS 	1
++#define CONFIG_SYS_TCLK         	0 /* not in use */
++#define CONFIG_SYS_BUS_CLK         	0 /* not in use */
++#define CONFIG_ENV_SIZE		 	0x4000
++#define CONFIG_ENV_OFFSET        	0x40000
++
++/***************************************/
++/* LINUX BOOT and other ENV PARAMETERS */
++/***************************************/
++#define CONFIG_SYS_BOOTARGS_END     	":::MMP2:eth0:none"
++#define CONFIG_SYS_BOOTARGS_ROOT    	"root=/dev/nfs rw init=/linuxrc"
++#define CONFIG_ZERO_BOOTDELAY_CHECK
++#ifdef CONFIG_PJ4_NON_SECURE_MODE
++#define CONFIG_SYS_LOAD_ADDR        	0x00700000   /* default load address   */
++#define CONFIG_SYS_DEF_LOAD_ADDR    	"0x00700000"
++#else
++#define CONFIG_SYS_LOAD_ADDR        	0x00500000   /* default load address   */
++#define CONFIG_SYS_DEF_LOAD_ADDR    	"0x00500000"
++#endif
++#define CONFIG_SYS_IMG_NAME		"zImage"
++#define CONFIG_SYS_INITRD_NAME      	"ramdisk.image.gz"
++#ifdef CONFIG_PJ4_NON_SECURE_MODE
++#define CONFIG_SYS_INITRD_LOAD_ADDR 	"a00000"
++#else
++#define CONFIG_SYS_INITRD_LOAD_ADDR 	"800000"
++#endif
++#define CONFIG_SYS_INITRD_SIZE      	"400000"
++#undef  CONFIG_BOOTARGS
++
++#define CONFIG_BOOTDELAY        	10
++
++#if (CONFIG_BOOTDELAY >= 0)
++
++/* boot arguments" */
++#ifdef CONFIG_PJ4_NON_SECURE_MODE
++#define CONFIG_ONENANDBOOT	     	"onenand read 0x700000 0x920000 0x300000"
++#define CONFIG_NANDBOOT 	     	"nand read 0x700000 0x920000 0x300000"
++#define CONFIG_BOOTCOMMAND      	"setenv autoboot boot; bootz 0x700000; setenv autoboot none"
++#else
++#define CONFIG_ONENANDBOOT	     	"onenand read 0x500000 0x920000 0x300000"
++#define CONFIG_NANDBOOT 	     	"nand read 0x500000 0x920000 0x300000"
++#define CONFIG_BOOTCOMMAND      	"setenv autoboot boot; bootz 0x500000; setenv autoboot none"
++#endif
++#define CONFIG_ROOTPATH   		/tftpboot/rootfs_arm
++
++#endif /* #if (CONFIG_BOOTDELAY >= 0) */
++
++#define CONFIG_SYS_BARGSIZE   		CONFIG_SYS_CBSIZE   /* Boot Argument Buffer Size   */
++
++/*
++ * For booting Linux, the board info and command line data
++ * have to be in the first 8 MB of memory, since this is
++ * the maximum mapped by the Linux kernel during initialization.
++ */
++#define CONFIG_SYS_BOOTMAPSZ      	(8<<20)   /* Initial Memory map for Linux */
++
++/*
++ * Miscellaneous configurable options
++ */
++#define CONFIG_SYS_LONGHELP        	/* undef to save memory     */
++#define CONFIG_SYS_PROMPT         	"MMP2>> "   /* Monitor Command Prompt   */
++#define CONFIG_SYS_PROMPT_HUSH_PS2     	"> "
++/* Console I/O Buffer Size  */
++#define CONFIG_SYS_CBSIZE         	512
++/* Print Buffer Size */
++#define CONFIG_SYS_PBSIZE         	(CONFIG_SYS_CBSIZE+sizeof(CONFIG_SYS_PROMPT)+16)
++/* max number of command args   */
++#define CONFIG_SYS_MAXARGS        	16
++/* Boot Argument Buffer Size    */
++#define CONFIG_SYS_BARGSIZE       	CONFIG_SYS_CBSIZE
++#undef  CONFIG_SYS_CLKS_IN_HZ         	/* everything, incl board info, in Hz */
++#define CONFIG_ENV_OVERWRITE    	/* allow to change env parameters */
++#undef  CONFIG_INIT_CRITICAL
++#define CONFIG_CMDLINE_EDITING
++#define CONFIG_COMMAND_HISTORY
++#define CONFIG_COMMAND_EDIT
++#define CONFIG_SYS_64BIT_VSPRINTF
++
++
++/*-----------------------------------------------------------------------
++ * Stack sizes
++ *
++ * The stack sizes are set up in start.S using the settings below
++ */
++#define CONFIG_STACKSIZE       		(128*1024)   /* regular stack */
++#ifdef  CONFIG_USE_IRQ
++#define CONFIG_STACKSIZE_IRQ   		(4*1024)   /* IRQ stack */
++#define CONFIG_STACKSIZE_FIQ   		(4*1024)   /* FIQ stack */
++#endif
++
++/*-----------------------------------------------------------------------
++ * Physical Memory Map
++ */
++#define CONFIG_NR_DRAM_BANKS    	1   /* we have 1 bank of DRAM */
++#ifdef CONFIG_PJ4_NON_SECURE_MODE
++#define PHYS_SDRAM_1            	0x00200000   /* SDRAM Bank #1 */
++#define PHYS_SDRAM_1_SIZE       	0x07e00000   /* 126 MB */
++#define PHYS_SDRAM_SIZE_DEC     	126
++#else
++#define PHYS_SDRAM_1            	0x00000000   /* SDRAM Bank #1 */
++#define PHYS_SDRAM_1_SIZE       	0x08000000   /* 126 MB */
++#define PHYS_SDRAM_SIZE_DEC     	128
++#endif
++#define CONFIG_SYS_ENV_SIZE            	0x10000   /* Total Size of Environment Sector */
++#define	CONFIG_ENV_IS_NOWHERE		1
++#define CONFIG_SYS_NO_FLASH		1
++#define CONFIG_BBM			1
++
++/*-----------------------------------------------------------------------
++ * NAND and DFC configuration
++ */
++#define CONFIG_CMD_NAND 		1
++#define CONFIG_SYS_MAX_NAND_DEVICE	1         /* Max number of NAND devices */
++#define CONFIG_SYS_NAND_BASE		0xD4283000
++
++/*-----------------------------------------------------------------------
++ * ONENAND configuration
++ */
++#define CONFIG_CMD_ONENAND 		1
++#define CONFIG_SYS_ONENAND_BASE 	0x80000000  /* configure for PXA910*/
++
++/*-----------------------------------------------------------------------
++ * FREQUENCE configuration
++ */
++#define CONFIG_CMD_FREQUENCE		1
++
++#undef TURN_ON_ETHERNET
++#define TURN_ON_ETHERNET
++#ifdef TURN_ON_ETHERNET
++#define CONFIG_USB_ETH			1
++#define CONFIG_U2O_REG_BASE		0xd4208000
++#define CONFIG_U2O_PHY_BASE		0xd4207000
++#define CONFIG_DRIVER_SMC91111 		1
++#define CONFIG_SMC91111_BASE   		0x90000300 /* PXA910*/
++#define CONFIG_SMC_USE_16_BIT
++#undef CONFIG_SMC_USE_IOFUNCS          /* just for use with the kernel */
++#endif
++#define CONFIG_NET_RETRY_COUNT 		10000
++
++/*-----------------------------------------------------------------------
++ * cache set/way configuration
++ */
++#undef CONFIG_FLUSH_ALL_REPLACEMENT
++
++#endif
++/* __CONFIG_H */
+-- 
+1.6.0.4
+

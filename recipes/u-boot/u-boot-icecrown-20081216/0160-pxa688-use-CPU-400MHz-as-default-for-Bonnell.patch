@@ -1,0 +1,29 @@
+From 69fd53af69ca326774c2c9ba25b5531de8d0a2bf Mon Sep 17 00:00:00 2001
+From: Mingliang Hu <mingliang.hu@marvell.com>
+Date: Thu, 24 Dec 2009 18:04:08 +0800
+Subject: [PATCH] pxa688: use CPU 400MHz as default for Bonnell
+
+Signed-off-by: Mingliang Hu <mingliang.hu@marvell.com>
+---
+ include/configs/mmp2_jasper.h |    4 ++--
+ 1 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/include/configs/mmp2_jasper.h b/include/configs/mmp2_jasper.h
+index f1479bb..305aaa5 100755
+--- a/include/configs/mmp2_jasper.h
++++ b/include/configs/mmp2_jasper.h
+@@ -43,9 +43,9 @@
+ #define CONFIG_SYS_BOARD_NAME		"ARM1176JZF based"
+ #define CONFIG_SYS_VENDOR_NAME     	"MARVELL"
+ 
+-#undef CONFIG_MMP2_400_OP
++#define CONFIG_MMP2_400_OP
+ #undef CONFIG_MMP2_600_OP
+-#define CONFIG_MMP2_624_OP	1
++#undef CONFIG_MMP2_624_OP
+ 
+ #ifdef CONFIG_PJ4_NON_SECURE_MODE
+ #define CONFIG_SYS_UBOOT_BASE		0x1100000	
+-- 
+1.6.0.4
+

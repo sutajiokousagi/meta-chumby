@@ -1,0 +1,52 @@
+From 1cacffd97141465e117e16ec76baa3ee5d29e001 Mon Sep 17 00:00:00 2001
+From: Gang Wu <gwu3@marvell.com>
+Date: Mon, 2 Mar 2009 23:18:48 +0800
+Subject: [PATCH] pxa168: fixed one build error on samsung 2Gib nand
+
+Signed-off-by: Gang Wu <gwu3@marvell.com>
+---
+ drivers/mtd/nand/pxa3xx_nand.c |   16 ++++++++--------
+ 1 files changed, 8 insertions(+), 8 deletions(-)
+
+diff --git a/drivers/mtd/nand/pxa3xx_nand.c b/drivers/mtd/nand/pxa3xx_nand.c
+index bf16976..4d56d0b 100644
+--- a/drivers/mtd/nand/pxa3xx_nand.c
++++ b/drivers/mtd/nand/pxa3xx_nand.c
+@@ -550,15 +550,15 @@ static int Samsung2GbX8_1_Addr2NDCB1(uint16_t cmd, uint32_t addr, uint32_t *p)
+ 
+ 	if (addr >= 0x10000000)
+ 		return -EINVAL;
+-	page = addr / samsung2GbX8.page_size;
+-	addr =  (page / samsung2GbX8.page_per_block) << 18 |
+-		(page % samsung2GbX8.page_per_block) << 12;
++	page = addr / samsung2GbX8_1.page_size;
++	addr =  (page / samsung2GbX8_1.page_per_block) << 18 |
++		(page % samsung2GbX8_1.page_per_block) << 12;
+ 
+-	if (cmd == samsung2GbX8.read1 || cmd == samsung2GbX8.program) {
++	if (cmd == samsung2GbX8_1.read1 || cmd == samsung2GbX8_1.program) {
+ 		ndcb1 = (addr & 0xFFF) | ((addr << 4) & 0xFFFF0000);
+ 	}
+-	else if (cmd == samsung2GbX8.erase || cmd == (samsung2GbX8.unlock & 0xff) ||
+-			cmd == (samsung2GbX8.unlock & 0xff00) >> 8) {
++	else if (cmd == samsung2GbX8_1.erase || cmd == (samsung2GbX8_1.unlock & 0xff) ||
++			cmd == (samsung2GbX8_1.unlock & 0xff00) >> 8) {
+ 		ndcb1 = ((addr >> 18) << 6) & 0x1FFFF;
+ 	}
+ 
+@@ -568,10 +568,10 @@ static int Samsung2GbX8_1_Addr2NDCB1(uint16_t cmd, uint32_t addr, uint32_t *p)
+ 
+ static int Samsung2GbX8_1_NDBBR2Addr(uint16_t cmd, uint32_t ndbbr, uint32_t *p)
+ {
+-	if (cmd == samsung2GbX8.read1 || cmd == samsung2GbX8.program) {
++	if (cmd == samsung2GbX8_1.read1 || cmd == samsung2GbX8_1.program) {
+ 		*p = ((ndbbr & 0xF) << 8) | ((ndbbr >> 8) << 16);
+ 	}
+-	else if (cmd == samsung2GbX8.erase) {
++	else if (cmd == samsung2GbX8_1.erase) {
+ 		*p = (ndbbr >> 6) << 18;
+ 	}
+ 
+-- 
+1.6.0.4
+

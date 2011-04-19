@@ -1,0 +1,25 @@
+From 896d3aba130d62bdd2264efa7387f9326366dfec Mon Sep 17 00:00:00 2001
+From: Lei Wen <leiwen@marvell.com>
+Date: Thu, 12 Mar 2009 09:40:15 +0800
+Subject: [PATCH] pxa910: add auto boot for ttc dkb
+
+---
+ include/configs/ttc_dkb.h |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/include/configs/ttc_dkb.h b/include/configs/ttc_dkb.h
+index d534d96..a8bc685 100644
+--- a/include/configs/ttc_dkb.h
++++ b/include/configs/ttc_dkb.h
+@@ -114,7 +114,7 @@
+ 
+ /* boot arguments" */
+ /*#define CONFIG_BOOTARGS 		"console=ttyS0,38400 root=/dev/ram0 init=/linuxrc rw initrd=0x800040,4M ramdisk_blocksize=1024"*/
+-#define CONFIG_BOOTCOMMAND      	"bootz 0x500000"
++#define CONFIG_BOOTCOMMAND      	"onenand read 0x920000 0x500000 0x300000; bootz 0x500000"
+ #define CONFIG_ROOTPATH   		/tftpboot/rootfs_arm
+ 
+ #endif /* #if (CONFIG_BOOTDELAY >= 0) */
+-- 
+1.6.0.4
+

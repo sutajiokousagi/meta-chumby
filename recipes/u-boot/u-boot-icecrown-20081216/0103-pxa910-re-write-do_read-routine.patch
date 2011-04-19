@@ -1,0 +1,50 @@
+From aa2a91c7ccc45ce4200294b5bb1eb205edb24969 Mon Sep 17 00:00:00 2001
+From: Ning Jiang <ning.jiang@marvell.com>
+Date: Wed, 29 Apr 2009 17:18:17 +0800
+Subject: [PATCH] pxa910: re-write do_read routine
+
+Signed-off-by: Ning Jiang <ning.jiang@marvell.com>
+---
+ board/pxa/common/freq.c |   24 +++++++++++++++++++-----
+ 1 files changed, 19 insertions(+), 5 deletions(-)
+
+diff --git a/board/pxa/common/freq.c b/board/pxa/common/freq.c
+index ef71ed7..b23ac4e 100644
+--- a/board/pxa/common/freq.c
++++ b/board/pxa/common/freq.c
+@@ -506,13 +506,27 @@ U_BOOT_CMD(
+ #ifdef CONFIG_READ_WRITE
+ int do_read(cmd_tbl_t * cmdtp, int flag, int argc, char *argv[])
+ {
+-	unsigned int index;
++	ulong   addr, rc;
++	int     rcode = 0;
++	ulong value, length, start, end;
+ 
+-	if (argc != 2)
+-		return 0;
++	if (argc < 2) {
++		printf ("Usage:\n%s\n", cmdtp->usage);
++		return 1;
++	}
++
++	addr = simple_strtoul(argv[1], NULL, 0);
++	if (argc == 3)
++		length = simple_strtoul(argv[2], NULL, 0);
++	else
++		length = 4;
++	start = addr;
++	end = addr + length;
++	for (;start < end;start += 4) {
++		value = *(unsigned int*)start;
++		printf("0x%08x: 0x%08x\n", start, value);
++	}
+ 
+-	index = simple_strtoul(argv[1], NULL, 0);
+-	printf("0x%x: 0x%x\n", index, reg_read(index));
+ 	return 0;
+ }
+ 
+-- 
+1.6.0.4
+

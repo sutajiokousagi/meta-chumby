@@ -1,0 +1,501 @@
+From b4d9f7ed6445df3be79abc60198ab1755476ef25 Mon Sep 17 00:00:00 2001
+From: Ning Jiang <ning.jiang@marvell.com>
+Date: Wed, 30 Dec 2009 10:26:32 +0800
+Subject: [PATCH] pxa688: enable commands in freq.c
+
+Signed-off-by: Ning Jiang <ning.jiang@marvell.com>
+---
+ board/pxa/common/freq.c           |   29 ++++-
+ board/pxa/common/freq_ll.S        |   48 +++---
+ include/asm-arm/arch-pxa688/icu.h |  319 +++++++++++++++++++++++++++++++++++++
+ 3 files changed, 369 insertions(+), 27 deletions(-)
+ create mode 100644 include/asm-arm/arch-pxa688/icu.h
+
+diff --git a/board/pxa/common/freq.c b/board/pxa/common/freq.c
+index 721a2b0..b28826a 100644
+--- a/board/pxa/common/freq.c
++++ b/board/pxa/common/freq.c
+@@ -12,7 +12,8 @@
+ 
+ #include <common.h>
+ #if (defined(CONFIG_TAVOREVB) || defined(CONFIG_TTC_DKB) || \
+-     defined(CONFIG_ASPENITE) || defined(CONFIG_ZYLONITE2))
++     defined(CONFIG_ASPENITE) || defined(CONFIG_ZYLONITE2) || \
++     defined(CONFIG_MMP2_JASPER) || defined(CONFIG_MMP2_FLINT))
+ #include <command.h>
+ #include <asm/io.h>
+ #include "pmua.h"
+@@ -519,6 +520,27 @@ int do_op(cmd_tbl_t * cmdtp, int flag, int argc, char *argv[])
+ 
+ 	return 0;
+ }
++#elif (defined(CONFIG_MMP2_JASPER) || defined(CONFIG_MMP2_FLINT))
++static void switch_op(int op)
++{
++	freq_init_sram(0xd1000000);
++	freq_chg_seq(0xd1000000, 0xd1008000, op);
++}
++
++int do_op(cmd_tbl_t * cmdtp, int flag, int argc, char *argv[])
++{
++	int op;
++
++	if (argc != 2) {
++		printf ("Usage:\n%s\n", cmdtp->usage);
++		return 1;
++	}
++
++	op = simple_strtoul(argv[1], NULL, 0);
++	switch_op(op);
++
++	return 0;
++}
+ #else
+ int do_op(cmd_tbl_t * cmdtp, int flag, int argc, char *argv[]) { return 0; }
+ #endif
+@@ -1537,6 +1559,7 @@ U_BOOT_CMD(
+ 		"hibernate - put system into hibernate mode\n"
+ 	  );
+ 
++#if (!defined(CONFIG_MMP2_JASPER) && !defined(CONFIG_MMP2_FLINT))
+ void set_timer_match(ulong secs);
+ 
+ int do_timeout(cmd_tbl_t * cmdtp, int flag, int argc, char *argv[])
+@@ -1559,6 +1582,7 @@ U_BOOT_CMD(
+ 		"timeout	- set timeout for the system\n",
+ 		"timeout secs - set timeout secs\n"
+ 	  );
++#endif
+ 
+ void releasecp(void)
+ {
+@@ -1724,6 +1748,7 @@ U_BOOT_CMD(
+ 		"initsleep - initialize for system sleep mode\n"
+ 	  );
+ 
++#if (!defined(CONFIG_MMP2_JASPER) && !defined(CONFIG_MMP2_FLINT))
+ void rtc_alarm_to_pmu(int alarm_secs);
+ 
+ int do_setalarm(cmd_tbl_t * cmdtp, int flag, int argc, char *argv[])
+@@ -1747,3 +1772,5 @@ U_BOOT_CMD(
+ 		"setalarm nsecs - set rtc alarm to nsecs\n"
+ 	  );
+ #endif
++
++#endif
+diff --git a/board/pxa/common/freq_ll.S b/board/pxa/common/freq_ll.S
+index 4284349..e808b32 100644
+--- a/board/pxa/common/freq_ll.S
++++ b/board/pxa/common/freq_ll.S
+@@ -85,8 +85,23 @@ freq_sram_start:
+ 	@ frequency change
+ 	@
+ 
++	@ turn on all clocks and allow freq in debug register
++	ldr	r7, =0xffffffff
++	str	r7, [r5, #0x0024]
++	ldr	r7, =0x00061808
++	str	r7, [r6, #0x88]
++
++	@ change to PLL1/2 first, start-up operation point
++	ldr	r7, =0x00000000
++	str	r7, [r5, #0x8]
++	ldr	r7, =0x08fd96d9
++	str	r7, [r6, #0x00]
++	ldr	r7, =0x78fd96d9
++	str	r7, [r6, #0x04]
++
+ 	cmp	r2, #0x0
+ 	bne	2f
++	@ select PLL2 frequency, 400MHz
+ 	ldr	r7, =0x08600262
+ 	str	r7, [r5, #0x0414]
+ 	ldr	r7, =0x00FFFE00
+@@ -97,28 +112,19 @@ freq_sram_start:
+ 	str	r7, [r5, #0x0034]
+ 	ldr	r7, =0x28600262
+ 	str	r7, [r5, #0x0414]
+-	ldr	r7, =0xffffffff
+-	str	r7, [r5, #0x0024]
++	@ select clock source, PJ4-PLL2, SP-PLL1/2, AXI/DDR-PLL2
+ 	ldr	r7, =0x41000000
+ 	str	r7, [r5, #0x0008]
+-	ldr	r7, =0x00061808
+-	str	r7, [r6, #0x88]
++	@ divider setting and frequency change request, core-400, ddr-200, axi-200
+ 	ldr	r7, =0x08FC8248
+ 	str	r7, [r6, #0x00]
+-	ldr	r7, =0x48FC8248
+-	str	r7, [r6, #0x04]
+-	ldr	r7, =0x08FC8248
+-	str	r7, [r6, #0x00]
+-	ldr	r7, =0x28FC8248
+-	str	r7, [r6, #0x04]
+-	ldr	r7, =0x08FC8248
+-	str	r7, [r6, #0x00]
+-	ldr	r7, =0x18FC8248
++	ldr	r7, =0x78FC8248
+ 	str	r7, [r6, #0x04]
+ 
+ 2:
+ 	cmp	r2, #0x1
+ 	bne	3f
++	@ select PLL2 frequency, 624MHz
+ 	ldr	r7, =0x086003e2
+ 	str	r7, [r5, #0x0414]
+ 	ldr	r7, =0x00FFFE00
+@@ -129,23 +135,13 @@ freq_sram_start:
+ 	str	r7, [r5, #0x0034]
+ 	ldr	r7, =0x286003e2
+ 	str	r7, [r5, #0x0414]
+-	ldr	r7, =0xffffffff
+-	str	r7, [r5, #0x0024]
++	@ select clock source, PJ4-PLL2, SP-PLL1/2, AXI/DDR-PLL2
+ 	ldr	r7, =0x41000000
+ 	str	r7, [r5, #0x0008]
+-	ldr	r7, =0x00061808
+-	str	r7, [r6, #0x88]
+-	ldr	r7, =0x08fd0248
+-	str	r7, [r6, #0x00]
+-	ldr	r7, =0x48fd0248
+-	str	r7, [r6, #0x04]
+-	ldr	r7, =0x08fd0248
+-	str	r7, [r6, #0x00]
+-	ldr	r7, =0x28fd0248
+-	str	r7, [r6, #0x04]
++	@ divider setting and frequency change request, core-624, ddr-312, axi-208
+ 	ldr	r7, =0x08fd0248
+ 	str	r7, [r6, #0x00]
+-	ldr	r7, =0x18fd0248
++	ldr	r7, =0x78fd0248
+ 	str	r7, [r6, #0x04]
+ 
+ 3:
+diff --git a/include/asm-arm/arch-pxa688/icu.h b/include/asm-arm/arch-pxa688/icu.h
+new file mode 100644
+index 0000000..44205dd
+--- /dev/null
++++ b/include/asm-arm/arch-pxa688/icu.h
+@@ -0,0 +1,319 @@
++/******************************************************************************
++ *
++ * Name:	ICU.h
++ * Project:	Hermon-2
++ * Purpose:	Testing
++ *
++ ******************************************************************************/
++
++/******************************************************************************
++ *
++ *  (C)Copyright 2005 - 2008 Marvell. All Rights Reserved.
++ *
++ *  THIS IS UNPUBLISHED PROPRIETARY SOURCE CODE OF MARVELL.
++ *  The copyright notice above does not evidence any actual or intended
++ *  publication of such source code.
++ *  This Module contains Proprietary Information of Marvell and should be
++ *  treated as Confidential.
++ *  The information in this file is provided for the exclusive use of the
++ *  licensees of Marvell.
++ *  Such users have the right to use, modify, and incorporate this code into
++ *  products for purposes authorized by the license agreement provided they
++ *  include this notice and the associated copyright notice with any such
++ *  product.
++ *  The information in this file is provided "AS IS" without warranty.
++ *
++ ******************************************************************************/
++
++/******************************************************************************
++ *
++ * This file was automatically generated by reg.pl using  *	ICU.csv
++ *
++ ******************************************************************************/
++
++/******************************************************************************
++ *
++ * History:
++ *
++ ********* PLEASE INSERT THE CVS HISTORY OF THE PREVIOUS VERSION HERE. *********
++ *******************************************************************************/
++
++#ifndef	__INC_ICU_H
++#define	__INC_ICU_H
++
++
++/*
++ *
++ *	THE BASE ADDRESSES
++ *
++ */
++#define	ICU_BASE	0xD4282000
++
++/*
++ *
++ *	THE REGISTER DEFINES
++ *
++ */
++#define	ICU_INT_0_TO_63_CONF		(ICU_BASE+0x0000)	/* Interrupt 0 to 63
++														 *			Configuration
++														 *			Registers
++														 *			Start
++														 */
++#define	ICU_SEAGULL_FIQ_SEL_INT_NUM	(ICU_BASE+0x0100)	/* 32 bit	<var
++														 *			Processor:
++														 *			Osprey>
++														 *			FIQ
++														 *			Selected
++														 *			Interrupt
++														 *			Number
++														 *			Register
++														 */
++#define	ICU_SEAGULL_IRQ_SEL_INT_NUM	(ICU_BASE+0x0104)	/* 32 bit	<var
++														 *			Processor:
++														 *			Osprey>
++														 *			IRQ
++														 *			Selected
++														 *			Interrupt
++														 *			Number
++														 *			Register
++														 */
++#define	ICU_MOHAWK_FIQ_SEL_INT_NUM	(ICU_BASE+0x0108)	/* 32 bit	<var
++														 *			Processor:
++														 *			Mohawk>
++														 *			FIQ
++														 *			Selected
++														 *			Interrupt
++														 *			Number
++														 *			Register
++														 */
++#define	ICU_MOHAWK_IRQ_SEL_INT_NUM	(ICU_BASE+0x010C)	/* 32 bit	<var
++														 *			Processor:
++														 *			Mohawk>
++														 *			IRQ
++														 *			Selected
++														 *			Interrupt
++														 *			Number
++														 *			Register
++														 */
++#define	ICU_SEAGULL_GBL_IRQ_MSK		(ICU_BASE+0x0110)	/* 32 bit	<var
++														 *			Processor:
++														 *			Osprey>
++														 *			Global
++														 *			Interrupt
++														 *			Mask
++														 *			Register
++														 */
++#define	ICU_MOHAWK_GBL_IRQ_MSK		(ICU_BASE+0x0114)	/* 32 bit	<var
++														 *			Processor:
++														 *			Mohawk>
++														 *			Global
++														 *			Interrupt
++														 *			Mask
++														 *			Register
++														 */
++#define	ICU_DMA_SEAGULL_INT_MSK		(ICU_BASE+0x0118)	/* 32 bit	DMA <var
++														 *			Processor:
++														 *			Osprey>
++														 *			Interrupt
++														 *			Mask
++														 *			Register
++														 */
++#define	ICU_DMA_MOHAWK_INT_MSK		(ICU_BASE+0x011C)	/* 32 bit	DMA <var
++														 *			Processor:
++														 *			Mohawk>
++														 *			Interrupt
++														 *			Mask
++														 *			Register
++														 */
++#define	ICU_DMA_SEAGULL_INT_STATUS	(ICU_BASE+0x0120)	/* 32 bit	DMA <var
++														 *			Processor:
++														 *			Osprey>
++														 *			Interrupt
++														 *			Status
++														 *			Register
++														 */
++#define	ICU_DMA_MOHAWK_INT_STATUS	(ICU_BASE+0x0124)	/* 32 bit	DMA <var
++														 *			Processor:
++														 *			Mohawk>
++														 *			Interrupt
++														 *			Status
++														 *			Register
++														 */
++#define	ICU_INT_STATUS_0			(ICU_BASE+0x0128)	/* 32 bit	Interrupt
++														 *			Status
++														 *			Register
++														 *			0
++														 */
++#define	ICU_INT_STATUS_1			(ICU_BASE+0x012C)	/* 32 bit	Interrupt
++														 *			Status
++														 *			Register
++														 *			1
++														 */
++#define	ICU_DDR_ARM_L2_INT_MSK		(ICU_BASE+0x0130)	/* 32 bit	DDR and ARM
++														 *			L2 cache
++														 *			Interrupt
++														 *			Mask
++														 *			Register
++														 */
++#define	ICU_DDR_ARM_L2_INT_STATUS	(ICU_BASE+0x0134)	/* 32 bit	DDR and ARM
++														 *			L2 cache
++														 *			Interrupt
++														 *			Status
++														 *			Register
++														 */
++
++/*
++ *
++ *	THE BIT DEFINES
++ *
++ */
++/*	ICU_INT_0_TO_63_CONF		0x0000	Interrupt 0 to 63 Configuration
++ *										Registers
++ */
++/*		Bit(s) ICU_INT_0_TO_63_CONF_RSRV_31_7 reserved */
++/* <var Processor: Mohawk> Interrupt */
++#define	ICU_INT_0_TO_63_CONF_MOHAWK_INT					BIT_6
++/* <var Processor: Osprey> Interrupt */
++#define	ICU_INT_0_TO_63_CONF_SEAGULL_INT				BIT_5
++/* IRQ/FIQ */
++#define	ICU_INT_0_TO_63_CONF_IRQ_FIQ					BIT_4
++/* Priority/Masking */
++#define	ICU_INT_0_TO_63_CONF_PRIORITY_MASKING_MSK		SHIFT0(0xf)
++#define	ICU_INT_0_TO_63_CONF_PRIORITY_MASKING_BASE		0
++
++/*	ICU_SEAGULL_FIQ_SEL_INT_NUM	0x0100	<var Processor: Osprey> FIQ Selected
++ *										Interrupt Number Register
++ */
++/*		Bit(s) ICU_SEAGULL_FIQ_SEL_INT_NUM_RSRV_31_7 reserved */
++/* Interrupt Pending */
++#define	ICU_SEAGULL_FIQ_SEL_INT_NUM_INT_PENDING				BIT_6
++/* Selected Interrupt Number */
++#define	ICU_SEAGULL_FIQ_SEL_INT_NUM_SEL_INT_NUM_MSK			SHIFT0(0x3f)
++#define	ICU_SEAGULL_FIQ_SEL_INT_NUM_SEL_INT_NUM_BASE		0
++
++/*	ICU_SEAGULL_IRQ_SEL_INT_NUM	0x0104	<var Processor: Osprey> IRQ Selected
++ *										Interrupt Number Register
++ */
++/*		Bit(s) ICU_SEAGULL_IRQ_SEL_INT_NUM_RSRV_31_7 reserved */
++/* Interrupt Pending */
++#define	ICU_SEAGULL_IRQ_SEL_INT_NUM_INT_PENDING				BIT_6
++/* Selected Interrupt Number */
++#define	ICU_SEAGULL_IRQ_SEL_INT_NUM_SEL_INT_NUM_MSK			SHIFT0(0x3f)
++#define	ICU_SEAGULL_IRQ_SEL_INT_NUM_SEL_INT_NUM_BASE		0
++
++/*	ICU_MOHAWK_FIQ_SEL_INT_NUM	0x0108	<var Processor: Mohawk> FIQ Selected
++ *										Interrupt Number Register
++ */
++/*		Bit(s) ICU_MOHAWK_FIQ_SEL_INT_NUM_RSRV_31_7 reserved */
++/* Interrupt Pending */
++#define	ICU_MOHAWK_FIQ_SEL_INT_NUM_INT_PENDING			BIT_6
++/* Selected Interrupt Number */
++#define	ICU_MOHAWK_FIQ_SEL_INT_NUM_SEL_INT_NUM_MSK		SHIFT0(0x3f)
++#define	ICU_MOHAWK_FIQ_SEL_INT_NUM_SEL_INT_NUM_BASE		0
++
++/*	ICU_MOHAWK_IRQ_SEL_INT_NUM	0x010C	<var Processor: Mohawk> IRQ Selected
++ *										Interrupt Number Register
++ */
++/*		Bit(s) ICU_MOHAWK_IRQ_SEL_INT_NUM_RSRV_31_7 reserved */
++/* Interrupt Pending */
++#define	ICU_MOHAWK_IRQ_SEL_INT_NUM_INT_PENDING			BIT_6
++/* Selected Interrupt Number */
++#define	ICU_MOHAWK_IRQ_SEL_INT_NUM_SEL_INT_NUM_MSK		SHIFT0(0x3f)
++#define	ICU_MOHAWK_IRQ_SEL_INT_NUM_SEL_INT_NUM_BASE		0
++
++/*	ICU_SEAGULL_GBL_IRQ_MSK		0x0110	<var Processor: Osprey> Global
++ *										Interrupt Mask Register
++ */
++/*		Bit(s) ICU_SEAGULL_GBL_IRQ_MSK_RSRV_31_2 reserved */
++#define	ICU_SEAGULL_GBL_IRQ_MSK_IRQ_MSK				BIT_1				/* Mask IRQ */
++#define	ICU_SEAGULL_GBL_IRQ_MSK_FIQ_MSK				BIT_0				/* Mask FIQ */
++
++/*	ICU_MOHAWK_GBL_IRQ_MSK		0x0114	<var Processor: Mohawk> Global
++ *										Interrupt Mask Register
++ */
++/*		Bit(s) ICU_MOHAWK_GBL_IRQ_MSK_RSRV_31_2 reserved */
++#define	ICU_MOHAWK_GBL_IRQ_MSK_IRQ_MSK				BIT_1				/* Mask IRQ */
++#define	ICU_MOHAWK_GBL_IRQ_MSK_FIQ_MSK				BIT_0				/* Mask FIQ */
++
++/*	ICU_DMA_SEAGULL_INT_MSK		0x0118	DMA <var Processor: Osprey> Interrupt
++ *										Mask Register
++ */
++/* DMA <var Processor: Osprey> Interrupt Mask */
++#define	ICU_DMA_SEAGULL_INT_MSK_DMA_SEAGULL_INT_MSK_MSK			SHIFT0(0xffffffff)
++#define	ICU_DMA_SEAGULL_INT_BASE_DMA_SEAGULL_INT_BASE_BASE		0
++
++/*	ICU_DMA_MOHAWK_INT_MSK		0x011C	DMA <var Processor: Mohawk> Interrupt
++ *										Mask Register
++ */
++/* DMA <var Processor: Mohawk> Interrupt Mask */
++#define	ICU_DMA_MOHAWK_INT_MSK_DMA_MOHAWK_INT_MSK_MSK			SHIFT0(0xffffffff)
++#define	ICU_DMA_MOHAWK_INT_BASE_DMA_MOHAWK_INT_BASE_BASE		0
++
++/*	ICU_DMA_SEAGULL_INT_STATUS	0x0120	DMA <var Processor: Osprey> Interrupt
++ *										Status Register
++ */
++/* DMA <var Processor: Osprey> Interrupt Status */
++#define	ICU_DMA_SEAGULL_INT_STATUS_DMA_SEAGULL_INT_STATUS_MSK		SHIFT0(0xffffffff)
++#define	ICU_DMA_SEAGULL_INT_STATUS_DMA_SEAGULL_INT_STATUS_BASE		0
++
++/*	ICU_DMA_MOHAWK_INT_STATUS	0x0124	DMA <var Processor: Mohawk> Interrupt
++ *										Status Register
++ */
++/* DMA Interrupt 1 Status */
++#define	ICU_DMA_MOHAWK_INT_STATUS_DMA_INT1_STATUS_MSK		SHIFT0(0xffffffff)
++#define	ICU_DMA_MOHAWK_INT_STATUS_DMA_INT1_STATUS_BASE		0
++
++/*	ICU_INT_STATUS_0			0x0128	Interrupt Status Register 0 */
++/* Interrupt Status [31:0] */
++#define	ICU_INT_STATUS_0_INT_STATUS_0_MSK		SHIFT0(0xffffffff)
++#define	ICU_INT_STATUS_0_INT_STATUS_0_BASE		0
++
++/*	ICU_INT_STATUS_1			0x012C	Interrupt Status Register 1 */
++/* Interrupt Status [63:32] */
++#define	ICU_INT_STATUS_1_INT_STATUS_1_MSK		SHIFT0(0xffffffff)
++#define	ICU_INT_STATUS_1_INT_STATUS_1_BASE		0
++
++/*	ICU_DDR_ARM_L2_INT_MSK		0x0130	DDR and ARM L2 cache Interrupt Mask
++ *										Register
++ */
++/*		Bit(s) ICU_DDR_ARM_L2_INT_MSK_RSRV_31_7 reserved */
++/* DDR Interrupt Mask */
++#define	ICU_DDR_ARM_L2_INT_MSK_DDR_INT_MSK						BIT_6
++/* <var Processor: Mohawk> L2 UECC Interrupt Mask */
++#define	ICU_DDR_ARM_L2_INT_MSK_MOHAWK_L2_UECC_INT_MSK			BIT_5
++/* <var Processor: Mohawk> L2 ECC Interrupt Mask */
++#define	ICU_DDR_ARM_L2_INT_MSK_MOHAWK_L2_ECC_INT_MSK			BIT_4
++/* <var Processor: Mohawk> L2 PA ECC Interrupt Mask */
++#define	ICU_DDR_ARM_L2_INT_MSK_MOHAWK_L2_PA_ECC_INT_MSK			BIT_3
++/* <var Processor: Osprey> L2 UECC Interrupt Mask */
++#define	ICU_DDR_ARM_L2_INT_MSK_SEAGULL_L2_UECC_INT_MSK			BIT_2
++/* <var Processor: Osprey> L2 ECC Interrupt Mask */
++#define	ICU_DDR_ARM_L2_INT_MSK_SEAGULL_L2_ECC_INT_MSK			BIT_1
++/* <var Processor: Osprey> L2 PA ECC Interrupt Mask */
++#define	ICU_DDR_ARM_L2_INT_MSK_SEAGULL_L2_PA_ECC_INT_MSK		BIT_0
++
++/*	ICU_DDR_ARM_L2_INT_STATUS	0x0134	DDR and ARM L2 cache Interrupt Status
++ *										Register
++ */
++/*		Bit(s) ICU_DDR_ARM_L2_INT_STATUS_RSRV_31_7 reserved */
++/* DDR Interrupt Status */
++#define	ICU_DDR_ARM_L2_INT_STATUS_DDR_INT_STATUS					BIT_6
++/* <var Processor: Mohawk> L2 UECC Interrupt Status */
++#define	ICU_DDR_ARM_L2_INT_STATUS_MOHAWK_L2_UECC_INT_STATUS			BIT_5
++/* <var Processor: Mohawk> L2 ECC Interrupt Status */
++#define	ICU_DDR_ARM_L2_INT_STATUS_MOHAWK_L2_ECC_INT_STATUS			BIT_4
++/* <var Processor: Mohawk> L2 PA ECC Interrupt Status */
++#define	ICU_DDR_ARM_L2_INT_STATUS_MOHAWK_L2_PA_ECC_INT_STATUS		BIT_3
++/* <var Processor: Osprey> L2 UECC Interrupt Status */
++#define	ICU_DDR_ARM_L2_INT_STATUS_SEAGULL_L2_UECC_INT_STATUS		BIT_2
++/* <var Processor: Osprey> L2 ECC Interrupt Status */
++#define	ICU_DDR_ARM_L2_INT_STATUS_SEAGULL_L2_ECC_INT_STATUS			BIT_1
++/* <var Processor: Osprey> L2 PA ECC Interrupt Status */
++#define	ICU_DDR_ARM_L2_INT_STATUS_SEAGULL_L2_PA_ECC_INT_STATUS		BIT_0
++
++
++
++/* -------------------- */
++
++
++#endif	/* __INC_ICU_H */
+-- 
+1.6.0.4
+

@@ -1,0 +1,111 @@
+From c23ade1916eaae8854eb20985d7f3c1c5380d50f Mon Sep 17 00:00:00 2001
+From: Lei Wen <leiwen@marvell.com>
+Date: Mon, 27 Apr 2009 07:52:40 +0800
+Subject: [PATCH] pxa168: eliminate onenand config from aspen
+
+Signed-off-by: Lei Wen <leiwen@marvell.com>
+---
+ board/pxa/common/bbt.c      |    4 ++++
+ board/pxa/common/boot.c     |    2 ++
+ include/configs/aspenite.h  |    6 ------
+ include/configs/zylonite2.h |    5 -----
+ 4 files changed, 6 insertions(+), 11 deletions(-)
+
+diff --git a/board/pxa/common/bbt.c b/board/pxa/common/bbt.c
+index 9017f06..d54473b 100644
+--- a/board/pxa/common/bbt.c
++++ b/board/pxa/common/bbt.c
+@@ -7,8 +7,10 @@
+ #include <asm/arch-pxa168/pxa3xx_nand.h>
+ #include <malloc.h>
+ 
++#ifdef CONFIG_CMD_ONENAND
+ extern struct mtd_info onenand_mtd;
+ extern struct onenand_chip onenand_chip;
++#endif
+ 
+ int do_bbt (cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
+ {
+@@ -43,6 +45,7 @@ int do_bbt (cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
+ 				return 0;
+ 			}
+ 		}
++#ifdef CONFIG_CMD_ONENAND
+ 		else if (strcmp(argv[2], "onenand") == 0) {
+ 			if (onenand_mtd.size == 0) {
+ 				printf ("There is no onenand device\n");
+@@ -51,6 +54,7 @@ int do_bbt (cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
+ 
+ 			mtd = &onenand_mtd;
+ 		}
++#endif
+ 		else {
+ 			printf ("Usage:\n%s\n", cmdtp->usage);
+ 			return 1;
+diff --git a/board/pxa/common/boot.c b/board/pxa/common/boot.c
+index e9e6127..fb39744 100644
+--- a/board/pxa/common/boot.c
++++ b/board/pxa/common/boot.c
+@@ -79,10 +79,12 @@ int do_bootz (cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
+ 			/* NAND Device Exist, try to boot from NAND */
+ 			printf("read zImage from NAND\n");
+ 			run_command(CONFIG_NANDBOOT, 0);
++#ifdef CONFIG_CMD_ONENAND
+ 		} else if (onenand_mtd.size > 0) {
+ 			/* OneNAND Device Exist, try to boot from OneNAND */
+ 			printf("read zImage from OneNAND\n");
+ 			run_command(CONFIG_ONENANDBOOT, 0);
++#endif
+ 		} else {
+ 			printf("No flash device, fail to AUTOBOOT!!!\n\n");
+ 		}
+diff --git a/include/configs/aspenite.h b/include/configs/aspenite.h
+index 11bc8c8..9cbf401 100644
+--- a/include/configs/aspenite.h
++++ b/include/configs/aspenite.h
+@@ -111,7 +111,6 @@
+ #if (CONFIG_BOOTDELAY >= 0)
+ 
+ /* boot arguments" */
+-#define CONFIG_ONENANDBOOT	     	"onenand read 0x500000 0x920000 0x300000"
+ #define CONFIG_NANDBOOT 	     	"nand read 0x500000 0x920000 0x300000"
+ #define CONFIG_BOOTCOMMAND      	"setenv autoboot boot; bootz 0x500000; setenv autoboot none"
+ #define CONFIG_ROOTPATH   		/tftpboot/rootfs_arm
+@@ -181,11 +180,6 @@
+ #define CONFIG_CMD_NAND 		1
+ #define CONFIG_SYS_MAX_NAND_DEVICE	1         /* Max number of NAND devices */
+ #define CONFIG_SYS_NAND_BASE		0x0
+-
+-/*-----------------------------------------------------------------------
+- * ONENAND configuration
+- */
+-#define CONFIG_CMD_ONENAND 		1
+ #define CONFIG_SYS_ONENAND_BASE 	0x80000000  /* configure for ttc */
+ #define CONFIG_USB_ETH
+ 
+diff --git a/include/configs/zylonite2.h b/include/configs/zylonite2.h
+index b6cee0e..d0a3f32 100644
+--- a/include/configs/zylonite2.h
++++ b/include/configs/zylonite2.h
+@@ -111,7 +111,6 @@
+ #if (CONFIG_BOOTDELAY >= 0)
+ 
+ /* boot arguments" */
+-#define CONFIG_ONENANDBOOT	     	"onenand read 0x500000 0x920000 0x300000"
+ #define CONFIG_NANDBOOT 	     	"nand read 0x500000 0x920000 0x300000"
+ #define CONFIG_BOOTCOMMAND      	"setenv autoboot boot; bootz 0x500000; setenv autoboot none"
+ #define CONFIG_ROOTPATH   		/tftpboot/rootfs_arm
+@@ -177,10 +176,6 @@
+ #define CONFIG_SYS_MAX_NAND_DEVICE	1         /* Max number of NAND devices */
+ #define CONFIG_SYS_NAND_BASE		0x0
+ 
+-/*-----------------------------------------------------------------------
+- * ONENAND configuration
+- */
+-#define CONFIG_CMD_ONENAND 		1
+ #define CONFIG_SYS_ONENAND_BASE 	0x80000000  /* configure for ttc */
+ #define CONFIG_USB_ETH
+ 
+-- 
+1.6.0.4
+

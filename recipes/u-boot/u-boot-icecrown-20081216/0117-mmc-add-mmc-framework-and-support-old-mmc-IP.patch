@@ -1,0 +1,2137 @@
+From cac368e1b4102a06e924255790f4d051274bbe89 Mon Sep 17 00:00:00 2001
+From: Lei Wen <leiwen@marvell.com>
+Date: Wed, 29 Jul 2009 20:35:02 +0800
+Subject: [PATCH] mmc: add mmc framework and support old mmc IP
+
+Signed-off-by: Lei Wen <leiwen@marvell.com>
+---
+ board/pxa/tavorevb3/tavorevb3.c |    7 +
+ common/cmd_mem.c                |   40 --
+ common/cmd_mmc.c                |  205 +++++++++-
+ cpu/pxa/Makefile                |    2 +-
+ drivers/mmc/Makefile            |    2 +
+ drivers/mmc/mmc.c               |  939 +++++++++++++++++++++++++++++++++++++++
+ drivers/mmc/pxamci.c            |  374 ++++++++++++++++
+ drivers/mmc/pxamci.h            |  119 +++++
+ include/configs/tavorpv.h       |   10 +
+ include/div64.h                 |   10 +
+ include/mmc.h                   |  244 ++++++++++-
+ lib_arm/board.c                 |    5 +
+ 12 files changed, 1900 insertions(+), 57 deletions(-)
+ create mode 100644 drivers/mmc/mmc.c
+ create mode 100644 drivers/mmc/pxamci.c
+ create mode 100644 drivers/mmc/pxamci.h
+
+diff --git a/board/pxa/tavorevb3/tavorevb3.c b/board/pxa/tavorevb3/tavorevb3.c
+index ebc4b33..92abcb5 100644
+--- a/board/pxa/tavorevb3/tavorevb3.c
++++ b/board/pxa/tavorevb3/tavorevb3.c
+@@ -123,6 +123,13 @@ int board_init (void)
+ 	return 0;
+ }
+ 
++#ifdef CONFIG_PXAMCI
++int board_mmc_init(bd_t *bd)
++{
++	return pxamci_init(bd);
++}
++#endif
++
+ int board_late_init(void)
+ {
+ 	setenv("stdout", "serial");
+diff --git a/common/cmd_mem.c b/common/cmd_mem.c
+index 400cfd7..bb3114b 100644
+--- a/common/cmd_mem.c
++++ b/common/cmd_mem.c
+@@ -404,46 +404,6 @@ int do_mem_cp ( cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
+ 	}
+ #endif
+ 
+-#if defined(CONFIG_CMD_MMC)
+-	if (mmc2info(dest)) {
+-		int rc;
+-
+-		puts ("Copy to MMC... ");
+-		switch (rc = mmc_write ((uchar *)addr, dest, count*size)) {
+-		case 0:
+-			putc ('\n');
+-			return 1;
+-		case -1:
+-			puts ("failed\n");
+-			return 1;
+-		default:
+-			printf ("%s[%d] FIXME: rc=%d\n",__FILE__,__LINE__,rc);
+-			return 1;
+-		}
+-		puts ("done\n");
+-		return 0;
+-	}
+-
+-	if (mmc2info(addr)) {
+-		int rc;
+-
+-		puts ("Copy from MMC... ");
+-		switch (rc = mmc_read (addr, (uchar *)dest, count*size)) {
+-		case 0:
+-			putc ('\n');
+-			return 1;
+-		case -1:
+-			puts ("failed\n");
+-			return 1;
+-		default:
+-			printf ("%s[%d] FIXME: rc=%d\n",__FILE__,__LINE__,rc);
+-			return 1;
+-		}
+-		puts ("done\n");
+-		return 0;
+-	}
+-#endif
+-
+ #ifdef CONFIG_HAS_DATAFLASH
+ 	/* Check if we are copying from RAM or Flash to DataFlash */
+ 	if (addr_dataflash(dest) && !addr_dataflash(addr)){
+diff --git a/common/cmd_mmc.c b/common/cmd_mmc.c
+index 25c9702..0e3393b 100644
+--- a/common/cmd_mmc.c
++++ b/common/cmd_mmc.c
+@@ -25,17 +25,212 @@
+ #include <command.h>
+ #include <mmc.h>
+ 
++#ifndef CONFIG_GENERIC_MMC
++static int curr_device = -1;
++
+ int do_mmc (cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
+ {
+-	if (mmc_init (1) != 0) {
+-		printf ("No MMC card found\n");
++	int dev;
++
++	if (argc < 2) {
++		cmd_usage(cmdtp);
++		return 1;
++	}
++
++	if (strcmp(argv[1], "init") == 0) {
++		if (argc == 2) {
++			if (curr_device < 0)
++				dev = 1;
++			else
++				dev = curr_device;
++		} else if (argc == 3) {
++			dev = (int)simple_strtoul(argv[2], NULL, 10);
++		} else {
++			cmd_usage(cmdtp);
++			return 1;
++		}
++
++		if (mmc_legacy_init(dev) != 0) {
++			puts("No MMC card found\n");
++			return 1;
++		}
++
++		curr_device = dev;
++		printf("mmc%d is available\n", curr_device);
++	} else if (strcmp(argv[1], "device") == 0) {
++		if (argc == 2) {
++			if (curr_device < 0) {
++				puts("No MMC device available\n");
++				return 1;
++			}
++		} else if (argc == 3) {
++			dev = (int)simple_strtoul(argv[2], NULL, 10);
++
++#ifdef CONFIG_SYS_MMC_SET_DEV
++			if (mmc_set_dev(dev) != 0)
++				return 1;
++#endif
++			curr_device = dev;
++		} else {
++			cmd_usage(cmdtp);
++			return 1;
++		}
++
++		printf("mmc%d is current device\n", curr_device);
++	} else {
++		cmd_usage(cmdtp);
+ 		return 1;
+ 	}
++
+ 	return 0;
+ }
+ 
+ U_BOOT_CMD(
+-	mmcinit,	1,	0,	do_mmc,
+-	"mmcinit - init mmc card\n",
+-	NULL
++	mmc, 3, 1, do_mmc,
++	"MMC sub-system",
++	"init [dev] - init MMC sub system\n"
++	"mmc device [dev] - show or set current device"
++);
++#else /* !CONFIG_GENERIC_MMC */
++
++static void print_mmcinfo(struct mmc *mmc)
++{
++	printf("Device: %s\n", mmc->name);
++	printf("Manufacturer ID: %x\n", mmc->cid[0] >> 24);
++	printf("OEM: %x\n", (mmc->cid[0] >> 8) & 0xffff);
++	printf("Name: %c%c%c%c%c \n", mmc->cid[0] & 0xff,
++			(mmc->cid[1] >> 24), (mmc->cid[1] >> 16) & 0xff,
++			(mmc->cid[1] >> 8) & 0xff, mmc->cid[1] & 0xff);
++
++	printf("Tran Speed: %d\n", mmc->tran_speed);
++	printf("Rd Block Len: %d\n", mmc->read_bl_len);
++
++	printf("%s version %d.%d\n", IS_SD(mmc) ? "SD" : "MMC",
++			(mmc->version >> 4) & 0xf, mmc->version & 0xf);
++
++	printf("High Capacity: %s\n", mmc->high_capacity ? "Yes" : "No");
++	printf("Capacity: %lld\n", mmc->capacity);
++
++	printf("Bus Width: %d-bit\n", mmc->bus_width);
++}
++
++int do_mmcinfo (cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
++{
++	struct mmc *mmc;
++	int dev_num;
++
++	if (argc < 2)
++		dev_num = 0;
++	else
++		dev_num = simple_strtoul(argv[1], NULL, 0);
++
++	mmc = find_mmc_device(dev_num);
++
++	if (mmc) {
++		mmc_init(mmc);
++
++		print_mmcinfo(mmc);
++	}
++
++	return 0;
++}
++
++U_BOOT_CMD(mmcinfo, 2, 0, do_mmcinfo,
++	"mmcinfo <dev num>-- display MMC info\n",
++	""
+ );
++
++int do_mmcops(cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
++{
++	int rc = 0;
++
++	switch (argc) {
++	case 3:
++		if (strcmp(argv[1], "rescan") == 0) {
++			int dev = simple_strtoul(argv[2], NULL, 10);
++			struct mmc *mmc = find_mmc_device(dev);
++
++			if (!mmc)
++				return 1;
++
++			mmc_init(mmc);
++
++			return 0;
++		}
++
++	case 0:
++	case 1:
++	case 4:
++		printf("Usage:\n%s\n", cmdtp->usage);
++		return 1;
++
++	case 2:
++		if (!strcmp(argv[1], "list")) {
++			print_mmc_devices('\n');
++			return 0;
++		}
++		return 1;
++	default: /* at least 5 args */
++		if (strcmp(argv[1], "read") == 0) {
++			int dev = simple_strtoul(argv[2], NULL, 10);
++			void *addr = (void *)simple_strtoul(argv[3], NULL, 16);
++			u32 cnt = simple_strtoul(argv[5], NULL, 16);
++			u32 n;
++			u32 blk = simple_strtoul(argv[4], NULL, 16);
++			struct mmc *mmc = find_mmc_device(dev);
++
++			if (!mmc)
++				return 1;
++
++			printf("\nMMC read: dev # %d, block # %d, count %d ... ",
++				dev, blk, cnt);
++
++			mmc_init(mmc);
++
++			n = mmc->block_dev.block_read(dev, blk, cnt, addr);
++
++			/* flush cache after read */
++			flush_cache((ulong)addr, cnt * 512); /* FIXME */
++
++			printf("%d blocks read: %s\n",
++				n, (n==cnt) ? "OK" : "ERROR");
++			return (n == cnt) ? 0 : 1;
++		} else if (strcmp(argv[1], "write") == 0) {
++			int dev = simple_strtoul(argv[2], NULL, 10);
++			void *addr = (void *)simple_strtoul(argv[3], NULL, 16);
++			u32 cnt = simple_strtoul(argv[5], NULL, 16);
++			u32 n;
++			struct mmc *mmc = find_mmc_device(dev);
++
++			int blk = simple_strtoul(argv[4], NULL, 16);
++
++			if (!mmc)
++				return 1;
++
++			printf("\nMMC write: dev # %d, block # %d, count %d ... ",
++				dev, blk, cnt);
++
++			mmc_init(mmc);
++
++			n = mmc->block_dev.block_write(dev, blk, cnt, addr);
++
++			printf("%d blocks written: %s\n",
++				n, (n == cnt) ? "OK" : "ERROR");
++			return (n == cnt) ? 0 : 1;
++		} else {
++			printf("Usage:\n%s\n", cmdtp->usage);
++			rc = 1;
++		}
++
++		return rc;
++	}
++}
++
++U_BOOT_CMD(
++	mmc, 6, 1, do_mmcops,
++	"MMC sub system",
++	"read <device num> addr blk# cnt\n"
++	"mmc write <device num> addr blk# cnt\n"
++	"mmc rescan <device num>\n"
++	"mmc list - lists available devices");
++#endif
+diff --git a/cpu/pxa/Makefile b/cpu/pxa/Makefile
+index 8b4367e..42903b2 100644
+--- a/cpu/pxa/Makefile
++++ b/cpu/pxa/Makefile
+@@ -26,7 +26,7 @@ include $(TOPDIR)/config.mk
+ LIB	= $(obj)lib$(CPU).a
+ 
+ START	= start.o
+-COBJS	= serial.o interrupts.o cpu.o i2c.o pxafb.o mmc.o usb.o
++COBJS	= serial.o interrupts.o cpu.o i2c.o pxafb.o usb.o
+ 
+ SRCS	:= $(START:.o=.S) $(SOBJS:.o=.S) $(COBJS:.o=.c)
+ OBJS	:= $(addprefix $(obj),$(SOBJS) $(COBJS))
+diff --git a/drivers/mmc/Makefile b/drivers/mmc/Makefile
+index 3dc031b..d9fa461 100644
+--- a/drivers/mmc/Makefile
++++ b/drivers/mmc/Makefile
+@@ -26,6 +26,8 @@ include $(TOPDIR)/config.mk
+ LIB	:= $(obj)libmmc.a
+ 
+ COBJS-$(CONFIG_ATMEL_MCI) += atmel_mci.o
++COBJS-$(CONFIG_GENERIC_MMC) += mmc.o
++COBJS-$(CONFIG_PXAMCI) += pxamci.o
+ 
+ COBJS	:= $(COBJS-y)
+ SRCS	:= $(COBJS:.o=.c)
+diff --git a/drivers/mmc/mmc.c b/drivers/mmc/mmc.c
+new file mode 100644
+index 0000000..f00e022
+--- /dev/null
++++ b/drivers/mmc/mmc.c
+@@ -0,0 +1,939 @@
++/*
++ * Copyright 2008, Freescale Semiconductor, Inc
++ * Andy Fleming
++ *
++ * Based vaguely on the Linux code
++ *
++ * See file CREDITS for list of people who contributed to this
++ * project.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++#include <config.h>
++#include <common.h>
++#include <command.h>
++#include <mmc.h>
++#include <part.h>
++#include <malloc.h>
++#include <linux/list.h>
++#include <mmc.h>
++#include <div64.h>
++
++#define MMC_RETRY_TIME	3
++static struct list_head mmc_devices;
++static int cur_dev_num = -1;
++
++int mmc_send_cmd(struct mmc *mmc, struct mmc_cmd *cmd, struct mmc_data *data)
++{
++	int retry = 0, res;
++
++	do {
++		res = mmc->send_cmd(mmc, cmd, data);
++	} while (res && retry ++ < MMC_RETRY_TIME);
++
++	return res;
++}
++
++int mmc_set_blocklen(struct mmc *mmc, int len)
++{
++	struct mmc_cmd cmd;
++
++	cmd.cmdidx = MMC_CMD_SET_BLOCKLEN;
++	cmd.resp_type = MMC_RSP_R1;
++	cmd.cmdarg = len;
++	cmd.flags = 0;
++
++	return mmc_send_cmd(mmc, &cmd, NULL);
++}
++
++struct mmc *find_mmc_device(int dev_num)
++{
++	struct mmc *m;
++	struct list_head *entry;
++
++	list_for_each(entry, &mmc_devices) {
++		m = list_entry(entry, struct mmc, link);
++
++		if (m->block_dev.dev == dev_num)
++			return m;
++	}
++
++	printf("MMC Device %d not found\n", dev_num);
++
++	return NULL;
++}
++
++static ulong
++mmc_bwrite(int dev_num, ulong start, lbaint_t blkcnt, const void*src)
++{
++	struct mmc_cmd cmd;
++	struct mmc_data data;
++	int err;
++	int stoperr = 0;
++	struct mmc *mmc = find_mmc_device(dev_num);
++	int blklen;
++
++	if (!mmc)
++		return -1;
++
++	blklen = mmc->write_bl_len;
++
++	err = mmc_set_blocklen(mmc, mmc->write_bl_len);
++
++	if (err) {
++		printf("set write bl len failed\n\r");
++		return err;
++	}
++
++	if (blkcnt > 1)
++		cmd.cmdidx = MMC_CMD_WRITE_MULTIPLE_BLOCK;
++	else
++		cmd.cmdidx = MMC_CMD_WRITE_SINGLE_BLOCK;
++
++	if (mmc->high_capacity)
++		cmd.cmdarg = start;
++	else
++		cmd.cmdarg = start * blklen;
++
++	cmd.resp_type = MMC_RSP_R1;
++	cmd.flags = 0;
++
++	data.src = src;
++	data.blocks = blkcnt;
++	data.blocksize = blklen;
++	data.flags = MMC_DATA_WRITE;
++
++	err = mmc_send_cmd(mmc, &cmd, &data);
++
++	if (err) {
++		printf("mmc write failed\n\r");
++		return err;
++	}
++
++	if (blkcnt > 1) {
++		cmd.cmdidx = MMC_CMD_STOP_TRANSMISSION;
++		cmd.cmdarg = 0;
++		cmd.resp_type = MMC_RSP_R1b;
++		cmd.flags = 0;
++		stoperr = mmc_send_cmd(mmc, &cmd, NULL);
++	}
++
++	return blkcnt;
++}
++
++int mmc_read_block(struct mmc *mmc, void *dst, uint blocknum)
++{
++	struct mmc_cmd cmd;
++	struct mmc_data data;
++
++	cmd.cmdidx = MMC_CMD_READ_SINGLE_BLOCK;
++
++	if (mmc->high_capacity)
++		cmd.cmdarg = blocknum;
++	else
++		cmd.cmdarg = blocknum * mmc->read_bl_len;
++
++	cmd.resp_type = MMC_RSP_R1;
++	cmd.flags = 0;
++
++	data.dest = dst;
++	data.blocks = 1;
++	data.blocksize = mmc->read_bl_len;
++	data.flags = MMC_DATA_READ;
++
++	return mmc_send_cmd(mmc, &cmd, &data);
++}
++
++int mmc_read(struct mmc *mmc, u64 src, uchar *dst, int size)
++{
++	char *buffer;
++	int i;
++	int blklen = mmc->read_bl_len;
++	int startblock = lldiv(src, mmc->read_bl_len);
++	int endblock = lldiv(src + size - 1, mmc->read_bl_len);
++	int err = 0;
++
++	/* Make a buffer big enough to hold all the blocks we might read */
++	buffer = malloc(blklen);
++
++	printf("@@@@@@@@buffer %x\n\n", buffer);
++	while(1);
++	if (!buffer) {
++		printf("Could not allocate buffer for MMC read!\n");
++		return -1;
++	}
++
++	/* We always do full block reads from the card */
++	err = mmc_set_blocklen(mmc, mmc->read_bl_len);
++
++	if (err)
++		return err;
++
++	for (i = startblock; i <= endblock; i++) {
++		int segment_size;
++		int offset;
++
++		err = mmc_read_block(mmc, buffer, i);
++
++		if (err)
++			goto free_buffer;
++
++		/*
++		 * The first block may not be aligned, so we
++		 * copy from the desired point in the block
++		 */
++		offset = (src & (blklen - 1));
++		segment_size = MIN(blklen - offset, size);
++
++		memcpy(dst, buffer + offset, segment_size);
++
++		dst += segment_size;
++		src += segment_size;
++		size -= segment_size;
++	}
++
++free_buffer:
++	free(buffer);
++
++	return err;
++}
++
++static ulong mmc_bread(int dev_num, ulong start, lbaint_t blkcnt, void *dst)
++{
++	int err;
++	int i;
++	struct mmc *mmc = find_mmc_device(dev_num);
++
++	if (!mmc)
++		return 0;
++
++	/* We always do full block reads from the card */
++	err = mmc_set_blocklen(mmc, mmc->read_bl_len);
++
++	if (err) {
++		return 0;
++	}
++
++	for (i = start; i < start + blkcnt; i++, dst += mmc->read_bl_len) {
++		err = mmc_read_block(mmc, dst, i);
++
++		if (err) {
++			printf("block read failed: %d\n", err);
++			return i - start;
++		}
++	}
++
++	return blkcnt;
++}
++
++int mmc_go_idle(struct mmc* mmc)
++{
++	struct mmc_cmd cmd;
++	int err;
++
++	udelay(1000);
++
++	cmd.cmdidx = MMC_CMD_GO_IDLE_STATE;
++	cmd.cmdarg = 0;
++	cmd.resp_type = MMC_RSP_NONE;
++	cmd.flags = 0;
++
++	err = mmc_send_cmd(mmc, &cmd, NULL);
++
++	if (err)
++		return err;
++
++	udelay(2000);
++
++	return 0;
++}
++
++int
++sd_send_op_cond(struct mmc *mmc)
++{
++	int timeout = 1000;
++	int err;
++	struct mmc_cmd cmd;
++
++	do {
++		cmd.cmdidx = MMC_CMD_APP_CMD;
++		cmd.resp_type = MMC_RSP_R1;
++		cmd.cmdarg = 0;
++		cmd.flags = 0;
++
++		err = mmc_send_cmd(mmc, &cmd, NULL);
++
++		if (err)
++			return err;
++
++		cmd.cmdidx = SD_CMD_APP_SEND_OP_COND;
++		cmd.resp_type = MMC_RSP_R3;
++		cmd.cmdarg = mmc->voltages;
++
++		if (mmc->version == SD_VERSION_2)
++			cmd.cmdarg |= OCR_HCS;
++
++		err = mmc_send_cmd(mmc, &cmd, NULL);
++
++		if (err)
++			return err;
++
++		udelay(1000);
++	} while ((!(cmd.response[0] & OCR_BUSY)) && timeout--);
++
++	if (timeout <= 0)
++		return UNUSABLE_ERR;
++
++	if (mmc->version != SD_VERSION_2)
++		mmc->version = SD_VERSION_1_0;
++
++	mmc->ocr = cmd.response[0];
++
++	mmc->high_capacity = ((mmc->ocr & OCR_HCS) == OCR_HCS);
++	mmc->rca = 0;
++
++	return 0;
++}
++
++int mmc_send_op_cond(struct mmc *mmc)
++{
++	int timeout = 1000;
++	struct mmc_cmd cmd;
++	int err;
++
++	/* Some cards seem to need this */
++	mmc_go_idle(mmc);
++
++	do {
++		cmd.cmdidx = MMC_CMD_SEND_OP_COND;
++		cmd.resp_type = MMC_RSP_R3;
++		cmd.cmdarg = OCR_HCS | mmc->voltages;
++		cmd.flags = 0;
++
++		err = mmc_send_cmd(mmc, &cmd, NULL);
++
++		if (err)
++			return err;
++
++		udelay(1000);
++	} while (!(cmd.response[0] & OCR_BUSY) && timeout--);
++
++	if (timeout <= 0)
++		return UNUSABLE_ERR;
++
++	mmc->version = MMC_VERSION_UNKNOWN;
++	mmc->ocr = cmd.response[0];
++
++	mmc->high_capacity = ((mmc->ocr & OCR_HCS) == OCR_HCS);
++	mmc->rca = 0;
++
++	return 0;
++}
++
++
++int mmc_send_ext_csd(struct mmc *mmc, char *ext_csd)
++{
++	struct mmc_cmd cmd;
++	struct mmc_data data;
++	int err;
++
++	/* Get the Card Status Register */
++	cmd.cmdidx = MMC_CMD_SEND_EXT_CSD;
++	cmd.resp_type = MMC_RSP_R1;
++	cmd.cmdarg = 0;
++	cmd.flags = 0;
++
++	data.dest = ext_csd;
++	data.blocks = 1;
++	data.blocksize = 512;
++	data.flags = MMC_DATA_READ;
++
++	err = mmc_send_cmd(mmc, &cmd, &data);
++
++	return err;
++}
++
++
++int mmc_switch(struct mmc *mmc, u8 set, u8 index, u8 value)
++{
++	struct mmc_cmd cmd;
++
++	cmd.cmdidx = MMC_CMD_SWITCH;
++	cmd.resp_type = MMC_RSP_R1b;
++	cmd.cmdarg = (MMC_SWITCH_MODE_WRITE_BYTE << 24) |
++		(index << 16) |
++		(value << 8);
++	cmd.flags = 0;
++
++	return mmc_send_cmd(mmc, &cmd, NULL);
++}
++
++int mmc_change_freq(struct mmc *mmc)
++{
++	char ext_csd[512];
++	char cardtype;
++	int err;
++
++	mmc->card_caps = 0;
++
++	/* Only version 4 supports high-speed */
++	if (mmc->version < MMC_VERSION_4)
++		return 0;
++
++	mmc->card_caps |= MMC_MODE_4BIT;
++
++	err = mmc_send_ext_csd(mmc, ext_csd);
++
++	if (err)
++		return err;
++
++	if (ext_csd[212] || ext_csd[213] || ext_csd[214] || ext_csd[215])
++		mmc->high_capacity = 1;
++
++	cardtype = ext_csd[196] & 0xf;
++
++	err = mmc_switch(mmc, EXT_CSD_CMD_SET_NORMAL, EXT_CSD_HS_TIMING, 1);
++
++	if (err)
++		return err;
++
++	/* Now check to see that it worked */
++	err = mmc_send_ext_csd(mmc, ext_csd);
++
++	if (err)
++		return err;
++
++	/* No high-speed support */
++	if (!ext_csd[185])
++		return 0;
++
++	/* High Speed is set, there are two types: 52MHz and 26MHz */
++	if (cardtype & MMC_HS_52MHZ)
++		mmc->card_caps |= MMC_MODE_HS_52MHz | MMC_MODE_HS;
++	else
++		mmc->card_caps |= MMC_MODE_HS;
++
++	return 0;
++}
++
++int sd_switch(struct mmc *mmc, int mode, int group, u8 value, u8 *resp)
++{
++	struct mmc_cmd cmd;
++	struct mmc_data data;
++
++	/* Switch the frequency */
++	cmd.cmdidx = SD_CMD_SWITCH_FUNC;
++	cmd.resp_type = MMC_RSP_R1;
++	cmd.cmdarg = (mode << 31) | 0xffffff;
++	cmd.cmdarg &= ~(0xf << (group * 4));
++	cmd.cmdarg |= value << (group * 4);
++	cmd.flags = 0;
++
++	data.dest = (char *)resp;
++	data.blocksize = 64;
++	data.blocks = 1;
++	data.flags = MMC_DATA_READ;
++
++	return mmc_send_cmd(mmc, &cmd, &data);
++}
++
++
++int sd_change_freq(struct mmc *mmc)
++{
++	int err;
++	struct mmc_cmd cmd;
++	uint scr[2];
++	uint switch_status[16];
++	struct mmc_data data;
++	int timeout;
++
++	mmc->card_caps = 0;
++
++	/* Read the SCR to find out if this card supports higher speeds */
++	cmd.cmdidx = MMC_CMD_APP_CMD;
++	cmd.resp_type = MMC_RSP_R1;
++	cmd.cmdarg = mmc->rca << 16;
++	cmd.flags = 0;
++
++	err = mmc_send_cmd(mmc, &cmd, NULL);
++
++	if (err)
++		return err;
++
++	cmd.cmdidx = SD_CMD_APP_SEND_SCR;
++	cmd.resp_type = MMC_RSP_R1;
++	cmd.cmdarg = 0;
++	cmd.flags = 0;
++
++	timeout = 3;
++
++retry_scr:
++	data.dest = (char *)&scr;
++	data.blocksize = 8;
++	data.blocks = 1;
++	data.flags = MMC_DATA_READ;
++
++	err = mmc_send_cmd(mmc, &cmd, &data);
++
++	if (err) {
++		if (timeout--)
++			goto retry_scr;
++
++		return err;
++	}
++
++	mmc->scr[0] = __be32_to_cpu(scr[0]);
++	mmc->scr[1] = __be32_to_cpu(scr[1]);
++
++	switch ((mmc->scr[0] >> 24) & 0xf) {
++		case 0:
++			mmc->version = SD_VERSION_1_0;
++			break;
++		case 1:
++			mmc->version = SD_VERSION_1_10;
++			break;
++		case 2:
++			mmc->version = SD_VERSION_2;
++			break;
++		default:
++			mmc->version = SD_VERSION_1_0;
++			break;
++	}
++
++	/* Version 1.0 doesn't support switching */
++	if (mmc->version == SD_VERSION_1_0)
++		return 0;
++
++	timeout = 4;
++	while (timeout--) {
++		err = sd_switch(mmc, SD_SWITCH_CHECK, 0, 1,
++				(u8 *)&switch_status);
++
++		if (err)
++			return err;
++
++		/* The high-speed function is busy.  Try again */
++		if (!(__be32_to_cpu(switch_status[7]) & SD_HIGHSPEED_BUSY))
++			break;
++	}
++
++	if (mmc->scr[0] & SD_DATA_4BIT)
++		mmc->card_caps |= MMC_MODE_4BIT;
++
++	/* If high-speed isn't supported, we return */
++	if (!(__be32_to_cpu(switch_status[3]) & SD_HIGHSPEED_SUPPORTED))
++		return 0;
++
++	err = sd_switch(mmc, SD_SWITCH_SWITCH, 0, 1, (u8 *)&switch_status);
++
++	if (err)
++		return err;
++
++	if ((__be32_to_cpu(switch_status[4]) & 0x0f000000) == 0x01000000)
++		mmc->card_caps |= MMC_MODE_HS;
++
++	return 0;
++}
++
++/* frequency bases */
++/* divided by 10 to be nice to platforms without floating point */
++int fbase[] = {
++	10000,
++	100000,
++	1000000,
++	10000000,
++};
++
++/* Multiplier values for TRAN_SPEED.  Multiplied by 10 to be nice
++ * to platforms without floating point.
++ */
++int multipliers[] = {
++	0,	/* reserved */
++	10,
++	12,
++	13,
++	15,
++	20,
++	25,
++	30,
++	35,
++	40,
++	45,
++	50,
++	55,
++	60,
++	70,
++	80,
++};
++
++void mmc_set_ios(struct mmc *mmc)
++{
++	mmc->set_ios(mmc);
++}
++
++void mmc_set_clock(struct mmc *mmc, uint clock)
++{
++	if (clock > mmc->f_max)
++		clock = mmc->f_max;
++
++	if (clock < mmc->f_min)
++		clock = mmc->f_min;
++
++	mmc->clock = clock;
++
++	mmc_set_ios(mmc);
++}
++
++void mmc_set_bus_width(struct mmc *mmc, uint width)
++{
++	mmc->bus_width = width;
++
++	mmc_set_ios(mmc);
++}
++
++int mmc_startup(struct mmc *mmc)
++{
++	int err;
++	uint mult, freq;
++	u64 cmult, csize;
++	struct mmc_cmd cmd;
++
++	/* Put the Card in Identify Mode */
++	cmd.cmdidx = MMC_CMD_ALL_SEND_CID;
++	cmd.resp_type = MMC_RSP_R2;
++	cmd.cmdarg = 0;
++	cmd.flags = 0;
++
++	err = mmc_send_cmd(mmc, &cmd, NULL);
++
++	if (err)
++		return err;
++
++	memcpy(mmc->cid, cmd.response, 16);
++
++	/*
++	 * For MMC cards, set the Relative Address.
++	 * For SD cards, get the Relatvie Address.
++	 * This also puts the cards into Standby State
++	 */
++	cmd.cmdidx = SD_CMD_SEND_RELATIVE_ADDR;
++	cmd.cmdarg = mmc->rca << 16;
++	cmd.resp_type = MMC_RSP_R6;
++	cmd.flags = 0;
++
++	err = mmc_send_cmd(mmc, &cmd, NULL);
++
++	if (err)
++		return err;
++
++	if (IS_SD(mmc))
++		mmc->rca = (cmd.response[0] >> 16) & 0xffff;
++
++	/* Get the Card-Specific Data */
++	cmd.cmdidx = MMC_CMD_SEND_CSD;
++	cmd.resp_type = MMC_RSP_R2;
++	cmd.cmdarg = mmc->rca << 16;
++	cmd.flags = 0;
++
++	err = mmc_send_cmd(mmc, &cmd, NULL);
++
++	if (err)
++		return err;
++
++	mmc->csd[0] = cmd.response[0];
++	mmc->csd[1] = cmd.response[1];
++	mmc->csd[2] = cmd.response[2];
++	mmc->csd[3] = cmd.response[3];
++
++	if (mmc->version == MMC_VERSION_UNKNOWN) {
++		int version = (cmd.response[0] >> 26) & 0xf;
++
++		switch (version) {
++			case 0:
++				mmc->version = MMC_VERSION_1_2;
++				break;
++			case 1:
++				mmc->version = MMC_VERSION_1_4;
++				break;
++			case 2:
++				mmc->version = MMC_VERSION_2_2;
++				break;
++			case 3:
++				mmc->version = MMC_VERSION_3;
++				break;
++			case 4:
++				mmc->version = MMC_VERSION_4;
++				break;
++			default:
++				mmc->version = MMC_VERSION_1_2;
++				break;
++		}
++	}
++
++	/* divide frequency by 10, since the mults are 10x bigger */
++	freq = fbase[(cmd.response[0] & 0x7)];
++	mult = multipliers[((cmd.response[0] >> 3) & 0xf)];
++
++	mmc->tran_speed = freq * mult;
++
++	mmc->read_bl_len = 1 << ((cmd.response[1] >> 16) & 0xf);
++
++	if (IS_SD(mmc))
++		mmc->write_bl_len = mmc->read_bl_len;
++	else
++		mmc->write_bl_len = 1 << ((cmd.response[3] >> 22) & 0xf);
++
++	if (mmc->high_capacity) {
++		csize = (mmc->csd[1] & 0x3f) << 16
++			| (mmc->csd[2] & 0xffff0000) >> 16;
++		cmult = 8;
++	} else {
++		csize = (mmc->csd[1] & 0x3ff) << 2
++			| (mmc->csd[2] & 0xc0000000) >> 30;
++		cmult = (mmc->csd[2] & 0x00038000) >> 15;
++	}
++
++	mmc->capacity = (csize + 1) << (cmult + 2);
++	mmc->capacity *= mmc->read_bl_len;
++
++	if (mmc->read_bl_len > 512)
++		mmc->read_bl_len = 512;
++
++	if (mmc->write_bl_len > 512)
++		mmc->write_bl_len = 512;
++
++	/* Select the card, and put it into Transfer Mode */
++	cmd.cmdidx = MMC_CMD_SELECT_CARD;
++	cmd.resp_type = MMC_RSP_R1b;
++	cmd.cmdarg = mmc->rca << 16;
++	cmd.flags = 0;
++	err = mmc_send_cmd(mmc, &cmd, NULL);
++
++	if (err)
++		return err;
++
++	if (IS_SD(mmc))
++		err = sd_change_freq(mmc);
++	else
++		err = mmc_change_freq(mmc);
++
++	if (err)
++		return err;
++
++	/* Restrict card's capabilities by what the host can do */
++	mmc->card_caps &= mmc->host_caps;
++
++	if (IS_SD(mmc)) {
++		if (mmc->card_caps & MMC_MODE_4BIT) {
++			cmd.cmdidx = MMC_CMD_APP_CMD;
++			cmd.resp_type = MMC_RSP_R1;
++			cmd.cmdarg = mmc->rca << 16;
++			cmd.flags = 0;
++
++			err = mmc_send_cmd(mmc, &cmd, NULL);
++			if (err)
++				return err;
++
++			cmd.cmdidx = SD_CMD_APP_SET_BUS_WIDTH;
++			cmd.resp_type = MMC_RSP_R1;
++			cmd.cmdarg = 2;
++			cmd.flags = 0;
++			err = mmc_send_cmd(mmc, &cmd, NULL);
++			if (err)
++				return err;
++
++			mmc_set_bus_width(mmc, 4);
++		}
++
++		if (mmc->card_caps & MMC_MODE_HS)
++			mmc_set_clock(mmc, 50000000);
++		else
++			mmc_set_clock(mmc, 25000000);
++	} else {
++		if (mmc->card_caps & MMC_MODE_4BIT) {
++			/* Set the card to use 4 bit*/
++			err = mmc_switch(mmc, EXT_CSD_CMD_SET_NORMAL,
++					EXT_CSD_BUS_WIDTH,
++					EXT_CSD_BUS_WIDTH_4);
++
++			if (err)
++				return err;
++
++			mmc_set_bus_width(mmc, 4);
++		} else if (mmc->card_caps & MMC_MODE_8BIT) {
++			/* Set the card to use 8 bit*/
++			err = mmc_switch(mmc, EXT_CSD_CMD_SET_NORMAL,
++					EXT_CSD_BUS_WIDTH,
++					EXT_CSD_BUS_WIDTH_8);
++
++			if (err)
++				return err;
++
++			mmc_set_bus_width(mmc, 8);
++		}
++
++		if (mmc->card_caps & MMC_MODE_HS) {
++			if (mmc->card_caps & MMC_MODE_HS_52MHz)
++				mmc_set_clock(mmc, 52000000);
++			else
++				mmc_set_clock(mmc, 26000000);
++		} else
++			mmc_set_clock(mmc, 20000000);
++	}
++
++	/* fill in device description */
++	mmc->block_dev.lun = 0;
++	mmc->block_dev.type = 0;
++	mmc->block_dev.blksz = mmc->read_bl_len;
++	mmc->block_dev.lba = lldiv(mmc->capacity, mmc->read_bl_len);
++	sprintf(mmc->block_dev.vendor, "Man %06x Snr %08x", mmc->cid[0] >> 8,
++			(mmc->cid[2] << 8) | (mmc->cid[3] >> 24));
++	sprintf(mmc->block_dev.product, "%c%c%c%c%c", mmc->cid[0] & 0xff,
++			(mmc->cid[1] >> 24), (mmc->cid[1] >> 16) & 0xff,
++			(mmc->cid[1] >> 8) & 0xff, mmc->cid[1] & 0xff);
++	sprintf(mmc->block_dev.revision, "%d.%d", mmc->cid[2] >> 28,
++			(mmc->cid[2] >> 24) & 0xf);
++	init_part(&mmc->block_dev);
++
++	return 0;
++}
++
++int mmc_send_if_cond(struct mmc *mmc)
++{
++	struct mmc_cmd cmd;
++	int err;
++
++	cmd.cmdidx = SD_CMD_SEND_IF_COND;
++	/* We set the bit if the host supports voltages between 2.7 and 3.6 V */
++	cmd.cmdarg = ((mmc->voltages & 0xff8000) != 0) << 8 | 0xaa;
++	cmd.resp_type = MMC_RSP_R7;
++	cmd.flags = 0;
++
++	err = mmc_send_cmd(mmc, &cmd, NULL);
++
++	if (err)
++		return err;
++
++	if ((cmd.response[0] & 0xff) != 0xaa)
++		return UNUSABLE_ERR;
++	else
++		mmc->version = SD_VERSION_2;
++
++	return 0;
++}
++
++int mmc_register(struct mmc *mmc)
++{
++	/* Setup the universal parts of the block interface just once */
++	mmc->block_dev.if_type = IF_TYPE_MMC;
++	mmc->block_dev.dev = cur_dev_num++;
++	mmc->block_dev.removable = 1;
++	mmc->block_dev.block_read = mmc_bread;
++	mmc->block_dev.block_write = mmc_bwrite;
++
++	INIT_LIST_HEAD (&mmc->link);
++
++	list_add_tail (&mmc->link, &mmc_devices);
++
++	return 0;
++}
++
++block_dev_desc_t *mmc_get_dev(int dev)
++{
++	struct mmc *mmc = find_mmc_device(dev);
++
++	return mmc ? &mmc->block_dev : NULL;
++}
++
++int mmc_init(struct mmc *mmc)
++{
++	int err;
++
++	err = mmc->init(mmc);
++
++	if (err)
++		return err;
++
++	mmc_set_bus_width(mmc, 1);
++	mmc_set_clock(mmc, 1);
++
++	/* Reset the Card */
++	err = mmc_go_idle(mmc);
++
++	if (err)
++		return err;
++
++	/* Test for SD version 2 */
++	err = mmc_send_if_cond(mmc);
++
++	/* Now try to get the SD card's operating condition */
++	err = sd_send_op_cond(mmc);
++
++	/* If the command timed out, we check for an MMC card */
++	if (err == TIMEOUT) {
++		err = mmc_send_op_cond(mmc);
++
++		if (err) {
++			printf("Card did not respond to voltage select!\n");
++			return UNUSABLE_ERR;
++		}
++	}
++
++	return mmc_startup(mmc);
++}
++
++/*
++ * CPU and board-specific MMC initializations.  Aliased function
++ * signals caller to move on
++ */
++static int __def_mmc_init(bd_t *bis)
++{
++	return -1;
++}
++
++int cpu_mmc_init(bd_t *bis) __attribute__((weak, alias("__def_mmc_init")));
++int board_mmc_init(bd_t *bis) __attribute__((weak, alias("__def_mmc_init")));
++
++void print_mmc_devices(char separator)
++{
++	struct mmc *m;
++	struct list_head *entry;
++
++	list_for_each(entry, &mmc_devices) {
++		m = list_entry(entry, struct mmc, link);
++
++		printf("%s: %d", m->name, m->block_dev.dev);
++
++		if (entry->next != &mmc_devices)
++			printf("%c ", separator);
++	}
++
++	printf("\n");
++}
++
++int mmc_initialize(bd_t *bis)
++{
++	INIT_LIST_HEAD (&mmc_devices);
++	cur_dev_num = 0;
++
++	if (board_mmc_init(bis) < 0)
++		cpu_mmc_init(bis);
++
++	print_mmc_devices(',');
++
++	return 0;
++}
+diff --git a/drivers/mmc/pxamci.c b/drivers/mmc/pxamci.c
+new file mode 100644
+index 0000000..3f82943
+--- /dev/null
++++ b/drivers/mmc/pxamci.c
+@@ -0,0 +1,374 @@
++/*
++ * Copyright 2009, Marvell Semiconductor Inc.
++ * Lei Wen
++ *
++ * Base vaguely on linux kernel driver
++ *  linux/drivers/mmc/host/pxa.c - PXA MMCI driver
++ *
++ *  Copyright (C) 2003 Russell King, All Rights Reserved.
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License version 2 as
++ * published by the Free Software Foundation.
++ *
++ */
++#include <common.h>
++#include <part.h>
++#include <malloc.h>
++#include <mmc.h>
++#include <asm/io.h>
++
++#include "pxamci.h"
++
++#define NR_SG	32
++#define CLKRT_OFF	(~0)
++#define PXA_INTERVAL		100
++#define PXA_TIMER_TIMEOUT	500
++
++#define mmc_resp_type(cmd)      ((cmd)->resp_type & (MMC_RSP_PRESENT|MMC_RSP_136|MMC_RSP_CRC|MMC_RSP_BUSY|MMC_RSP_OPCODE))
++#define RSP_TYPE(x)	((x) & ~(MMC_RSP_BUSY|MMC_RSP_OPCODE))
++
++struct pxamci_host{
++	unsigned int cmdat;
++	unsigned int regbase;
++	struct mmc_cmd *cmd;
++	struct mmc_data *data;
++};
++
++static void pxamci_stop_clock(struct mmc *mmc)
++{
++	struct pxamci_host *host = mmc->priv;
++
++	if (readl(host->regbase + MMC_STAT) & STAT_CLK_EN) {
++		unsigned long timeout = 10000;
++		unsigned int v;
++
++		writel(STOP_CLOCK, host->regbase + MMC_STRPCL);
++
++		do {
++			v = readl(host->regbase + MMC_STAT);
++			if (!(v & STAT_CLK_EN))
++				break;
++			udelay(1);
++		} while (timeout--);
++
++		if (v & STAT_CLK_EN)
++			printf("unable to stop clock\n");
++	}
++}
++
++static void pxamci_start_clock(struct mmc *mmc)
++{
++	unsigned int clock = mmc->clock;
++	struct pxamci_host *host = mmc->priv;
++
++	if (!(readl(host->regbase + MMC_STAT) & STAT_CLK_EN)) {
++		unsigned long timeout = 10000;
++		unsigned int v;
++
++		writel(clock, host->regbase + MMC_CLKRT);
++		writel(START_CLOCK, host->regbase + MMC_STRPCL);
++
++		do {
++			v = readl(host->regbase + MMC_STAT);
++			if (v & STAT_CLK_EN)
++				break;
++			udelay(1);
++		} while (timeout--);
++
++		if (!timeout)
++			printf("unable to start clock\n");
++	}
++}
++
++static void pxamci_setup_data(struct mmc *mmc, struct mmc_data *data)
++{
++	unsigned int nob = data->blocks;
++	unsigned long long clks;
++	unsigned int timeout;
++	struct pxamci_host *host = mmc->priv;
++	u32 dcmd;
++	int i;
++
++	host->data = data;
++	writel(nob, host->regbase + MMC_NOB);
++	writel(data->blocksize, host->regbase + MMC_BLKLEN);
++
++	timeout = mmc->tran_speed / 3;
++	writel((timeout + 255) / 256, host->regbase + MMC_RDTO);
++}
++
++static int pxamci_cmd_done(struct mmc *mmc)
++{
++	struct pxamci_host *host = mmc->priv;
++	struct mmc_cmd *cmd = host->cmd;;
++	int i, status;
++	u32 v;
++
++	v = readl(host->regbase + MMC_RES) & 0xffff;
++	for (i = 0; i < 4; i++) {
++		u32 w1 = readl(host->regbase + MMC_RES) & 0xffff;
++		u32 w2 = readl(host->regbase + MMC_RES) & 0xffff;
++		cmd->response[i] = v << 24 | w1 << 8 | w2 >> 8;
++		v = w2;
++	}
++
++	status = readl(host->regbase + MMC_STAT);
++	writel(status & ~STAT_END_CMD_RES,host->regbase + MMC_STAT);
++	if (status & STAT_TIME_OUT_RESPONSE) {
++		printf("cmd timeout!!\n");
++		return -1;
++	}
++
++	return 0;
++}
++
++static int pxamci_read_pio(struct mmc *mmc)
++{
++	struct pxamci_host *host = mmc->priv;
++	struct mmc_data *data = host->data;
++	int bytes_to_handle;
++	unsigned int value, ofs, ireg, status;
++
++	bytes_to_handle = data->blocks * data->blocksize;
++	ofs = 0;
++
++	while (bytes_to_handle > 0) {
++		ireg = readl(host->regbase + MMC_I_REG);
++
++		if (ireg & MMC_I_REG_RXFIFO_RD_REQ) {
++			int i = min(bytes_to_handle, 64);
++
++			bytes_to_handle -= i;
++			for (; i > 0; i --) {
++				value = readb(host->regbase + MMC_RXFIFO);
++				data->dest[ofs ++] = value;
++			}
++		}
++		else
++			break;
++
++		status = readl(host->regbase + MMC_STAT);
++		if (status & STAT_ERROR) {
++			printf("PXAMCI STAT error %lx\n", status);
++			return -1;
++		}
++	}
++
++	if (bytes_to_handle) {
++		printf("Data transfer hasn't finished, %d left"
++				", aborted!!\n", bytes_to_handle);
++		return -1;
++	}
++	else
++		return 0;
++}
++
++static int pxamci_write_pio (struct mmc *mmc)
++{
++	struct pxamci_host *host = mmc->priv;
++	struct mmc_cmd *cmd = host->cmd;
++	struct mmc_data *data = host->data;
++	unsigned int ofs, ireg, status, error_status;
++	int bytes_to_handle;
++
++
++	bytes_to_handle = data->blocks * data->blocksize;
++	ofs = 0;
++	while (bytes_to_handle > 0) {
++		ireg = readl(host->regbase + MMC_I_REG);
++
++		if (ireg & MMC_I_REG_TXFIFO_WR_REQ) {
++			int i, bytes = min(32, bytes_to_handle);
++
++			for (i = 0; i < bytes; i ++)
++				writeb(data->src[ofs ++],
++						host->regbase + MMC_TXFIFO);
++
++			if (bytes < 32)
++				writel(BUF_PART_FULL,
++						host->regbase + MMC_PRTBUF);
++
++			bytes_to_handle -= bytes;
++		}
++
++		status = readl(host->regbase + MMC_STAT);
++		if (status & STAT_ERROR) {
++			printf("PXAMCI STAT error %lx\n", status);
++			return -1;
++		}
++	}
++
++	return 0;
++}
++
++static int pxamci_start_cmd(struct mmc *mmc, unsigned int cmdat)
++{
++	struct pxamci_host *host = mmc->priv;
++	struct mmc_cmd *cmd = host->cmd;
++	struct mmc_data *data = host->data;
++	unsigned int ireg, stat;
++	int res, intervals = 0, fifo_req;
++
++	if (cmd->resp_type & MMC_RSP_BUSY)
++		cmdat |= CMDAT_BUSY;
++
++	switch (RSP_TYPE(mmc_resp_type(cmd))) {
++	case RSP_TYPE(MMC_RSP_R1): /* r1, r1b, r6, r7 */
++		cmdat |= CMDAT_RESP_SHORT;
++		break;
++	case RSP_TYPE(MMC_RSP_R3):
++		cmdat |= CMDAT_RESP_R3;
++		break;
++	case RSP_TYPE(MMC_RSP_R2):
++		cmdat |= CMDAT_RESP_R2;
++		break;
++	default:
++		break;
++	}
++
++	if (data) {
++		if (data->flags == MMC_DATA_READ)
++			fifo_req = MMC_I_REG_RXFIFO_RD_REQ;
++		else
++			fifo_req = MMC_I_REG_TXFIFO_WR_REQ;
++	}
++	else
++		fifo_req = 0;
++
++	writel(cmd->cmdidx, host->regbase + MMC_CMD);
++	writel(cmd->cmdarg>> 16, host->regbase + MMC_ARGH);
++	writel(cmd->cmdarg & 0xffff, host->regbase + MMC_ARGL);
++	writel(cmdat, host->regbase + MMC_CMDAT);
++
++//	printf("ready to send command %x, cmddat %x\n", cmd->cmdidx, cmdat);
++	//pxamci_start_clock(mmc);
++
++	do {
++		ireg = readl(host->regbase + MMC_I_REG);
++
++		if (ireg & END_CMD_RES) {
++			res = pxamci_cmd_done(mmc);
++
++			if (res || !fifo_req)
++				break;
++		}
++
++		if (ireg & fifo_req) {
++			if (data->flags == MMC_DATA_READ)
++				res = pxamci_read_pio(mmc);
++			else
++				res = pxamci_write_pio(mmc);
++
++			break;
++		}
++
++		udelay(PXA_INTERVAL);
++
++	} while (intervals ++ < PXA_TIMER_TIMEOUT);
++
++	stat = readl(host->regbase + MMC_STAT);
++	writel(stat & ~(STAT_END_CMD_RES
++				| STAT_PRG_DONE
++				| STAT_PRG_DONE),
++			host->regbase + MMC_STAT);
++
++	if (intervals >= PXA_TIMER_TIMEOUT) {
++		printf("POLLING failed!!\n");
++		return -1;
++	}
++	else
++		return res;
++}
++
++static int pxamci_request(struct mmc *mmc, struct mmc_cmd *cmd,
++		struct mmc_data *data)
++{
++	unsigned int cmdat;
++	struct pxamci_host *host = mmc->priv;
++
++//	pxamci_stop_clock(mmc);
++
++	host->cmd = cmd;
++	host->data = NULL;
++	cmdat = host->cmdat;
++	host->cmdat &= ~CMDAT_INIT;
++	if (data) {
++		pxamci_setup_data(mmc, data);
++
++		cmdat &= ~CMDAT_BUSY;
++		cmdat |= CMDAT_DATAEN;
++		if (data->flags & MMC_DATA_WRITE)
++			cmdat |= CMDAT_WRITE;
++	}
++
++	return pxamci_start_cmd(mmc, cmdat);
++}
++
++static void pxamci_set_ios(struct mmc *mmc)
++{
++	struct pxamci_host *host = mmc->priv;
++	int cmdat;
++
++	pxamci_stop_clock(mmc);
++	pxamci_start_clock(mmc);
++	
++	cmdat = readl(host->regbase + MMC_CMDAT);
++	if (mmc->bus_width == 4)
++		writel(cmdat | CMDAT_SD_4DAT, MMC_CMDAT);
++
++}
++
++static int mci_init(struct mmc *mmc)
++{
++	struct pxamci_host *host = mmc->priv;
++	*(unsigned long *)(host->regbase + MMC_CLKRT) = MMC_CLKRT_0_3125MHZ;
++	*(unsigned long *)(host->regbase + MMC_RESTO) = MMC_RES_TO_MAX / 2;
++	*(unsigned long *)(host->regbase + MMC_SPI) = MMC_SPI_DISABLE;
++	host->cmdat = CMDAT_INIT;
++
++	return 0;
++}
++
++int pxamci_init(bd_t *bis)
++{
++	struct mmc *mmc;
++	struct pxamci_host *host;
++
++	mmc = malloc(sizeof(struct mmc));
++	if (!mmc) {
++		printf("mmc malloc fail!!\n");
++		return -1;
++	}
++
++	host = malloc(sizeof(struct pxamci_host));
++	if (!host) {
++		printf("host malloc fail!!!\n");
++		return -1;
++	}
++
++	host->regbase = CONFIG_SYS_MMC_BASE;
++
++	mmc->priv = host;
++	mmc->send_cmd = pxamci_request;
++	mmc->set_ios = pxamci_set_ios;
++	mmc->init = mci_init;
++
++	/*
++	 * Calculate minimum clock rate, rounding up.
++	 */
++	mmc->f_min = (19500000 + 63) / 64;
++#if defined(CONFIG_CPU_MONAHANS_L)	\
++	|| defined(CONFIG_CPU_TAVORP)	\
++	|| defined(CONFIG_CPU_MONAHANS_LV)
++		mmc->f_max = 26000000;
++#elif defined(CONFIG_TAVOR_PV)
++		mmc->f_max = 19500000;
++#else
++#error "You should specify the CPU type!!"
++#endif
++	mmc->voltages = MMC_VDD_32_33|MMC_VDD_33_34;
++
++	mmc_register(mmc);
++	return 0;
++}
+diff --git a/drivers/mmc/pxamci.h b/drivers/mmc/pxamci.h
+new file mode 100644
+index 0000000..d791f58
+--- /dev/null
++++ b/drivers/mmc/pxamci.h
+@@ -0,0 +1,119 @@
++/* MMC_CLKRT */
++#define MMC_CLKRT_20MHZ                        (0x0000UL)
++#define MMC_CLKRT_10MHZ                        (0x0001UL)
++#define MMC_CLKRT_5MHZ                 (0x0002UL)
++#define MMC_CLKRT_2_5MHZ               (0x0003UL)
++#define MMC_CLKRT_1_25MHZ              (0x0004UL)
++#define MMC_CLKRT_0_625MHZ             (0x0005UL)
++#define MMC_CLKRT_0_3125MHZ            (0x0006UL)
++
++/* MMC_RESTO */
++#define MMC_RES_TO_MAX                 (0x007fUL) /* [6:0] */
++
++/* MMC_SPI */
++#define MMC_SPI_DISABLE                        (0x00UL)
++#define MMC_SPI_EN                     (0x01UL)
++#define MMC_SPI_CS_EN                  (0x01UL << 2)
++#define MMC_SPI_CS_ADDRESS             (0x01UL << 3)
++#define MMC_SPI_CRC_ON                 (0x01UL << 1)
++
++
++#define MMC_STRPCL	0x0000
++#define STOP_CLOCK		(1 << 0)
++#define START_CLOCK		(2 << 0)
++
++#define MMC_STAT	0x0004
++#define STAT_END_CMD_RES		(1 << 13)
++#define STAT_PRG_DONE			(1 << 12)
++#define STAT_DATA_TRAN_DONE		(1 << 11)
++#define STAT_CLK_EN			(1 << 8)
++#define STAT_RECV_FIFO_FULL		(1 << 7)
++#define STAT_XMIT_FIFO_EMPTY		(1 << 6)
++#define STAT_RES_CRC_ERR		(1 << 5)
++#define STAT_SPI_READ_ERROR_TOKEN	(1 << 4)
++#define STAT_CRC_READ_ERROR		(1 << 3)
++#define STAT_CRC_WRITE_ERROR		(1 << 2)
++#define STAT_TIME_OUT_RESPONSE		(1 << 1)
++#define STAT_READ_TIME_OUT		(1 << 0)
++#define STAT_ERROR			(0x3f)
++
++#define MMC_CLKRT	0x0008		/* 3 bit */
++
++#define MMC_SPI		0x000c
++#define SPI_CS_ADDRESS		(1 << 3)
++#define SPI_CS_EN		(1 << 2)
++#define CRC_ON			(1 << 1)
++#define SPI_EN			(1 << 0)
++
++#define MMC_CMDAT	0x0010
++#define CMDAT_SDIO_INT_EN	(1 << 11)
++#define CMDAT_SD_4DAT		(1 << 8)
++#define CMDAT_DMAEN		(1 << 7)
++#define CMDAT_INIT		(1 << 6)
++#define CMDAT_BUSY		(1 << 5)
++#define CMDAT_STREAM		(1 << 4)	/* 1 = stream */
++#define CMDAT_WRITE		(1 << 3)	/* 1 = write */
++#define CMDAT_DATAEN		(1 << 2)
++#define CMDAT_RESP_NONE		(0 << 0)
++#define CMDAT_RESP_SHORT	(1 << 0)
++#define CMDAT_RESP_R2		(2 << 0)
++#define CMDAT_RESP_R3		(3 << 0)
++
++#define MMC_RESTO	0x0014	/* 7 bit */
++
++#define MMC_RDTO	0x0018	/* 16 bit */
++
++#define MMC_BLKLEN	0x001c	/* 10 bit */
++
++#define MMC_NOB		0x0020	/* 16 bit */
++
++#define MMC_PRTBUF	0x0024
++#define BUF_PART_FULL		(1 << 0)
++
++#define MMC_I_MASK	0x0028
++
++/*PXA27x MMC interrupts*/
++#define SDIO_SUSPEND_ACK  	(1 << 12)
++#define SDIO_INT          	(1 << 11)
++#define RD_STALLED        	(1 << 10)
++#define RES_ERR           	(1 << 9)
++#define DAT_ERR           	(1 << 8)
++#define TINT              	(1 << 7)
++
++/*PXA2xx MMC interrupts*/
++#define TXFIFO_WR_REQ		(1 << 6)
++#define RXFIFO_RD_REQ		(1 << 5)
++#define CLK_IS_OFF		(1 << 4)
++#define STOP_CMD		(1 << 3)
++#define END_CMD_RES		(1 << 2)
++#define PRG_DONE		(1 << 1)
++#define DATA_TRAN_DONE		(1 << 0)
++
++#if defined(CONFIG_PXA27x) || defined(CONFIG_PXA3xx)
++#define MMC_I_MASK_ALL          0x00001fff
++#else
++#define MMC_I_MASK_ALL          0x0000007f
++#endif
++
++#define MMC_I_REG	0x002c
++#define MMC_I_REG_TXFIFO_WR_REQ		(0x01UL << 6)
++#define MMC_I_REG_RXFIFO_RD_REQ		(0x01UL << 5)
++#define MMC_I_REG_CLK_IS_OFF		(0x01UL << 4)
++#define MMC_I_REG_STOP_CMD		(0x01UL << 3)
++#define MMC_I_REG_END_CMD_RES		(0x01UL << 2)
++#define MMC_I_REG_PRG_DONE		(0x01UL << 1)
++#define MMC_I_REG_DATA_TRAN_DONE	(0x01UL)
++#define MMC_I_REG_ALL			(0x007fUL)
++/* same as MMC_I_MASK */
++
++#define MMC_CMD		0x0030
++
++#define MMC_ARGH	0x0034	/* 16 bit */
++
++#define MMC_ARGL	0x0038	/* 16 bit */
++
++#define MMC_RES		0x003c	/* 16 bit */
++
++#define MMC_RXFIFO	0x0040	/* 8 bit */
++
++#define MMC_TXFIFO	0x0044	/* 8 bit */
+diff --git a/include/configs/tavorpv.h b/include/configs/tavorpv.h
+index e587d64..fbe37e7 100644
+--- a/include/configs/tavorpv.h
++++ b/include/configs/tavorpv.h
+@@ -64,6 +64,7 @@
+  */
+ #define CONFIG_SYS_MALLOC_LEN      	(CONFIG_SYS_ENV_SIZE + 512*1024)
+ #define CONFIG_SYS_GBL_DATA_SIZE   	128   /* size in bytes reserved for initial data */
++#define CONFIG_CMD_MEMORY
+ 
+ /*
+  *  Configuration
+@@ -192,6 +193,15 @@
+ #define CONFIG_CMD_ONENAND 		1
+ #define CONFIG_SYS_ONENAND_BASE 	0x10000000
+ 
++/* MMC configuration */
++#define CONFIG_CMD_MMC
++#define CONFIG_MMC
++#define CONFIG_GENERIC_MMC
++#define CONFIG_PXAMCI
++#define CONFIG_SYS_MMC_BASE		0x41100000
++#define CONFIG_DOS_PARTITION
++
++
+ /*-----------------------------------------------------------------------
+  * FREQUENCE configuration
+  */
+diff --git a/include/div64.h b/include/div64.h
+index c495aef..d833144 100644
+--- a/include/div64.h
++++ b/include/div64.h
+@@ -36,4 +36,14 @@ extern uint32_t __div64_32(uint64_t *dividend, uint32_t divisor);
+ 	__rem;						\
+  })
+ 
++/* Wrapper for do_div(). Doesn't modify dividend and returns
++ * the result, not reminder.
++ */
++static inline uint64_t lldiv(uint64_t dividend, uint32_t divisor)
++{
++	uint64_t __res = dividend;
++	do_div(__res, divisor);
++	return(__res);
++}
++
+ #endif /* _ASM_GENERIC_DIV64_H */
+diff --git a/include/mmc.h b/include/mmc.h
+index 19c76fe..229d494 100644
+--- a/include/mmc.h
++++ b/include/mmc.h
+@@ -1,6 +1,8 @@
+ /*
+- * (C) Copyright 2000-2003
+- * Wolfgang Denk, DENX Software Engineering, wd@denx.de.
++ * Copyright 2008, Freescale Semiconductor, Inc
++ * Andy Fleming
++ *
++ * Based (loosely) on the Linux code
+  *
+  * See file CREDITS for list of people who contributed to this
+  * project.
+@@ -23,35 +25,255 @@
+ 
+ #ifndef _MMC_H_
+ #define _MMC_H_
+-#include <asm/arch/mmc.h>
+ 
+-/* MMC command numbers */
++#include <linux/list.h>
++
++#define SD_VERSION_SD	0x20000
++#define SD_VERSION_2	(SD_VERSION_SD | 0x20)
++#define SD_VERSION_1_0	(SD_VERSION_SD | 0x10)
++#define SD_VERSION_1_10	(SD_VERSION_SD | 0x1a)
++#define MMC_VERSION_MMC		0x10000
++#define MMC_VERSION_UNKNOWN	(MMC_VERSION_MMC)
++#define MMC_VERSION_1_2		(MMC_VERSION_MMC | 0x12)
++#define MMC_VERSION_1_4		(MMC_VERSION_MMC | 0x14)
++#define MMC_VERSION_2_2		(MMC_VERSION_MMC | 0x22)
++#define MMC_VERSION_3		(MMC_VERSION_MMC | 0x30)
++#define MMC_VERSION_4		(MMC_VERSION_MMC | 0x40)
++
++#define MMC_MODE_HS		0x001
++#define MMC_MODE_HS_52MHz	0x010
++#define MMC_MODE_4BIT		0x100
++#define MMC_MODE_8BIT		0x200
++
++#define SD_DATA_4BIT	0x00040000
++
++#define IS_SD(x) (mmc->version & SD_VERSION_SD)
++
++#define MMC_DATA_READ		1
++#define MMC_DATA_WRITE		2
++
++#define NO_CARD_ERR		-16 /* No SD/MMC card inserted */
++#define UNUSABLE_ERR		-17 /* Unusable Card */
++#define COMM_ERR		-18 /* Communications Error */
++#define TIMEOUT			-19
++
+ #define MMC_CMD_GO_IDLE_STATE		0
+ #define MMC_CMD_SEND_OP_COND		1
+ #define MMC_CMD_ALL_SEND_CID		2
+ #define MMC_CMD_SET_RELATIVE_ADDR	3
+ #define MMC_CMD_SET_DSR			4
++#define MMC_CMD_SWITCH			6
+ #define MMC_CMD_SELECT_CARD		7
++#define MMC_CMD_SEND_EXT_CSD		8
+ #define MMC_CMD_SEND_CSD		9
+ #define MMC_CMD_SEND_CID		10
++#define MMC_CMD_STOP_TRANSMISSION	12
+ #define MMC_CMD_SEND_STATUS		13
+ #define MMC_CMD_SET_BLOCKLEN		16
+ #define MMC_CMD_READ_SINGLE_BLOCK	17
+ #define MMC_CMD_READ_MULTIPLE_BLOCK	18
+-#define MMC_CMD_WRITE_BLOCK		24
++#define MMC_CMD_WRITE_SINGLE_BLOCK	24
++#define MMC_CMD_WRITE_MULTIPLE_BLOCK	25
+ #define MMC_CMD_APP_CMD			55
+ 
+-/* SD Card command numbers */
+ #define SD_CMD_SEND_RELATIVE_ADDR	3
+-#define SD_CMD_SWITCH			6
++#define SD_CMD_SWITCH_FUNC		6
+ #define SD_CMD_SEND_IF_COND		8
+ 
+ #define SD_CMD_APP_SET_BUS_WIDTH	6
+ #define SD_CMD_APP_SEND_OP_COND		41
++#define SD_CMD_APP_SEND_SCR		51
++
++/* SCR definitions in different words */
++#define SD_HIGHSPEED_BUSY	0x00020000
++#define SD_HIGHSPEED_SUPPORTED	0x00020000
++
++#define MMC_HS_TIMING		0x00000100
++#define MMC_HS_52MHZ		0x2
++
++#define OCR_BUSY	0x80000000
++#define OCR_HCS		0x40000000
++
++#define MMC_VDD_165_195		0x00000080	/* VDD voltage 1.65 - 1.95 */
++#define MMC_VDD_20_21		0x00000100	/* VDD voltage 2.0 ~ 2.1 */
++#define MMC_VDD_21_22		0x00000200	/* VDD voltage 2.1 ~ 2.2 */
++#define MMC_VDD_22_23		0x00000400	/* VDD voltage 2.2 ~ 2.3 */
++#define MMC_VDD_23_24		0x00000800	/* VDD voltage 2.3 ~ 2.4 */
++#define MMC_VDD_24_25		0x00001000	/* VDD voltage 2.4 ~ 2.5 */
++#define MMC_VDD_25_26		0x00002000	/* VDD voltage 2.5 ~ 2.6 */
++#define MMC_VDD_26_27		0x00004000	/* VDD voltage 2.6 ~ 2.7 */
++#define MMC_VDD_27_28		0x00008000	/* VDD voltage 2.7 ~ 2.8 */
++#define MMC_VDD_28_29		0x00010000	/* VDD voltage 2.8 ~ 2.9 */
++#define MMC_VDD_29_30		0x00020000	/* VDD voltage 2.9 ~ 3.0 */
++#define MMC_VDD_30_31		0x00040000	/* VDD voltage 3.0 ~ 3.1 */
++#define MMC_VDD_31_32		0x00080000	/* VDD voltage 3.1 ~ 3.2 */
++#define MMC_VDD_32_33		0x00100000	/* VDD voltage 3.2 ~ 3.3 */
++#define MMC_VDD_33_34		0x00200000	/* VDD voltage 3.3 ~ 3.4 */
++#define MMC_VDD_34_35		0x00400000	/* VDD voltage 3.4 ~ 3.5 */
++#define MMC_VDD_35_36		0x00800000	/* VDD voltage 3.5 ~ 3.6 */
++
++#define MMC_SWITCH_MODE_CMD_SET		0x00 /* Change the command set */
++#define MMC_SWITCH_MODE_SET_BITS	0x01 /* Set bits in EXT_CSD byte
++						addressed by index which are
++						1 in value field */
++#define MMC_SWITCH_MODE_CLEAR_BITS	0x02 /* Clear bits in EXT_CSD byte
++						addressed by index, which are
++						1 in value field */
++#define MMC_SWITCH_MODE_WRITE_BYTE	0x03 /* Set target byte to value */
++
++#define SD_SWITCH_CHECK		0
++#define SD_SWITCH_SWITCH	1
++
++/*
++ * EXT_CSD fields
++ */
++
++#define EXT_CSD_BUS_WIDTH	183	/* R/W */
++#define EXT_CSD_HS_TIMING	185	/* R/W */
++#define EXT_CSD_CARD_TYPE	196	/* RO */
++#define EXT_CSD_REV		192	/* RO */
++#define EXT_CSD_SEC_CNT		212	/* RO, 4 bytes */
++
++/*
++ * EXT_CSD field definitions
++ */
++
++#define EXT_CSD_CMD_SET_NORMAL		(1<<0)
++#define EXT_CSD_CMD_SET_SECURE		(1<<1)
++#define EXT_CSD_CMD_SET_CPSECURE	(1<<2)
++
++#define EXT_CSD_CARD_TYPE_26	(1<<0)	/* Card can run at 26MHz */
++#define EXT_CSD_CARD_TYPE_52	(1<<1)	/* Card can run at 52MHz */
++
++#define EXT_CSD_BUS_WIDTH_1	0	/* Card is in 1 bit mode */
++#define EXT_CSD_BUS_WIDTH_4	1	/* Card is in 4 bit mode */
++#define EXT_CSD_BUS_WIDTH_8	2	/* Card is in 8 bit mode */
++
++#define R1_ILLEGAL_COMMAND		(1 << 22)
++#define R1_APP_CMD			(1 << 5)
++
++#define MMC_RSP_PRESENT (1 << 0)
++#define MMC_RSP_136     (1 << 1)                /* 136 bit response */
++#define MMC_RSP_CRC     (1 << 2)                /* expect valid crc */
++#define MMC_RSP_BUSY    (1 << 3)                /* card may send busy */
++#define MMC_RSP_OPCODE  (1 << 4)                /* response contains opcode */
++
++#define MMC_RSP_NONE    (0)
++#define MMC_RSP_R1      (MMC_RSP_PRESENT|MMC_RSP_CRC|MMC_RSP_OPCODE)
++#define MMC_RSP_R1b	(MMC_RSP_PRESENT|MMC_RSP_CRC|MMC_RSP_OPCODE| \
++			MMC_RSP_BUSY)
++#define MMC_RSP_R2      (MMC_RSP_PRESENT|MMC_RSP_136|MMC_RSP_CRC)
++#define MMC_RSP_R3      (MMC_RSP_PRESENT)
++#define MMC_RSP_R4      (MMC_RSP_PRESENT)
++#define MMC_RSP_R5      (MMC_RSP_PRESENT|MMC_RSP_CRC|MMC_RSP_OPCODE)
++#define MMC_RSP_R6      (MMC_RSP_PRESENT|MMC_RSP_CRC|MMC_RSP_OPCODE)
++#define MMC_RSP_R7      (MMC_RSP_PRESENT|MMC_RSP_CRC|MMC_RSP_OPCODE)
++
++
++struct mmc_cid {
++	unsigned long psn;
++	unsigned short oid;
++	unsigned char mid;
++	unsigned char prv;
++	unsigned char mdt;
++	char pnm[7];
++};
++
++struct mmc_csd
++{
++	u8	csd_structure:2,
++		spec_vers:4,
++		rsvd1:2;
++	u8	taac;
++	u8	nsac;
++	u8	tran_speed;
++	u16	ccc:12,
++		read_bl_len:4;
++	u64	read_bl_partial:1,
++		write_blk_misalign:1,
++		read_blk_misalign:1,
++		dsr_imp:1,
++		rsvd2:2,
++		c_size:12,
++		vdd_r_curr_min:3,
++		vdd_r_curr_max:3,
++		vdd_w_curr_min:3,
++		vdd_w_curr_max:3,
++		c_size_mult:3,
++		sector_size:5,
++		erase_grp_size:5,
++		wp_grp_size:5,
++		wp_grp_enable:1,
++		default_ecc:2,
++		r2w_factor:3,
++		write_bl_len:4,
++		write_bl_partial:1,
++		rsvd3:5;
++	u8	file_format_grp:1,
++		copy:1,
++		perm_write_protect:1,
++		tmp_write_protect:1,
++		file_format:2,
++		ecc:2;
++	u8	crc:7;
++	u8	one:1;
++};
++
++struct mmc_cmd {
++	ushort cmdidx;
++	uint resp_type;
++	uint cmdarg;
++	uint response[4];
++	uint flags;
++};
++
++struct mmc_data {
++	union {
++		char *dest;
++		const char *src; /* src buffers don't get written to */
++	};
++	uint flags;
++	uint blocks;
++	uint blocksize;
++};
++
++struct mmc {
++	struct list_head link;
++	char name[32];
++	void *priv;
++	uint voltages;
++	uint version;
++	uint f_min;
++	uint f_max;
++	int high_capacity;
++	uint bus_width;
++	uint clock;
++	uint card_caps;
++	uint host_caps;
++	uint ocr;
++	uint scr[2];
++	uint csd[4];
++	uint cid[4];
++	ushort rca;
++	uint tran_speed;
++	uint read_bl_len;
++	uint write_bl_len;
++	u64 capacity;
++	block_dev_desc_t block_dev;
++	int (*send_cmd)(struct mmc *mmc,
++			struct mmc_cmd *cmd, struct mmc_data *data);
++	void (*set_ios)(struct mmc *mmc);
++	int (*init)(struct mmc *mmc);
++};
+ 
+-int mmc_init(int verbose);
+-int mmc_read(ulong src, uchar *dst, int size);
+-int mmc_write(uchar *src, ulong dst, int size);
+-int mmc2info(ulong addr);
++int mmc_register(struct mmc *mmc);
++int mmc_initialize(bd_t *bis);
++int mmc_init(struct mmc *mmc);
++int mmc_read(struct mmc *mmc, u64 src, uchar *dst, int size);
++struct mmc *find_mmc_device(int dev_num);
++void print_mmc_devices(char separator);
+ 
++#ifndef CONFIG_GENERIC_MMC
++int mmc_legacy_init(int verbose);
++#endif
+ #endif /* _MMC_H_ */
+diff --git a/lib_arm/board.c b/lib_arm/board.c
+index 2358beb..500e190 100644
+--- a/lib_arm/board.c
++++ b/lib_arm/board.c
+@@ -348,6 +348,11 @@ void start_armboot (void)
+ 	onenand_init();
+ #endif
+ 
++#ifdef CONFIG_GENERIC_MMC
++	puts ("MMC:  ");
++	mmc_initialize (gd->bd);
++#endif
++
+ #ifdef CONFIG_HAS_DATAFLASH
+ 	AT91F_DataflashInit();
+ 	dataflash_print_info();
+-- 
+1.6.0.4
+

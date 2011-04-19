@@ -1,0 +1,368 @@
+From ddc4c93a41dc6b64aa9931d5ddfa7b506a42f664 Mon Sep 17 00:00:00 2001
+From: Ning Jiang <ning.jiang@marvell.com>
+Date: Tue, 29 Dec 2009 17:24:27 +0800
+Subject: [PATCH] pxa688: move freq code to sram and add ddr calibration for jasper
+
+This patch does three things:
+1. move frequency change code to sram and selectable by operating point
+2. add ddr calibration code after frequency change
+3. make 624MHz the default operation point
+
+Note: the ddr calibration code is taken from
+20091221_Bonnell_Micron_MT42L64M32D2KP-25ESA_400MHz.xdb
+---
+ board/pxa/common/freq_ll.S |  237 +++++++++++++++++++++++++++++++++++++++++++-
+ board/pxa/jasper/jasper.c  |   58 +-----------
+ 2 files changed, 237 insertions(+), 58 deletions(-)
+
+diff --git a/board/pxa/common/freq_ll.S b/board/pxa/common/freq_ll.S
+index ca72147..4284349 100644
+--- a/board/pxa/common/freq_ll.S
++++ b/board/pxa/common/freq_ll.S
+@@ -7,6 +7,8 @@
+  * (GPL).Version 2,June 1991, available at http://www.fsf.org/copyleft/gpl.html
+  */
+ 
++#include <config.h>
++
+ 	.global freq_init_sram, freq_chg_seq
+ 
+ @******************************************************************************
+@@ -26,7 +28,7 @@ freq_init_sram:
+ 	stmfd	sp!, {r0 - r12, lr}
+ 	ldr	r3, =freq_sram_start
+ 	ldr	r4, =freq_sram_end
+-	add	r4, r4, #0x20
++	add	r4, r4, #0x200
+ 
+ rel_ram:
+ 	ldmia	r3!, {r5 - r12}
+@@ -65,16 +67,245 @@ freq_chg_seq:
+ 	mov	sp, r11			@ set up new stack address
+ 	stmfd	sp!, {lr}		@ store the return address
+ 
++#if (defined(CONFIG_MMP2_JASPER) || defined(CONFIG_MMP2_FLINT))
++	ldr	r4, =0xd0000000		@ DMEM base address
++#else
+ 	ldr	r4, =0xb0000000		@ DMEM base address
++#endif
+ 	ldr	r5, =0xd4050000		@ PMUM base address
+ 	ldr	r6, =0xd4282800		@ PMUA base address
+-
+ 	mov	pc, r0
+ 
+ freq_sram_start:
+ 	b	1f
+ 	.align  5
+ 1:
++#if (defined(CONFIG_MMP2_JASPER) || defined(CONFIG_MMP2_FLINT))
++	@
++	@ frequency change
++	@
++
++	cmp	r2, #0x0
++	bne	2f
++	ldr	r7, =0x08600262
++	str	r7, [r5, #0x0414]
++	ldr	r7, =0x00FFFE00
++	str	r7, [r5, #0x0034]
++	ldr	r7, =0x00216A00
++	str	r7, [r5, #0x0034]
++	ldr	r7, =0x00216B00
++	str	r7, [r5, #0x0034]
++	ldr	r7, =0x28600262
++	str	r7, [r5, #0x0414]
++	ldr	r7, =0xffffffff
++	str	r7, [r5, #0x0024]
++	ldr	r7, =0x41000000
++	str	r7, [r5, #0x0008]
++	ldr	r7, =0x00061808
++	str	r7, [r6, #0x88]
++	ldr	r7, =0x08FC8248
++	str	r7, [r6, #0x00]
++	ldr	r7, =0x48FC8248
++	str	r7, [r6, #0x04]
++	ldr	r7, =0x08FC8248
++	str	r7, [r6, #0x00]
++	ldr	r7, =0x28FC8248
++	str	r7, [r6, #0x04]
++	ldr	r7, =0x08FC8248
++	str	r7, [r6, #0x00]
++	ldr	r7, =0x18FC8248
++	str	r7, [r6, #0x04]
++
++2:
++	cmp	r2, #0x1
++	bne	3f
++	ldr	r7, =0x086003e2
++	str	r7, [r5, #0x0414]
++	ldr	r7, =0x00FFFE00
++	str	r7, [r5, #0x0034]
++	ldr	r7, =0x00223A00
++	str	r7, [r5, #0x0034]
++	ldr	r7, =0x00223B00
++	str	r7, [r5, #0x0034]
++	ldr	r7, =0x286003e2
++	str	r7, [r5, #0x0414]
++	ldr	r7, =0xffffffff
++	str	r7, [r5, #0x0024]
++	ldr	r7, =0x41000000
++	str	r7, [r5, #0x0008]
++	ldr	r7, =0x00061808
++	str	r7, [r6, #0x88]
++	ldr	r7, =0x08fd0248
++	str	r7, [r6, #0x00]
++	ldr	r7, =0x48fd0248
++	str	r7, [r6, #0x04]
++	ldr	r7, =0x08fd0248
++	str	r7, [r6, #0x00]
++	ldr	r7, =0x28fd0248
++	str	r7, [r6, #0x04]
++	ldr	r7, =0x08fd0248
++	str	r7, [r6, #0x00]
++	ldr	r7, =0x18fd0248
++	str	r7, [r6, #0x04]
++
++3:
++	@
++	@ ddr re-calibration after frequency change
++	@
++
++	@ CONFIG_DECODE_ADDR
++	ldr	r7, =0xD0004D56
++	str	r7, [r4, #0x000]
++
++	@ MMAP
++	ldr	r7, =0x000B0001
++	str	r7, [r4, #0x100]
++	ldr	r7, =0x080B0001
++	str	r7, [r4, #0x110]
++
++	@ CONFIG_TYPE
++	ldr	r7, =0x00006320
++	str	r7, [r4, #0x020]
++	ldr	r7, =0x00006320
++	str	r7, [r4, #0x030]
++	ldr	r7, =0x00000000
++	str	r7, [r4, #0xB40]
++	ldr	r7, =0x00000000
++	str	r7, [r4, #0xB50]
++
++	@ TIMING
++	ldr	r7, =0x4CD800C5
++	str	r7, [r4, #0x050]
++	ldr	r7, =0x84660342
++	str	r7, [r4, #0x060]
++	ldr	r7, =0x2000381B
++	str	r7, [r4, #0x190]
++	ldr	r7, =0x3023009D
++	str	r7, [r4, #0x1C0]
++	ldr	r7, =0x00110142
++	str	r7, [r4, #0x650]
++	ldr	r7, =0x02424190
++	str	r7, [r4, #0x660]
++
++	@ CTRL
++	ldr	r7, =0x00005000
++	str	r7, [r4, #0x080]
++	ldr	r7, =0x00080000
++	str	r7, [r4, #0x090]
++	ldr	r7, =0xC0000000
++	str	r7, [r4, #0x0F0]
++	ldr	r7, =0x00C08115
++	str	r7, [r4, #0x1A0]
++	ldr	r7, =0x01010101
++	str	r7, [r4, #0x280]
++	ldr	r7, =0x00000000
++	str	r7, [r4, #0x760]
++	ldr	r7, =0x03000000
++	str	r7, [r4, #0x770]
++	ldr	r7, =0x00000133
++	str	r7, [r4, #0x780]
++	ldr	r7, =0x01010101
++	str	r7, [r4, #0x7B0]
++	ldr	r7, =0x0000000F
++	str	r7, [r4, #0x7D0]
++	ldr	r7, =0x00000000
++	str	r7, [r4, #0x7E0]
++
++	@ MCB
++	ldr	r7, =0x00000000
++	str	r7, [r4, #0x540]
++	ldr	r7, =0x00000001
++	str	r7, [r4, #0x570]
++	ldr	r7, =0x00000000
++	str	r7, [r4, #0x580]
++	ldr	r7, =0x00000000
++	str	r7, [r4, #0x590]
++	ldr	r7, =0x00000000
++	str	r7, [r4, #0x5A0]
++	ldr	r7, =0x00000000
++	str	r7, [r4, #0x5B0]
++
++	@ WRITE_PROTECTION
++	ldr	r7, =0x00000000
++	str	r7, [r4, #0x180]
++
++	@ __PHY Deskew PLL config and PHY initialization
++	ldr	r7, =0x00000000
++	str	r7, [r4, #0x210]
++	ldr	r7, =0x80000000
++	str	r7, [r4, #0x240]
++
++	@ DLL reset, Need this after any DCLK freq change
++	ldr	r8, =0x20000000
++	ldr	r7, [r4, #0x240]
++	orr	r7, r7, r8
++	str	r7, [r4, #0x240]
++	ldr	r8, =0xdFFFFFFF
++	ldr	r7, [r4, #0x240]
++	and	r7, r7, r8
++	str	r7, [r4, #0x240]
++
++	@ Pad drive strength auto calibration
++	ldr	r8, =0x00110000
++	ldr	r7, [r4, #0x200]
++	orr	r7, r7, r8
++	str	r7, [r4, #0x200]
++	ldr	r7, [r4, #0x240]
++	ldr	r8, =0xFFFeFFFF
++	ldr	r7, [r4, #0x200]
++	and	r7, r7, r8
++	str	r7, [r4, #0x200]
++
++	ldr	r7, =0x20004433
++	str	r7, [r4, #0x140]
++	ldr	r7, =0x13300559
++	str	r7, [r4, #0x1D0]
++	ldr	r7, =0x03300770
++	str	r7, [r4, #0x1E0]
++	ldr	r7, =0x00000077
++	str	r7, [r4, #0x1F0]
++
++	ldr	r7, =0x20000088
++	str	r7, [r4, #0x230]
++	ldr	r7, =0x00000080
++	str	r7, [r4, #0xE10]
++	ldr	r7, =0x00000080
++	str	r7, [r4, #0xE20]
++	ldr	r7, =0x00000080
++	str	r7, [r4, #0xE30]
++
++	ldr	r7, =0x00000000
++	str	r7, [r4, #0xE40]
++	ldr	r7, =0x00000000
++	str	r7, [r4, #0xE50]
++
++	@ initialize LPDDR2
++	ldr	r7, =0x03000001
++	str	r7, [r4, #0x120]
++	ldr	r7, [r4, #0x1B0]
++	ldr	r7, =0x0302003F
++	str	r7, [r4, #0x410]
++	ldr	r7, =0x01001000
++	str	r7, [r4, #0x120]
++	ldr	r7, =0x02001000
++	str	r7, [r4, #0x120]
++	ldr	r7, =0x03020001
++	str	r7, [r4, #0x410]
++	ldr	r7, =0x03020002
++	str	r7, [r4, #0x410]
++	ldr	r7, =0x03020003
++	str	r7, [r4, #0x410]
++
++	@dummy reads for PHY DQ byte read DLLs to update
++	mov	r8, #131
++	mov	r9, #0x0
++1:
++	ldr	r7, [r9, #0x0]
++	subs	r8, r8, #1
++	bne	1b
++
++	ldr	r7, [r4, #0x240]
++#else
+ 	@ frequency change sequence
+ 	ldr	r7, =0x2000088e
+ 	str	r7, [r5, #PMUM_FCCR_OFF]
+@@ -83,7 +314,9 @@ freq_sram_start:
+ 	str	r7, [r6, #PMUA_CC_AP_OFF]
+ 
+ 	@ ddr caliberation
++#endif
+ 
++	@ return
+ 	ldmfd	sp!, {lr}
+ 	mov	sp, r10				@ restore stack address
+ 
+diff --git a/board/pxa/jasper/jasper.c b/board/pxa/jasper/jasper.c
+index f9f45bc..aa25345 100644
+--- a/board/pxa/jasper/jasper.c
++++ b/board/pxa/jasper/jasper.c
+@@ -157,62 +157,8 @@ int board_init (void)
+ 	reg &= ~(1<<23);
+ 	*(volatile unsigned int *)0xd4282c08 = reg;
+ 
+-#ifdef CONFIG_MMP2_400_OP
+-    *(volatile unsigned int *)0xd4050414=0x08600262;
+-    *(volatile unsigned int *)0xd4050034=0x00FFFE00;
+-    *(volatile unsigned int *)0xd4050034=0x00216A00;
+-    *(volatile unsigned int *)0xd4050034=0x00216B00;
+-    *(volatile unsigned int *)0xd4050414=0x28600262;
+-
+-    *(volatile unsigned int *)0xd4050024=0xffffffff;
+-    *(volatile unsigned int *)0xd4050008=0x41000000;
+-    *(volatile unsigned int *)0xd4282888=0x00061808;
+-    *(volatile unsigned int *)0xd4282800=0x08FC8248;
+-    *(volatile unsigned int *)0xd4282804=0x48FC8248;
+-    *(volatile unsigned int *)0xd4282800=0x08FC8248;
+-    *(volatile unsigned int *)0xd4282804=0x28FC8248;
+-    *(volatile unsigned int *)0xd4282800=0x08FC8248;
+-    *(volatile unsigned int *)0xd4282804=0x18FC8248;
+-#endif
+-
+-#ifdef CONFIG_MMP2_600_OP
+-    *(volatile unsigned int *)0xd4050414=0x086003A2;
+-    *(volatile unsigned int *)0xd4050034=0x00FFFE00;
+-    *(volatile unsigned int *)0xd4050034=0x00222200;
+-    *(volatile unsigned int *)0xd4050034=0x00222300;
+-    *(volatile unsigned int *)0xd4050414=0x286003A2;
+-
+-    *(volatile unsigned int *)0xd4050024=0xffffffff;
+-    *(volatile unsigned int *)0xd4050008=0x41000000;
+-    *(volatile unsigned int *)0xd4282888=0x00061808;
+-    *(volatile unsigned int *)0xd4282800=0x08FD0248;
+-    *(volatile unsigned int *)0xd4282804=0x48fd0248;
+-    *(volatile unsigned int *)0xd4282800=0x08fd0248;
+-    *(volatile unsigned int *)0xd4282804=0x28fd0248;
+-    *(volatile unsigned int *)0xd4282800=0x08fd0248;
+-    *(volatile unsigned int *)0xd4282804=0x18fd0248;
+-#endif
+-
+-#ifdef CONFIG_MMP2_624_OP
+-    *(volatile unsigned int *)0xd4050414=0x086003e2;
+-    *(volatile unsigned int *)0xd4050034=0x00FFFE00;
+-    *(volatile unsigned int *)0xd4050034=0x00223A00;
+-    *(volatile unsigned int *)0xd4050034=0x00223B00;
+-    *(volatile unsigned int *)0xd4050414=0x286003e2;
+-
+-    *(volatile unsigned int *)0xd4050008=0x41000000;
+-    *(volatile unsigned int *)0xd4282888=0x00061808;
+-    *(volatile unsigned int *)0xd4282800=0x08fd0248;
+-    *(volatile unsigned int *)0xd4282804=0x48fd0248;
+-    *(volatile unsigned int *)0xd4282800=0x08fd0248;
+-    *(volatile unsigned int *)0xd4282804=0x28fd0248;
+-    *(volatile unsigned int *)0xd4282800=0x08fd0248;
+-    *(volatile unsigned int *)0xd4282804=0x18fd0248;
+-#endif
+-
+-	//mmp2_freq_init_sram(0xd1020000);
+-	//mmp2_freq_chg_seq(0xd1020000, 0xd1026000, 0);
+-
++    freq_init_sram(0xd1000000);
++    freq_chg_seq(0xd1000000, 0xd1008000, 1);
+ 
+     *(volatile unsigned int *)0xd4282110 = 0x0;
+ 
+-- 
+1.6.0.4
+

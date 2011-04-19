@@ -1,0 +1,98 @@
+From ec7f0c5d275571535930e6c530f5ec183c28a1f2 Mon Sep 17 00:00:00 2001
+From: Lei Wen <leiwen@marvell.com>
+Date: Tue, 22 Sep 2009 23:58:14 +0800
+Subject: [PATCH] nand: fix page allocation bug for 4K or large page
+
+---
+ drivers/mtd/nand/pxa3xx_nand.c |   62 ++++++++++++++++++++++++++++++++++++++-
+ 1 files changed, 60 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/mtd/nand/pxa3xx_nand.c b/drivers/mtd/nand/pxa3xx_nand.c
+index b9cc1f8..bb04c32 100644
+--- a/drivers/mtd/nand/pxa3xx_nand.c
++++ b/drivers/mtd/nand/pxa3xx_nand.c
+@@ -745,14 +745,71 @@ static int pxa3xx_nand_waitfunc(struct mtd_info *mtd, struct nand_chip *this)
+ 		return 0;
+ }
+ 
++static int pxa3xx_nand_read_oob(struct mtd_info *mtd, struct nand_chip *chip,
++		int page, int sndcmd)
++{
++	struct pxa3xx_nand_info *info = mtd->priv;
++	struct pxa3xx_nand *nand = info->nand_data;
++	struct pxa3xx_nand_flash *flash_info = info->flash_info;
++	uint8_t *tmp;
++	int oob_size;
++	if (sndcmd) {
++		chip->cmdfunc(mtd, NAND_CMD_READOOB, 0, page);
++		sndcmd = 0;
++
++		oob_size = info->data_size - PAGE_CHUNK_SIZE;
++		/* It is a special case that meta data need to re-order
++		 * due to the page allocation in the large page (>2K)
++		 */
++		if (flash_info->ecc_type == ECC_BCH && nand->use_ecc == ECC_NONE
++				&& mtd->size > PAGE_CHUNK_SIZE) {
++			tmp = chip->oob_poi;
++			memcpy(tmp, info->oob_buff, oob_size - 2);
++			tmp[oob_size - 1] = tmp[oob_size - 2] = 0xff;
++			tmp += oob_size;
++			memcpy(tmp, info->data_buff + PAGE_CHUNK_SIZE * 2 - 2, 2);
++			tmp += 2;
++			memcpy(tmp, info->oob_buff + oob_size, oob_size - 2);
++		}
++		else
++			memcpy(chip->oob_poi, info->oob_buff, mtd->oobsize);
++	}
++
++	return sndcmd;
++}
++
+ static int pxa3xx_nand_read_page_hwecc(struct mtd_info *mtd,
+ 			struct nand_chip *chip,	uint8_t *buf)
+ {
+ 	struct pxa3xx_nand_info *info = mtd->priv;
+ 	struct pxa3xx_nand *nand = info->nand_data;
++	struct pxa3xx_nand_flash *flash_info = info->flash_info;
++	uint8_t *tmp;
++	int oob_size;
+ 
+-	chip->read_buf(mtd, buf, mtd->writesize);
+-	chip->read_buf(mtd, chip->oob_poi, mtd->oobsize);
++	oob_size = info->data_size - PAGE_CHUNK_SIZE;
++	/* It is a special case that meta data need to re-order
++	 * due to the page allocation in the large page (>2K)
++	 */
++	if (flash_info->ecc_type == ECC_BCH && nand->use_ecc == ECC_NONE
++			&& mtd->size > PAGE_CHUNK_SIZE) {
++		tmp = buf;
++		memcpy(tmp, info->data_buff, PAGE_CHUNK_SIZE);
++		tmp += PAGE_CHUNK_SIZE;
++		memcpy(tmp, info->oob_buff + oob_size - 2, 2);
++		tmp += 2;
++		memcpy(tmp, info->data_buff + PAGE_CHUNK_SIZE, PAGE_CHUNK_SIZE);
++		tmp = chip->oob_poi;
++		memcpy(tmp, info->oob_buff, oob_size - 2);
++		tmp += oob_size;
++		memcpy(tmp, info->data_buff + PAGE_CHUNK_SIZE * 2 - 2, 2);
++		tmp += 2;
++		memcpy(tmp, info->oob_buff + oob_size, oob_size);
++	}
++	else {
++		memcpy(buf, info->data_buff, mtd->writesize);
++		memcpy(chip->oob_poi, info->oob_buff, mtd->oobsize);
++	}
+ 
+ 	if (nand->errcode & ERR_CORERR) {
+ 		switch (nand->use_ecc) {
+@@ -928,6 +985,7 @@ static void pxa3xx_nand_init_mtd(struct mtd_info *mtd)
+ 	this->ecc.mode		= NAND_ECC_HW;
+ 	this->ecc.size		= f->page_size;
+ 	this->ecc.read_page	= pxa3xx_nand_read_page_hwecc;
++	this->ecc.read_oob	= pxa3xx_nand_read_oob;
+ 	this->ecc.write_page	= pxa3xx_nand_write_page_hwecc;
+ 
+ 	this->chipsize 		= (uint64_t)f->num_blocks 	* \
+-- 
+1.6.0.4
+

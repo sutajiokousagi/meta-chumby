@@ -1,0 +1,29 @@
+From 5385748f82282e02041a9555c0d7a654fdeef487 Mon Sep 17 00:00:00 2001
+From: Lei Wen <leiwen@marvell.com>
+Date: Fri, 29 May 2009 15:35:22 +0800
+Subject: [PATCH] pxa168: add temporary workaround for limited 64bit support in MTD
+
+---
+ drivers/mtd/nand/pxa3xx_nand.c |    6 ++++--
+ 1 files changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/mtd/nand/pxa3xx_nand.c b/drivers/mtd/nand/pxa3xx_nand.c
+index 8a91247..5f8b06e 100644
+--- a/drivers/mtd/nand/pxa3xx_nand.c
++++ b/drivers/mtd/nand/pxa3xx_nand.c
+@@ -937,8 +937,10 @@ static void pxa3xx_nand_init_mtd(struct mtd_info *mtd)
+ 
+ 	/* Calculate the address shift from the page size */
+ 	this->page_shift = ffs(mtd->writesize) - 1;
+-	/* Convert chipsize to number of pages per chip -1. */
+-	this->pagemask = (this->chipsize >> this->page_shift) - 1;
++
++	/* temporary workaround for limited support 64bit */
++//	this->pagemask = (this->chipsize >> this->page_shift) - 1;
++	this->pagemask = 0xfffff;
+ 
+ 	this->bbt_erase_shift = this->phys_erase_shift =
+ 		ffs(mtd->erasesize) - 1;
+-- 
+1.6.0.4
+

@@ -1,0 +1,40 @@
+From 20b89bd942fe76a844c1ea9dd866e9c7f1a1e839 Mon Sep 17 00:00:00 2001
+From: Mingliang Hu <mhu4@marvell.com>
+Date: Fri, 28 May 2010 10:59:42 +0800
+Subject: [PATCH] mmp2: modify emmc autoboot to suit larger kernel
+
+Signed-off-by: Mingliang Hu <mhu4@marvell.com>
+---
+ include/configs/mmp2_jasper_emmc.h        |    2 +-
+ include/configs/mmp2_jasper_epd512_emmc.h |    2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/include/configs/mmp2_jasper_emmc.h b/include/configs/mmp2_jasper_emmc.h
+index b725ffa..ee4ea17 100644
+--- a/include/configs/mmp2_jasper_emmc.h
++++ b/include/configs/mmp2_jasper_emmc.h
+@@ -35,7 +35,7 @@
+ #define CONFIG_CMD_EXT2
+ 
+ #define BOOT_FROM_EMMC
+-#define CONFIG_MMCBOOT			"mmc read 0x4c00 0x1800 0x1100000"
++#define CONFIG_MMCBOOT			"mmc read 0x4c00 0x2000 0x1100000"
+ #define CONFIG_MBR_SECTOR		0x4800
+ 
+ #define CONFIG_PXA688_EMMC_WORKAROUND
+diff --git a/include/configs/mmp2_jasper_epd512_emmc.h b/include/configs/mmp2_jasper_epd512_emmc.h
+index 18a2902..d3e9e9f 100644
+--- a/include/configs/mmp2_jasper_epd512_emmc.h
++++ b/include/configs/mmp2_jasper_epd512_emmc.h
+@@ -35,7 +35,7 @@
+ #define CONFIG_CMD_EXT2
+ 
+ #define BOOT_FROM_EMMC
+-#define CONFIG_MMCBOOT			"mmc read 0x4c00 0x1800 0x1100000"
++#define CONFIG_MMCBOOT			"mmc read 0x4c00 0x2000 0x1100000"
+ #define CONFIG_MBR_SECTOR		0x4800
+ 
+ #define CONFIG_PXA688_EMMC_WORKAROUND
+-- 
+1.6.0.4
+

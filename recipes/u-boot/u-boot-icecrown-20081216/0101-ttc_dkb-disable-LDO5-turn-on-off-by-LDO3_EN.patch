@@ -1,0 +1,44 @@
+From 228c3daa43a2c1741270b8b8d2ed4cd3184c8eaa Mon Sep 17 00:00:00 2001
+From: Jing Xiang <jxiang@marvell.com>
+Date: Tue, 7 Jul 2009 11:59:30 +0800
+Subject: [PATCH] ttc_dkb: disable LDO5 turn on/off by LDO3_EN
+
+Signed-off-by: Jing Xiang <jxiang@marvell.com>
+Signed-off-by: Bin Yang <bin.yang@marvell.com>
+---
+ board/pxa/ttc_dkb/ttc_dkb.c |   14 ++++++++++++++
+ 1 files changed, 14 insertions(+), 0 deletions(-)
+
+diff --git a/board/pxa/ttc_dkb/ttc_dkb.c b/board/pxa/ttc_dkb/ttc_dkb.c
+index b7f9337..5dd7dfc 100644
+--- a/board/pxa/ttc_dkb/ttc_dkb.c
++++ b/board/pxa/ttc_dkb/ttc_dkb.c
+@@ -274,11 +274,25 @@ int board_init (void)
+ int misc_init_r (void)
+ {
+         char *env;
++	char val;
++	static int first_time = 1;
+                                                                                                                                                
++	if (first_time) {
++		i2c_init(0);			/* init I2C */
++		first_time = 0;
++	}
++
+ 	/* set voltage to 1300mV by default */
+ 	set_volt(1300);
+ 	dummy_delay(99999);
+ 	set_volt(1300);
++
++	/* don't bind LDO5 with LDO3 */
++	i2c_writeb(0x30, 0x42, 0x80);
++	/* enable LDO5 for USB */
++	i2c_readb(0x30, 0x2b, &val);
++	i2c_writeb(0x30, 0x2b, val | 0x80);
++
+         /* primary network interface */
+         env = getenv("ethprime");
+         if(!env)
+-- 
+1.6.0.4
+

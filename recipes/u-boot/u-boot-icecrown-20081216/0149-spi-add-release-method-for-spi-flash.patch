@@ -1,0 +1,125 @@
+From e367e75329b02800eae59a3fe12f81a73f69ef5f Mon Sep 17 00:00:00 2001
+From: Lei Wen <leiwen@marvell.com>
+Date: Tue, 13 Oct 2009 12:39:35 +0800
+Subject: [PATCH] spi: add release method for spi flash
+
+The original way of release original is buggy, which would
+cause the console hang. Release the whole struct which is
+malloc-ed by the original flash driver.
+
+Signed-off-by: Lei Wen <leiwen@marvell.com>
+---
+ drivers/mtd/spi/atmel.c     |    9 +++++++++
+ drivers/mtd/spi/macronix.c  |    9 +++++++++
+ drivers/mtd/spi/spi_flash.c |    2 +-
+ drivers/mtd/spi/stmicro.c   |    9 +++++++++
+ include/spi_flash.h         |    1 +
+ 5 files changed, 29 insertions(+), 1 deletions(-)
+
+diff --git a/drivers/mtd/spi/atmel.c b/drivers/mtd/spi/atmel.c
+index 10fcf0c..44051e6 100644
+--- a/drivers/mtd/spi/atmel.c
++++ b/drivers/mtd/spi/atmel.c
+@@ -277,6 +277,14 @@ out:
+ 	return ret;
+ }
+ 
++void spi_flash_release_atmel(struct spi_flash *flash)
++{
++	struct atmel_spi_flash *asf;
++
++	asf = to_atmel_spi_flash(flash);
++	free (asf);
++}
++
+ struct spi_flash *spi_flash_probe_atmel(struct spi_slave *spi, u8 *idcode)
+ {
+ 	const struct atmel_spi_flash_params *params;
+@@ -308,6 +316,7 @@ struct spi_flash *spi_flash_probe_atmel(struct spi_slave *spi, u8 *idcode)
+ 	asf->params = params;
+ 	asf->flash.spi = spi;
+ 	asf->flash.name = params->name;
++	asf->flash.release = spi_flash_release_atmel;
+ 
+ 	/* Assuming power-of-two page size initially. */
+ 	page_size = 1 << params->l2_page_size;
+diff --git a/drivers/mtd/spi/macronix.c b/drivers/mtd/spi/macronix.c
+index fe1310b..14345f0 100644
+--- a/drivers/mtd/spi/macronix.c
++++ b/drivers/mtd/spi/macronix.c
+@@ -296,6 +296,14 @@ int macronix_erase(struct spi_flash *flash, u32 offset, size_t len)
+ 	return ret;
+ }
+ 
++void spi_flash_release_macronix(struct spi_flash *flash)
++{
++	struct macronix_spi_flash *mcx;
++
++	mcx = to_macronix_spi_flash(flash);
++	free (mcx);
++}
++
+ struct spi_flash *spi_flash_probe_macronix(struct spi_slave *spi, u8 *idcode)
+ {
+ 	const struct macronix_spi_flash_params *params;
+@@ -327,6 +335,7 @@ struct spi_flash *spi_flash_probe_macronix(struct spi_slave *spi, u8 *idcode)
+ 	mcx->flash.write = macronix_write;
+ 	mcx->flash.erase = macronix_erase;
+ 	mcx->flash.read = macronix_read_fast;
++	mcx->flash.release = spi_flash_release_macronix;
+ 	mcx->flash.size = params->page_size * params->pages_per_sector
+ 	    * params->sectors_per_block * params->nr_blocks;
+ 
+diff --git a/drivers/mtd/spi/spi_flash.c b/drivers/mtd/spi/spi_flash.c
+index da7c481..552c7b7 100644
+--- a/drivers/mtd/spi/spi_flash.c
++++ b/drivers/mtd/spi/spi_flash.c
+@@ -168,5 +168,5 @@ err_claim_bus:
+ void spi_flash_free(struct spi_flash *flash)
+ {
+ 	spi_free_slave(flash->spi);
+-	free(flash);
++	flash->release(flash);
+ }
+diff --git a/drivers/mtd/spi/stmicro.c b/drivers/mtd/spi/stmicro.c
+index 86324e4..be4bde0 100644
+--- a/drivers/mtd/spi/stmicro.c
++++ b/drivers/mtd/spi/stmicro.c
+@@ -309,6 +309,14 @@ int stmicro_erase(struct spi_flash *flash, u32 offset, size_t len)
+ 	return ret;
+ }
+ 
++void spi_flash_release_stmicro(struct spi_flash *flash)
++{
++	struct stmicro_spi_flash *stm;
++
++	stm = to_stmicro_spi_flash(flash);
++	free (stm);
++}
++
+ struct spi_flash *spi_flash_probe_stmicro(struct spi_slave *spi, u8 * idcode)
+ {
+ 	const struct stmicro_spi_flash_params *params;
+@@ -346,6 +354,7 @@ struct spi_flash *spi_flash_probe_stmicro(struct spi_slave *spi, u8 * idcode)
+ 	stm->flash.write = stmicro_write;
+ 	stm->flash.erase = stmicro_erase;
+ 	stm->flash.read = stmicro_read_fast;
++	stm->flash.release = spi_flash_release_stmicro;
+ 	stm->flash.size = params->page_size * params->pages_per_sector
+ 	    * params->nr_sectors;
+ 
+diff --git a/include/spi_flash.h b/include/spi_flash.h
+index de4f174..0a19ebf 100644
+--- a/include/spi_flash.h
++++ b/include/spi_flash.h
+@@ -43,6 +43,7 @@ struct spi_flash {
+ 				size_t len, const void *buf);
+ 	int		(*erase)(struct spi_flash *flash, u32 offset,
+ 				size_t len);
++	void		(*release)(struct spi_flash *flash);
+ };
+ 
+ struct spi_flash *spi_flash_probe(unsigned int bus, unsigned int cs,
+-- 
+1.6.0.4
+

@@ -1,0 +1,25 @@
+From e7707183877962e277ff6db503d0e0d3d13dec53 Mon Sep 17 00:00:00 2001
+From: Lei Wen <leiwen@marvell.com>
+Date: Thu, 6 Aug 2009 11:10:16 +0800
+Subject: [PATCH] tftp: revert timeout setting
+
+---
+ net/tftp.c |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/net/tftp.c b/net/tftp.c
+index f713b05..3dac3d8 100644
+--- a/net/tftp.c
++++ b/net/tftp.c
+@@ -15,7 +15,7 @@
+ #if defined(CONFIG_CMD_NET)
+ 
+ #define WELL_KNOWN_PORT	69		/* Well known TFTP port #		*/
+-#define TIMEOUT		500000UL		/* Millisecs to timeout for lost pkt */
++#define TIMEOUT		5000UL		/* Millisecs to timeout for lost pkt */
+ #ifndef	CONFIG_NET_RETRY_COUNT
+ # define TIMEOUT_COUNT	10		/* # of timeouts before giving up  */
+ #else
+-- 
+1.6.0.4
+

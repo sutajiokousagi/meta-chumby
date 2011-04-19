@@ -1,0 +1,41 @@
+From 2aad5d4348d1eacfcc0265f3f96ddfb15a2fb4d3 Mon Sep 17 00:00:00 2001
+From: Lei Wen <leiwen@marvell.com>
+Date: Sat, 23 May 2009 17:11:52 +0800
+Subject: [PATCH] pxa168: show the nand writing process
+
+When the length of the image is aligned with the erase size,
+the nand_util refuse to show the writing process.
+
+Change this behavior for understanding what the UBOOT is doing.
+
+Signed-off-by: Lei Wen <leiwen@marvell.com>
+---
+ drivers/mtd/nand/nand_util.c |   12 ------------
+ 1 files changed, 0 insertions(+), 12 deletions(-)
+
+diff --git a/drivers/mtd/nand/nand_util.c b/drivers/mtd/nand/nand_util.c
+index d4af478..3cff49e 100644
+--- a/drivers/mtd/nand/nand_util.c
++++ b/drivers/mtd/nand/nand_util.c
+@@ -518,18 +518,6 @@ int nand_write_skip_bad(nand_info_t *nand, size_t offset, size_t *length,
+ 		return -EINVAL;
+ 	}
+ 
+-	if (len_incl_bad == *length) {
+-		if ( unlikely(is_yaffs == 1))
+- 			rval = nand_write_oob (nand, offset, &(n_chip->ops));
+-		else
+-			rval = nand_write (nand, offset, length, buffer);
+-		if (rval != 0)
+-			printf ("NAND write to offset %x failed %d\n",
+-				offset, rval);
+-
+-		return rval;
+-	}
+-
+ 	while (left_to_write > 0) {
+ 		size_t block_offset = offset & (nand->erasesize - 1);
+ 		size_t write_size;
+-- 
+1.6.0.4
+

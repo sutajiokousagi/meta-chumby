@@ -1,0 +1,69 @@
+From 9aed4e5c37e4ff3900649f8e68e413d6d1321740 Mon Sep 17 00:00:00 2001
+From: WeiLi Xia <wlxia@marvell.com>
+Date: Thu, 20 May 2010 16:38:12 +0800
+Subject: [PATCH] mmp2: passing ddr type to kernel
+
+Signed-off-by: WeiLi Xia <wlxia@marvell.com>
+---
+ board/pxa/jasper/jasper.c |    4 ++--
+ include/asm-arm/setup.h   |    7 +++++++
+ lib_arm/bootm.c           |    6 ++++++
+ 3 files changed, 15 insertions(+), 2 deletions(-)
+
+diff --git a/board/pxa/jasper/jasper.c b/board/pxa/jasper/jasper.c
+index c03f70b..2fae705 100644
+--- a/board/pxa/jasper/jasper.c
++++ b/board/pxa/jasper/jasper.c
+@@ -324,9 +324,9 @@ int board_init (void)
+     
+     /* adress of boot parameters */
+ #ifdef CONFIG_PJ4_NON_SECURE_MODE
+-    gd->bd->bi_boot_params = 0x00200100;
++    gd->bd->bi_boot_params = 0x00680000;
+ #else
+-    gd->bd->bi_boot_params = 0x00200100;
++    gd->bd->bi_boot_params = 0x00680000;
+ #endif
+     gd->baudrate = CONFIG_BAUDRATE;
+ 
+diff --git a/include/asm-arm/setup.h b/include/asm-arm/setup.h
+index 89df4dc..ce23f8c 100644
+--- a/include/asm-arm/setup.h
++++ b/include/asm-arm/setup.h
+@@ -100,9 +100,16 @@ struct tag_core {
+ /* it is allowed to have multiple ATAG_MEM nodes */
+ #define ATAG_MEM	0x54410002
+ 
++typedef enum _ddr_type {
++	MEM_TYPE_INVALID = 0,
++	MEM_TYPE_MICRON,
++	MEM_TYPE_ELPIDA,
++} _ddr_type;
++
+ struct tag_mem32 {
+ 	u32	size;
+ 	u32	start;	/* physical start address */
++	_ddr_type	type;
+ };
+ 
+ /* VGA text type displays */
+diff --git a/lib_arm/bootm.c b/lib_arm/bootm.c
+index 7dbde7d..698750c 100644
+--- a/lib_arm/bootm.c
++++ b/lib_arm/bootm.c
+@@ -166,6 +166,12 @@ static void setup_memory_tags (bd_t *bd)
+ 		params->u.mem.start = bd->bi_dram[i].start;
+ 		params->u.mem.size = bd->bi_dram[i].size;
+ 
++#if defined (CONFIG_DDR_MICRON_256M)
++		params->u.mem.type = MEM_TYPE_MICRON;
++#elif defined (CONFIG_DDR_EPD_512M)
++		params->u.mem.type = MEM_TYPE_ELPIDA;
++#endif
++
+ 		params = tag_next (params);
+ 	}
+ }
+-- 
+1.6.0.4
+

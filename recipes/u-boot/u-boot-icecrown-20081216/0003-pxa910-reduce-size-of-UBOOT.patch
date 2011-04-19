@@ -1,0 +1,153 @@
+From 2540e67e0e103dc587a5812acec59472da0bf13c Mon Sep 17 00:00:00 2001
+From: Wen Lei <leiwen@marvell.com>
+Date: Fri, 27 Feb 2009 10:20:18 +0800
+Subject: [PATCH] pxa910: reduce size of UBOOT
+
+---
+ common/Makefile   |   14 ++++++++++++++
+ common/cmd_nand.c |    2 ++
+ net/Makefile      |    4 ++++
+ net/net.c         |    3 ++-
+ 4 files changed, 22 insertions(+), 1 deletions(-)
+
+diff --git a/common/Makefile b/common/Makefile
+index 93e3963..441489d 100644
+--- a/common/Makefile
++++ b/common/Makefile
+@@ -35,20 +35,25 @@ COBJS-y += command.o
+ COBJS-y += devices.o
+ COBJS-y += dlmalloc.o
+ COBJS-y += exports.o
++ifndef CONFIG_PXAXXX
+ COBJS-y += hush.o
+ COBJS-y += image.o
+ COBJS-y += memsize.o
+ COBJS-y += s_record.o
+ COBJS-y += serial.o
+ COBJS-y += xyzModem.o
++endif
+ 
+ # core command
++ifndef CONFIG_PXAXXX
+ COBJS-y += cmd_boot.o
+ COBJS-y += cmd_bootm.o
++endif
+ COBJS-y += cmd_nvedit.o
+ 
+ # environment
+ COBJS-y += env_common.o
++ifndef CONFIG_PXAXXX
+ COBJS-$(CONFIG_ENV_IS_IN_DATAFLASH) += env_dataflash.o
+ COBJS-$(CONFIG_ENV_IS_IN_EEPROM) += env_eeprom.o
+ COBJS-y += env_embedded.o
+@@ -57,6 +62,7 @@ COBJS-$(CONFIG_ENV_IS_IN_NAND) += env_nand.o
+ COBJS-$(CONFIG_ENV_IS_IN_NVRAM) += env_nvram.o
+ COBJS-$(CONFIG_ENV_IS_IN_ONENAND) += env_onenand.o
+ COBJS-$(CONFIG_ENV_IS_IN_SPI_FLASH) += env_sf.o
++endif
+ COBJS-$(CONFIG_ENV_IS_NOWHERE) += env_nowhere.o
+ 
+ # command
+@@ -99,7 +105,9 @@ COBJS-$(CONFIG_CMD_IRQ) += cmd_irq.o
+ COBJS-$(CONFIG_CMD_ITEST) += cmd_itest.o
+ COBJS-$(CONFIG_CMD_JFFS2) += cmd_jffs2.o
+ COBJS-$(CONFIG_CMD_LICENSE) += cmd_license.o
++ifndef CONFIG_PXAXXX
+ COBJS-y += cmd_load.o
++endif
+ COBJS-$(CONFIG_LOGBUFFER) += cmd_log.o
+ COBJS-$(CONFIG_ID_EEPROM) += cmd_mac.o
+ COBJS-$(CONFIG_CMD_MEMORY) += cmd_mem.o
+@@ -111,13 +119,17 @@ COBJS-$(CONFIG_CMD_MISC) += cmd_misc.o
+ COBJS-$(CONFIG_CMD_MMC) += cmd_mmc.o
+ COBJS-$(CONFIG_MP) += cmd_mp.o
+ COBJS-y += cmd_nand.o
++ifndef CONFIG_PXAXXX
+ COBJS-$(CONFIG_CMD_NET) += cmd_net.o
++endif
+ COBJS-$(CONFIG_CMD_ONENAND) += cmd_onenand.o
+ COBJS-$(CONFIG_CMD_OTP) += cmd_otp.o
+ ifdef CONFIG_PCI
+ COBJS-$(CONFIG_CMD_PCI) += cmd_pci.o
+ endif
++ifndef CONFIG_PXAXXX
+ COBJS-y += cmd_pcmcia.o
++endif
+ COBJS-$(CONFIG_CMD_PORTIO) += cmd_portio.o
+ COBJS-$(CONFIG_CMD_REGINFO) += cmd_reginfo.o
+ COBJS-$(CONFIG_CMD_REISER) += cmd_reiser.o
+@@ -143,8 +155,10 @@ COBJS-$(CONFIG_VFD) += cmd_vfd.o
+ COBJS-$(CONFIG_DDR_SPD) += ddr_spd.o
+ COBJS-$(CONFIG_CMD_DOC) += docecc.o
+ COBJS-$(CONFIG_CONSOLE_MUX) += iomux.o
++ifndef CONFIG_PXAXXX
+ COBJS-y += flash.o
+ COBJS-y += kgdb.o
++endif
+ COBJS-$(CONFIG_LCD) += lcd.o
+ COBJS-$(CONFIG_LYNXKDI) += lynxkdi.o
+ COBJS-$(CONFIG_UPDATE_TFTP) += update.o
+diff --git a/common/cmd_nand.c b/common/cmd_nand.c
+index 0a366d3..3403b6a 100644
+--- a/common/cmd_nand.c
++++ b/common/cmd_nand.c
+@@ -487,6 +487,7 @@ U_BOOT_CMD(nand, 5, 1, do_nand,
+ 	   "    bring nand to lock state or display locked pages\n"
+ 	   "nand unlock [offset] [size] - unlock section\n");
+ 
++#ifndef CONFIG_PXAXXX
+ static int nand_load_image(cmd_tbl_t *cmdtp, nand_info_t *nand,
+ 			   ulong offset, ulong addr, char *cmd)
+ {
+@@ -666,6 +667,7 @@ U_BOOT_CMD(nboot, 4, 1, do_nandboot,
+ 	"[partition] | [[[loadAddr] dev] offset]\n");
+ 
+ #endif
++#endif
+ 
+ #else /* CONFIG_NAND_LEGACY */
+ /*
+diff --git a/net/Makefile b/net/Makefile
+index 0eee330..0c28c92 100644
+--- a/net/Makefile
++++ b/net/Makefile
+@@ -29,11 +29,15 @@ LIB	= $(obj)libnet.a
+ 
+ COBJS-y += net.o
+ COBJS-y += tftp.o
++ifndef CONFIG_PXAXXX
+ COBJS-y += bootp.o
+ COBJS-y += rarp.o
++endif
+ COBJS-y += eth.o
++ifndef CONFIG_PXAXXX
+ COBJS-y += nfs.o
+ COBJS-y += sntp.o
++endif
+ 
+ COBJS	:= $(COBJS-y)
+ SRCS	:= $(COBJS:.o=.c)
+diff --git a/net/net.c b/net/net.c
+index e6547f9..a599274 100644
+--- a/net/net.c
++++ b/net/net.c
+@@ -431,7 +431,7 @@ restart:
+ 			DhcpRequest();		/* Basically same as BOOTP */
+ 			break;
+ #endif
+-
++#ifndef CONFIG_PXAXXX
+ 		case BOOTP:
+ 			BootpTry = 0;
+ 			BootpRequest ();
+@@ -441,6 +441,7 @@ restart:
+ 			RarpTry = 0;
+ 			RarpRequest ();
+ 			break;
++#endif
+ #if defined(CONFIG_CMD_PING)
+ 		case PING:
+ 			PingStart();
+-- 
+1.6.0.4
+

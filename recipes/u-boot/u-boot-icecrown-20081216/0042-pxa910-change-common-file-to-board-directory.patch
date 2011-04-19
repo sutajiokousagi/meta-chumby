@@ -1,0 +1,188 @@
+From 3a52c86b4c50345b3cb781df9c6fe56aad57e384 Mon Sep 17 00:00:00 2001
+From: Lei Wen <leiwen@marvell.com>
+Date: Wed, 22 Apr 2009 12:49:55 +0800
+Subject: [PATCH] pxa910: change common file to board directory
+
+Signed-off-by: Lei Wen <leiwen@marvell.com>
+---
+ board/pxa/common/Makefile      |    1 +
+ board/pxa/common/common.c      |   67 ++++++++++++++++++++++++++++++++++++++++
+ cpu/88SV331xV5/pxa168/Makefile |    2 +-
+ cpu/88SV331xV5/pxa168/common.c |   66 ---------------------------------------
+ 4 files changed, 69 insertions(+), 67 deletions(-)
+ create mode 100644 board/pxa/common/common.c
+ delete mode 100644 cpu/88SV331xV5/pxa168/common.c
+
+diff --git a/board/pxa/common/Makefile b/board/pxa/common/Makefile
+index e9c1618..35c3bf3 100644
+--- a/board/pxa/common/Makefile
++++ b/board/pxa/common/Makefile
+@@ -29,6 +29,7 @@ endif
+ 
+ LIB	= $(obj)lib$(VENDOR).a
+ 
++COBJS-y				+= common.o
+ COBJS-y				+= boot.o
+ COBJS-y				+= freq.o
+ COBJS-${CONFIG_CMD_CPUID}	+= cpuid.o
+diff --git a/board/pxa/common/common.c b/board/pxa/common/common.c
+new file mode 100644
+index 0000000..5af9e84
+--- /dev/null
++++ b/board/pxa/common/common.c
+@@ -0,0 +1,67 @@
++#include <asm/arch/common.h>
++
++void complete(struct completion *completion)
++{
++	completion->done = 1;
++}
++
++inline unsigned long msecs_to_jiffies(int time)
++{
++	return time * HZ / USEC_PER_SEC;
++}
++
++
++int platform_driver_register(struct platform_device *pdev)
++{
++	return 1;
++}
++
++/*
++ * platform_get_resource - get a resource for a device
++ * @dev: platform device
++ * @type: resource type
++ * @num: resource index
++ */
++struct resource *platform_get_resource(struct platform_device *dev,
++		unsigned int type, unsigned int num)
++{
++	int i;
++
++	for (i = 0; i < dev->num_resources; i++) {
++		struct resource *r = &dev->resource[i];
++
++		if ((r->flags & (IORESOURCE_IO|IORESOURCE_MEM|
++						IORESOURCE_IRQ|IORESOURCE_DMA)) == type)
++			if (num-- == 0)
++				return r;
++	}
++	return NULL;
++}
++
++void dev_err(struct device * dev, char *msg)
++{
++	printf("%s: %s\n", (struct platform_device *)(container_of(dev, struct platform_device, dev))->name, msg);
++}
++
++int request_irq(unsigned int irq,
++		irq_handler_t handler,
++		unsigned long flags, const char *devname, void *dev_id)
++{
++	return 1;
++}
++
++void inline getnstimeofday(struct timespec *tv)
++{
++	long ticks = get_ticks();
++	tv->tv_nsec = ticks / (CONFIG_SYS_HZ / 5000); // KV
++	tv->tv_sec = 0;
++}
++
++struct clk *clk_get(struct device *dev, const char *id) {return NULL;}
++void clk_put(struct clk *clk) {return NULL;}
++
++unsigned long  clk_get_rate(struct clk * clk) 
++{
++	return 208 * 1000000;
++}
++
+diff --git a/cpu/88SV331xV5/pxa168/Makefile b/cpu/88SV331xV5/pxa168/Makefile
+index 8099440..aeb2de2 100644
+--- a/cpu/88SV331xV5/pxa168/Makefile
++++ b/cpu/88SV331xV5/pxa168/Makefile
+@@ -25,7 +25,7 @@ include $(TOPDIR)/config.mk
+ 
+ LIB	= $(obj)lib$(SOC).a
+ 
+-COBJS	= timer.o mfp.o common.o
++COBJS	= timer.o mfp.o
+ 
+ SRCS	:= $(START:.o=.S) $(SOBJS:.o=.S) $(COBJS:.o=.c)
+ OBJS	:= $(addprefix $(obj),$(COBJS) $(SOBJS))
+diff --git a/cpu/88SV331xV5/pxa168/common.c b/cpu/88SV331xV5/pxa168/common.c
+deleted file mode 100644
+index 3ace757..0000000
+--- a/cpu/88SV331xV5/pxa168/common.c
++++ /dev/null
+@@ -1,66 +0,0 @@
+-#include <asm/arch/common.h>
+-
+-void complete(struct completion *completion)
+-{
+-	completion->done = 1;
+-}
+-
+-inline unsigned long msecs_to_jiffies(int time)
+-{
+-	return time * HZ / USEC_PER_SEC;
+-}
+-
+-
+-int platform_driver_register(struct platform_device *pdev)
+-{
+-	return 1;
+-}
+-
+-/*
+- * platform_get_resource - get a resource for a device
+- * @dev: platform device
+- * @type: resource type
+- * @num: resource index
+- */
+-struct resource *platform_get_resource(struct platform_device *dev,
+-		unsigned int type, unsigned int num)
+-{
+-	int i;
+-
+-	for (i = 0; i < dev->num_resources; i++) {
+-		struct resource *r = &dev->resource[i];
+-
+-		if ((r->flags & (IORESOURCE_IO|IORESOURCE_MEM|
+-						IORESOURCE_IRQ|IORESOURCE_DMA)) == type)
+-			if (num-- == 0)
+-				return r;
+-	}
+-	return NULL;
+-}
+-
+-void dev_err(struct device * dev, char *msg)
+-{
+-	printf("%s: %s\n", (struct platform_device *)(container_of(dev, struct platform_device, dev))->name, msg);
+-}
+-
+-int request_irq(unsigned int irq,
+-		irq_handler_t handler,
+-		unsigned long flags, const char *devname, void *dev_id)
+-{
+-	return 1;
+-}
+-
+-void inline getnstimeofday(struct timespec *tv)
+-{
+-	long ticks = get_ticks();
+-	tv->tv_nsec = ticks / (CONFIG_SYS_HZ / 5000); // KV
+-	tv->tv_sec = 0;
+-}
+-
+-struct clk *clk_get(struct device *dev, const char *id) {return NULL;}
+-
+-unsigned long  clk_get_rate(struct clk * clk) 
+-{
+-	return 208 * 1000000;
+-}
+-
+-- 
+1.6.0.4
+

@@ -1,0 +1,84 @@
+From 14fff04f9a71edb5856c2eeae27b688a1aa2e650 Mon Sep 17 00:00:00 2001
+From: Mingliang Hu <mingliang.hu@marvell.com>
+Date: Thu, 11 Feb 2010 12:49:36 +0800
+Subject: [PATCH] pxa688: update op2 for Z1 chip
+
+Signed-off-by: Mingliang Hu <mingliang.hu@marvell.com>
+
+op2: core-800, ddr-400, axi-200, pll2(gc)-520
+---
+ board/pxa/common/freq_ll.S |   36 ++++++++++++++++++------------------
+ 1 files changed, 18 insertions(+), 18 deletions(-)
+
+diff --git a/board/pxa/common/freq_ll.S b/board/pxa/common/freq_ll.S
+index 5722e8e..06fb7c0 100644
+--- a/board/pxa/common/freq_ll.S
++++ b/board/pxa/common/freq_ll.S
+@@ -147,21 +147,21 @@ freq_sram_start:
+ 3:
+ 	cmp	r2, #0x2
+ 	bne	4f
+-	@ select PLL2 frequency, 624MHz
+-	ldr	r7, =0x086003e2
++	@ select PLL2 frequency, 520MHz
++	ldr	r7, =0x08600322
+ 	str	r7, [r5, #0x0414]
+ 	ldr	r7, =0x00FFFE00
+ 	str	r7, [r5, #0x0034]
+-	ldr	r7, =0x00223A00
++	ldr	r7, =0x0021da00
+ 	str	r7, [r5, #0x0034]
+-	ldr	r7, =0x00223B00
++	ldr	r7, =0x0021db00
+ 	str	r7, [r5, #0x0034]
+-	ldr	r7, =0x286003e2
++	ldr	r7, =0x28600322
+ 	str	r7, [r5, #0x0414]
+-	@ select clock source, PJ4-PLL2, SP-PLL1/2, AXI/DDR-PLL1
+-	ldr	r7, =0x40800000
++	@ select clock source, PJ4-PLL1, SP-PLL1/2, AXI/DDR-PLL1
++	ldr	r7, =0x20800000
+ 	str	r7, [r5, #0x0008]
+-	@ divider setting and frequency change request, core-624, ddr-400, axi-200
++	@ divider setting and frequency change request, core-800, ddr-400, axi-200
+ 	ldr	r7, =0x08fd8248
+ 	str	r7, [r6, #0x00]
+ 	ldr	r7, =0x78fd8248
+@@ -170,24 +170,24 @@ freq_sram_start:
+ 4:
+ 	cmp	r2, #0x3
+ 	bne	5f
+-	@ select PLL2 frequency, 546MHz
+-	ldr	r7, =0x08600362
++	@ select PLL2 frequency, 624MHz
++	ldr	r7, =0x086003e2
+ 	str	r7, [r5, #0x0414]
+ 	ldr	r7, =0x00FFFE00
+ 	str	r7, [r5, #0x0034]
+-	ldr	r7, =0x0021f200
++	ldr	r7, =0x00223A00
+ 	str	r7, [r5, #0x0034]
+-	ldr	r7, =0x0021f300
++	ldr	r7, =0x00223B00
+ 	str	r7, [r5, #0x0034]
+-	ldr	r7, =0x28600362
++	ldr	r7, =0x286003e2
+ 	str	r7, [r5, #0x0414]
+-	@ select clock source, PJ4-PLL1, SP-PLL1/2, AXI/DDR-PLL1
+-	ldr	r7, =0x20800000
++	@ select clock source, PJ4-PLL2, SP-PLL1/2, AXI/DDR-PLL1
++	ldr	r7, =0x40800000
+ 	str	r7, [r5, #0x0008]
+-	@ divider setting and frequency change request, core-400, ddr-400, axi-200
+-	ldr	r7, =0x08fd8249
++	@ divider setting and frequency change request, core-624, ddr-400, axi-200
++	ldr	r7, =0x08fd8248
+ 	str	r7, [r6, #0x00]
+-	ldr	r7, =0x78fd8249
++	ldr	r7, =0x78fd8248
+ 	str	r7, [r6, #0x04]
+ 
+ 5:
+-- 
+1.6.0.4
+

@@ -1,0 +1,144 @@
+From f813c41539a5407c5a7cb6c40c707e47cafbb074 Mon Sep 17 00:00:00 2001
+From: Ning Jiang <ning.jiang@marvell.com>
+Date: Mon, 4 Jan 2010 17:39:16 +0800
+Subject: [PATCH] pxa688: fix nand timeout error on flint board
+
+Signed-off-by: Ning Jiang <ning.jiang@marvell.com>
+---
+ drivers/mtd/nand/pxa3xx_nand.c |  105 +++++++++++++++++++++++-----------------
+ 1 files changed, 61 insertions(+), 44 deletions(-)
+
+diff --git a/drivers/mtd/nand/pxa3xx_nand.c b/drivers/mtd/nand/pxa3xx_nand.c
+index fbf155d..21e30e1 100644
+--- a/drivers/mtd/nand/pxa3xx_nand.c
++++ b/drivers/mtd/nand/pxa3xx_nand.c
+@@ -371,10 +371,6 @@ static int prepare_command_poll(struct pxa3xx_nand *nand, int command,
+ 	struct nand_chip *chip = mtd->priv;
+ 	const struct pxa3xx_nand_flash *flash_info = info->flash_info;
+ 
+-	/* how many command is to be executed in one cycle */
+-	info->total_cmds = (info->flash_info->page_size > PAGE_CHUNK_SIZE) \
+-		   ? 5 : 1;
+-
+ 	ndcb0_csel = (nand->chip_select) ? NDCB0_CSEL : 0;
+ 	/* clear the command buffer */
+ 	for (i = 0; i < CMD_POLL_SIZE; i ++)
+@@ -418,23 +414,33 @@ static int prepare_command_poll(struct pxa3xx_nand *nand, int command,
+ 		}
+ 
+ 		pxa3xx_set_datasize(info);
+-                info->total_cmds = chunks + 1;
+-
+-                info->ndcb0[0] |= NDCB0_CMD_XTYPE(0x6)
+-                                | NDCB0_CMD_TYPE(0)
+-                                | NDCB0_DBC
+-                                | NDCB0_NC
+-                                | addr_cycle
+-                                | cmd;
+-
+-                info->ndcb0[1] |= NDCB0_CMD_XTYPE(0x5)
+-                                | NDCB0_NC
+-                                | addr_cycle;
+-
+-                for (i = 2; i <= chunks; i ++)
+-                        info->ndcb0[i] = info->ndcb0[1];
+ 
+-                info->ndcb0[chunks] &= ~NDCB0_NC;
++		if (flash_info->page_size > PAGE_CHUNK_SIZE) {
++			info->total_cmds = chunks + 1;
++
++			info->ndcb0[0] |= NDCB0_CMD_XTYPE(0x6)
++				| NDCB0_CMD_TYPE(0)
++				| NDCB0_DBC
++				| NDCB0_NC
++				| addr_cycle
++				| cmd;
++
++			info->ndcb0[1] |= NDCB0_CMD_XTYPE(0x5)
++				| NDCB0_NC
++				| addr_cycle;
++
++			for (i = 2; i <= chunks; i ++)
++				info->ndcb0[i] = info->ndcb0[1];
++
++			info->ndcb0[chunks] &= ~NDCB0_NC;
++		} else {
++			info->total_cmds = 1;
++			info->need_wait_ready = 0;
++			info->ndcb0[0] |= NDCB0_CMD_TYPE(0)
++					  | NDCB0_DBC
++					  | addr_cycle
++					  | cmd;
++		}
+ 
+ 		break;
+ 
+@@ -443,30 +449,41 @@ static int prepare_command_poll(struct pxa3xx_nand *nand, int command,
+ 
+ 		nand->is_write = 1;
+ 		pxa3xx_set_datasize(info);
+-                info->total_cmds = chunks + 1;
+-                info->need_wait_ready = chunks + 1;
+-
+-                info->ndcb0[0] |= NDCB0_CMD_XTYPE(0x4)
+-                                | NDCB0_CMD_TYPE(0x1)
+-                                | NDCB0_NC
+-                                | NDCB0_AUTO_RS
+-                                | (cmd & NDCB0_CMD1_MASK)
+-                                | addr_cycle;
+-
+-                for (i = 1; i < chunks; i ++)
+-                        info->ndcb0[i] |= NDCB0_CMD_XTYPE(0x5)
+-                                        | NDCB0_NC
+-                                        | NDCB0_AUTO_RS
+-                                        | NDCB0_CMD_TYPE(0x1)
+-                                        | addr_cycle;
+-
+-                info->ndcb0[chunks] |= NDCB0_CMD_XTYPE(0x3)
+-                                | NDCB0_CMD_TYPE(0x1)
+-                                | NDCB0_ST_ROW_EN
+-                                | NDCB0_DBC
+-                                | (cmd & NDCB0_CMD2_MASK)
+-                                | NDCB0_CMD1_MASK
+-                                | addr_cycle;
++
++		if (flash_info->page_size > PAGE_CHUNK_SIZE) {
++			info->total_cmds = chunks + 1;
++			info->need_wait_ready = chunks + 1;
++
++			info->ndcb0[0] |= NDCB0_CMD_XTYPE(0x4)
++				| NDCB0_CMD_TYPE(0x1)
++				| NDCB0_NC
++				| NDCB0_AUTO_RS
++				| (cmd & NDCB0_CMD1_MASK)
++				| addr_cycle;
++
++			for (i = 1; i < chunks; i ++)
++				info->ndcb0[i] |= NDCB0_CMD_XTYPE(0x5)
++					| NDCB0_NC
++					| NDCB0_AUTO_RS
++					| NDCB0_CMD_TYPE(0x1)
++					| addr_cycle;
++
++			info->ndcb0[chunks] |= NDCB0_CMD_XTYPE(0x3)
++				| NDCB0_CMD_TYPE(0x1)
++				| NDCB0_ST_ROW_EN
++				| NDCB0_DBC
++				| (cmd & NDCB0_CMD2_MASK)
++				| NDCB0_CMD1_MASK
++				| addr_cycle;
++		} else {
++			info->total_cmds = 1;
++			info->need_wait_ready = 0;
++			info->ndcb0[0] |= NDCB0_CMD_TYPE(1)
++					  | NDCB0_AUTO_RS
++					  | NDCB0_DBC
++					  | cmd
++					  | addr_cycle;
++		}
+ 
+ 
+ 		break;
+-- 
+1.6.0.4
+

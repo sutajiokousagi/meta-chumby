@@ -1,0 +1,40 @@
+From 5f7dd9622a03948fd8310cb06efcd555226a8573 Mon Sep 17 00:00:00 2001
+From: Lei Wen <leiwen@marvell.com>
+Date: Mon, 28 Sep 2009 14:46:35 +0800
+Subject: [PATCH] aspen: enlarge default malloc space
+
+Signed-off-by: Lei Wen <leiwen@marvell.com>
+---
+ include/configs/aspenite.h  |    2 +-
+ include/configs/zylonite2.h |    2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/include/configs/aspenite.h b/include/configs/aspenite.h
+index 7a88301..c2063c1 100644
+--- a/include/configs/aspenite.h
++++ b/include/configs/aspenite.h
+@@ -54,7 +54,7 @@
+ /*
+  * Size of malloc() pool
+  */
+-#define CONFIG_SYS_MALLOC_LEN      	(CONFIG_SYS_ENV_SIZE + 512*1024)
++#define CONFIG_SYS_MALLOC_LEN      	(CONFIG_SYS_ENV_SIZE + 1024 *1024)
+ #define CONFIG_SYS_GBL_DATA_SIZE   	128   /* size in bytes reserved for initial data */
+ #define CONFIG_CMD_MEMORY
+ 
+diff --git a/include/configs/zylonite2.h b/include/configs/zylonite2.h
+index c5b0d15..429720e 100644
+--- a/include/configs/zylonite2.h
++++ b/include/configs/zylonite2.h
+@@ -54,7 +54,7 @@
+ /*
+  * Size of malloc() pool
+  */
+-#define CONFIG_SYS_MALLOC_LEN      	(CONFIG_SYS_ENV_SIZE + 512*1024)
++#define CONFIG_SYS_MALLOC_LEN      	(CONFIG_SYS_ENV_SIZE + 1024 *1024)
+ #define CONFIG_SYS_GBL_DATA_SIZE   	128   /* size in bytes reserved for initial data */
+ 
+ /*
+-- 
+1.6.0.4
+

@@ -1,0 +1,80 @@
+From 18f7a0821d08d1666d295424cf768b5f6527abad Mon Sep 17 00:00:00 2001
+From: Lei Wen <leiwen@marvell.com>
+Date: Fri, 16 Oct 2009 12:11:35 +0800
+Subject: [PATCH] fix auto boot from nand in avengers lite 1.6f
+
+Signed-off-by: Lei Wen <leiwen@marvell.com>
+---
+ board/pxa/avengers/avenger_pxa168.c |   35 +++++++++++++++++------------------
+ 1 files changed, 17 insertions(+), 18 deletions(-)
+
+diff --git a/board/pxa/avengers/avenger_pxa168.c b/board/pxa/avengers/avenger_pxa168.c
+index a57d445..362e386 100644
+--- a/board/pxa/avengers/avenger_pxa168.c
++++ b/board/pxa/avengers/avenger_pxa168.c
+@@ -42,19 +42,14 @@ int board_init (void)
+     DECLARE_GLOBAL_DATA_PTR;
+     volatile unsigned int reg;
+ 
+-    /* enable GPIO clock */
+-    *(volatile unsigned int *)0xd4015008=0x1;
+     aspen_init();
+ 
+-
+-    /* uart2 mfp */
+-    *(volatile unsigned int *)0xd401e160 = 0x842;//MFP88
+-    *(volatile unsigned int *)0xd401e164 = 0x842;//MFP89
+-
+-
+-
+     /* set SEL_MRVL_ID bit in MOHAWK_CPU_CONF register - Ning */
+     *(volatile unsigned int *)0xD4282c08 = *(volatile unsigned int *)0xD4282c08 | 0x100;
++    /* Turn on clock gating (PMUM_ACGR) */
++    *(volatile unsigned int *)0xD4051024 = 0xffffffff;
++    /* apbc_aib_clk_rst */
++    *(volatile unsigned int *)0xd401503c = 0x3;
+     /* ensure L2 cache is not mapped as SRAM */
+     *(volatile unsigned int *)0xd4282c08 &= ~(1<<4);
+ 
+@@ -62,18 +57,11 @@ int board_init (void)
+     *(volatile unsigned int *)0xd4282c10 = 0x16b5ad6d;
+     *(volatile unsigned int *)0xd4282c18 = 0x2d5b56b5;
+ 
+-    /* Enable clocks */
+-    *(volatile unsigned int *)0xD4051024 = 0xffffffff;
+-
+ #ifdef CONFIG_PXA3XX_SPI
+-    *(volatile unsigned int *)0xd401e1ac = 0x844;//MFP107
+-    *(volatile unsigned int *)0xd401e1b0 = 0x844;//MFP108
+-    *(volatile unsigned int *)0xd401e1b4 = 0x844;//MFP109
+-    *(volatile unsigned int *)0xd401e1b8 = 0x840;//MFP110
+-    *(volatile unsigned int *)0xd401e1bc = 0x844;//MFP111
+-
+     /* Enable SSP1 clock */
+     *(unsigned int *)0xD4015820 = 0x3;
++    /* enable GPIO clock */
++    *(volatile unsigned int *)0xd4015008=0x1;
+     /* configure GPIO110 as output (slave reset out) */
+     *(volatile unsigned int *)(0xd4019100 + 0x54)=1<<14;
+     *(volatile unsigned int *)(0xd4019100 + 0x18)=1<<14;
+@@ -111,6 +99,17 @@ int board_init (void)
+     gd->baudrate = CONFIG_BAUDRATE;
+     icache_enable ();
+ 
++    /* uart2 mfp */
++    *(volatile unsigned int *)0xd401e160 = 0x842;//MFP88
++    *(volatile unsigned int *)0xd401e164 = 0x842;//MFP89
++    *(volatile unsigned int *)0xd401e1ac = 0x844;//MFP107
++    *(volatile unsigned int *)0xd401e1b0 = 0x844;//MFP108
++    *(volatile unsigned int *)0xd401e1b4 = 0x844;//MFP109
++    *(volatile unsigned int *)0xd401e1b8 = 0x840;//MFP110
++    *(volatile unsigned int *)0xd401e1bc = 0x844;//MFP111
++
++
++
+     return 0;
+ }
+ 
+-- 
+1.6.0.4
+

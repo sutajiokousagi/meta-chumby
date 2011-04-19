@@ -1,0 +1,175 @@
+From c913f7f5249e8fe094bba60a1a3b91c50b967da8 Mon Sep 17 00:00:00 2001
+From: Wen Lei <leiwen@marvell.com>
+Date: Fri, 27 Feb 2009 10:27:06 +0800
+Subject: [PATCH] pxa910: sync onenand with kernel
+
+---
+ drivers/mtd/onenand/onenand_base.c |  100 +++++++++++++++++++++++++++++++++++-
+ 1 files changed, 99 insertions(+), 1 deletions(-)
+
+diff --git a/drivers/mtd/onenand/onenand_base.c b/drivers/mtd/onenand/onenand_base.c
+index 9b7bf3a..360e4f9 100644
+--- a/drivers/mtd/onenand/onenand_base.c
++++ b/drivers/mtd/onenand/onenand_base.c
+@@ -22,6 +22,14 @@
+ #include <asm/io.h>
+ #include <asm/errno.h>
+ #include <malloc.h>
++#include <linux/mtd/pxa3xx_bbm.h>
++
++#if defined(CONFIG_PXA3xx_DVFM)
++#include <asm/arch/dvfm.h>
++#include <asm/arch/pxa3xx_dvfm.h>
++#endif
++
++static struct pxa3xx_bbm *pxa3xx_bbm;
+ 
+ /* It should access 16-bit instead of 8-bit */
+ static inline void *memcpy_16(void *dst, const void *src, unsigned int len)
+@@ -47,6 +55,47 @@ static const unsigned char ffchars[] = {
+ 	0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,	/* 64 */
+ };
+ 
++#if defined(CONFIG_PXA3xx_DVFM)
++static struct dvfm_lock dvfm_lock = {
++	.lock           = SPIN_LOCK_UNLOCKED,
++	.dev_idx        = -1,
++	.count          = 0,
++};
++
++static void set_dvfm_constraint(void)
++{
++	spin_lock_irqsave(&dvfm_lock.lock, dvfm_lock.flags);
++	if (dvfm_lock.count++ == 0) {
++		/* Disable Low power mode */
++		dvfm_disable_op_name("D1", dvfm_lock.dev_idx);
++		dvfm_disable_op_name("D2", dvfm_lock.dev_idx);
++		if (cpu_is_pxa935())
++			dvfm_disable_op_name("CG", dvfm_lock.dev_idx);
++	}
++	spin_unlock_irqrestore(&dvfm_lock.lock, dvfm_lock.flags);
++}
++
++static void unset_dvfm_constraint(void)
++{
++	spin_lock_irqsave(&dvfm_lock.lock, dvfm_lock.flags);
++	if (dvfm_lock.count == 0) {
++		spin_unlock_irqrestore(&dvfm_lock.lock, dvfm_lock.flags);
++		return;
++	}
++	if (--dvfm_lock.count == 0) {
++		/* Enable Low power mode */
++		dvfm_enable_op_name("D1", dvfm_lock.dev_idx);
++		dvfm_enable_op_name("D2", dvfm_lock.dev_idx);
++		if (cpu_is_pxa935())
++			dvfm_enable_op_name("CG", dvfm_lock.dev_idx);
++	}
++	spin_unlock_irqrestore(&dvfm_lock.lock, dvfm_lock.flags);
++}
++#else
++static void set_dvfm_constraint() {}
++static void unset_dvfm_constraint() {}
++#endif
++
+ /**
+  * onenand_readw - [OneNAND Interface] Read OneNAND register
+  * @param addr		address to read
+@@ -183,10 +232,17 @@ static int onenand_command(struct mtd_info *mtd, int cmd, loff_t addr,
+ {
+ 	struct onenand_chip *this = mtd->priv;
+ 	int value, readcmd = 0;
+-	int block, page;
++	int block, page, reloc_block;
+ 	/* Now we use page size operation */
+ 	int sectors = 4, count = 4;
+ 
++	if (pxa3xx_bbm && pxa3xx_bbm->table_init && pxa3xx_bbm->search) {
++		block = (int)(addr >> pxa3xx_bbm->erase_shift);
++		reloc_block = pxa3xx_bbm->search(mtd, pxa3xx_bbm, block);
++		addr = ((reloc_block << this->erase_shift) |
++				(addr & ((1 << this->erase_shift) - 1)));
++	}
++
+ 	/* Address translation */
+ 	switch (cmd) {
+ 	case ONENAND_CMD_UNLOCK:
+@@ -1554,6 +1610,7 @@ int onenand_block_isbad(struct mtd_info *mtd, loff_t ofs)
+ int onenand_block_markbad(struct mtd_info *mtd, loff_t ofs)
+ {
+ 	struct onenand_chip *this = mtd->priv;
++        struct bbm_info *bbm = this->bbm;
+ 	int ret;
+ 
+ 	ret = onenand_block_isbad(mtd, ofs);
+@@ -1564,7 +1621,18 @@ int onenand_block_markbad(struct mtd_info *mtd, loff_t ofs)
+ 		return ret;
+ 	}
+ 
++	int block;
++	/* Get block number */
++	block = ((int) ofs) >> bbm->bbt_erase_shift;
++	if (pxa3xx_bbm && pxa3xx_bbm->table_init && pxa3xx_bbm->markbad) {
++		ret = pxa3xx_bbm->markbad(mtd, pxa3xx_bbm, block);
++		if (!ret)
++			return 0;
++	}
++
++	onenand_get_device(mtd, FL_WRITING);
+ 	ret = this->block_markbad(mtd, ofs);
++	onenand_release_device(mtd);
+ 	return ret;
+ }
+ 
+@@ -1787,6 +1855,9 @@ static int onenand_probe(struct mtd_info *mtd)
+ 	mtd->block_isbad = onenand_block_isbad;
+ 	mtd->block_markbad = onenand_block_markbad;
+ 
++#if defined(CONFIG_PXA3xx_DVFM)
++        dvfm_register("OneNAND", &dvfm_lock.dev_idx);
++#endif
+ 	return 0;
+ }
+ 
+@@ -1852,7 +1923,30 @@ int onenand_scan(struct mtd_info *mtd, int maxchips)
+ 
+ 	onenand_unlock(mtd, 0, mtd->size);
+ 
++	/* NOTES: alloc pxa3xx bbm after unlock operation because
++	 *          * the mtd->size will shrink in pxa3xx_bbm->init to
++	 *                   * reserver relocation blocks.
++	 *                            */
++	pxa3xx_bbm = alloc_pxa3xx_bbm();
++	if (!pxa3xx_bbm) {
++		goto out;
++	}
++
++	if (pxa3xx_bbm->init) {
++		pxa3xx_bbm->flash_type = FLASH_ONENAND;
++		pxa3xx_bbm->page_shift = this->page_shift;
++		pxa3xx_bbm->erase_shift = this->erase_shift;
++
++		if (pxa3xx_bbm->init(mtd, pxa3xx_bbm))
++			goto free_bbm;
++	}
++
+ 	return onenand_default_bbt(mtd);
++
++free_bbm:
++	free_pxa3xx_bbm(pxa3xx_bbm);
++out:
++	return -EINVAL;
+ }
+ 
+ /**
+@@ -1861,4 +1955,8 @@ int onenand_scan(struct mtd_info *mtd, int maxchips)
+  */
+ void onenand_release(struct mtd_info *mtd)
+ {
++	if (pxa3xx_bbm && pxa3xx_bbm->uninit) {
++		pxa3xx_bbm->uninit(mtd, pxa3xx_bbm);
++		free_pxa3xx_bbm(pxa3xx_bbm);
++	}
+ }
+-- 
+1.6.0.4
+

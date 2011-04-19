@@ -1,0 +1,31 @@
+From 250541a2d183221c88c5a0c4a442ffff9b79c320 Mon Sep 17 00:00:00 2001
+From: mhu4 <mhu4@mhu4-desktop.(none)>
+Date: Mon, 15 Mar 2010 11:55:06 +0800
+Subject: [PATCH] pxa688: increase core voltage to 1280mv on Z1
+
+Signed-off-by: Kevin Liu <kliu5@marvell.com>
+---
+ board/pxa/jasper/jasper.c |    7 ++++++-
+ 1 files changed, 6 insertions(+), 1 deletions(-)
+
+diff --git a/board/pxa/jasper/jasper.c b/board/pxa/jasper/jasper.c
+index 0fbc224..c03f70b 100644
+--- a/board/pxa/jasper/jasper.c
++++ b/board/pxa/jasper/jasper.c
+@@ -363,7 +363,12 @@ int board_init (void)
+ int misc_init_r (void)
+ {
+ 	char *env;
+-
++	if (cpu_is_pxa688_z1()) {
++		/* set voltage to 1280mV by default */
++		set_volt(1280);
++		dummy_delay(99999);
++		set_volt(1280);
++	}
+ 	/* primary network interface */
+ 	env = getenv("ethprime");
+ 	if(!env)
+-- 
+1.6.0.4
+

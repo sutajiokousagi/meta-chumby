@@ -1,0 +1,544 @@
+From fadfc10a7c3be358dbc1766f3cc2d22f5d106b95 Mon Sep 17 00:00:00 2001
+From: Jack Ren <jack.ren@marvell.com>
+Date: Wed, 24 Jun 2009 07:05:34 +0800
+Subject: [PATCH] levente: enable ttc mode
+
+Signed-off-by: Jack Ren <jack.ren@marvell.com>
+Signed-off-by: Bin Yang <bin.yang@marvell.com>
+---
+ board/pxa/common/freq.c |  429 ++++++++++++++++++++++++++++++++++++++---------
+ 1 files changed, 352 insertions(+), 77 deletions(-)
+
+diff --git a/board/pxa/common/freq.c b/board/pxa/common/freq.c
+index f36cfbf..fa09dce 100644
+--- a/board/pxa/common/freq.c
++++ b/board/pxa/common/freq.c
+@@ -27,31 +27,27 @@
+ #define CONFIG_SETVOL
+ #define CONFIG_WFI
+ 
+-#define u32_t	unsigned int
+-#define u16_t	unsigned short
+-#define u8_t	unsigned char
++#define reg_read(x) (*(volatile unsigned int *)(x))
++#define reg_write(x,y) ((*(volatile unsigned int *)(x)) = y )
+ 
+-#define reg_read(x) (*(volatile u32_t *)(x))
+-#define reg_write(x,y) ((*(volatile u32_t *)(x)) = y )
+-
+-static void PMUcore2_fc_seq (u32_t cp_pdiv, u32_t cp_bdiv, u32_t cp_mdiv, u32_t cp_xpdiv,
+-		u32_t d_div, u32_t a_div)
++static void PMUcore2_fc_seq (unsigned int cp_pdiv, unsigned int cp_bdiv, unsigned int cp_mdiv, unsigned int cp_xpdiv,
++		unsigned int d_div, unsigned int a_div)
+ {
+-	volatile u32_t cc_reg,temp,fccr;
+-	volatile u32_t rdata_core1,rdata_core2,pll_da,pll_ap,pll_cp;
+-	volatile u32_t temp_ap,temp_cp,temp_a,temp_d;
++	volatile unsigned int cc_reg,temp,fccr;
++	volatile unsigned int rdata_core1,rdata_core2,pll_da,pll_ap,pll_cp;
++	volatile unsigned int temp_ap,temp_cp,temp_a,temp_d;
+ 
+ 	cc_reg = 0;
+ 
+ 	/* Change the AP freq clk while CP is at reset */
+-	temp = *(volatile u32_t *)0xd4282888;
++	temp = *(volatile unsigned int *)0xd4282888;
+ 	temp |= 0x9;
+-	*(volatile u32_t *)0xd4282888 = temp;
++	*(volatile unsigned int *)0xd4282888 = temp;
+ 
+ 	/* clear MOH_RD_ST_CLEAR so that reading PMUA_DM_CC_MOH will set MOH_RD_STATUS */
+ 	reg_write(PMUA_CC_MOH, reg_read(PMUA_CC_MOH) & ~0x80000000);
+ 
+-	/* Read dummy before sending the command */
++	/* read dummy before sending the command */
+ 	rdata_core2 = reg_read(PMUA_DM_CC_MOH);
+ 	while (rdata_core2 & PMUA_DM_CC_MOH_SEA_RD_STATUS)
+ 		rdata_core2 = reg_read(PMUA_DM_CC_MOH);
+@@ -162,9 +158,9 @@ static void PMUcore2_fc_seq (u32_t cp_pdiv, u32_t cp_bdiv, u32_t cp_mdiv, u32_t
+ 	reg_write(PMUA_CC_MOH,cc_reg);
+ }
+ 
+-static void core2freqchgcmd(u32_t pclk,u32_t dclk,u32_t aclk)
++static void core2freqchgcmd(unsigned int pclk,unsigned int dclk,unsigned int aclk)
+ {
+-	volatile u32_t freqchg,coremsk;
++	volatile unsigned int freqchg,coremsk;
+ 
+ 	coremsk = reg_read(PMUA_MOH_IMR);
+ 	coremsk |= (PMUA_MOH_IMR_MOH_FC_INTR_MASK);
+@@ -198,7 +194,7 @@ static void core2freqchgcmd(u32_t pclk,u32_t dclk,u32_t aclk)
+ 	/* Clear the PMU ISR */
+ 	reg_write(PMUA_MOH_ISR,0x0);
+ 
+-	/* Write 1 to MOH_RD_ST_CLEAR to clear MOH_RD_STATUS */
++	/* write 1 to MOH_RD_ST_CLEAR to clear MOH_RD_STATUS */
+ 	freqchg |= PMUA_CC_MOH_MOH_RD_ST_CLEAR;
+ 
+ 	/* Clear the bits */
+@@ -607,15 +603,100 @@ U_BOOT_CMD(
+ #define TWSI_CLK	0xd401502c
+ 
+ #define I2C_BASE	0xd4011000
+-#define IBMR		(I2C_BASE+0x00)
+-#define IDBR		(I2C_BASE+0x08)
+-#define ICR		(I2C_BASE+0x10)
+-#define ISR		(I2C_BASE+0x18)
+-#define ISAR		(I2C_BASE+0x20)
+-#define ILCR		(I2C_BASE+0x28)
+-
+-static void init_i2c(void)
++#define IBMR		*(unsigned int*)(I2C_BASE+0x00)
++#define IDBR		*(unsigned int*)(I2C_BASE+0x08)
++#define ICR		*(unsigned int*)(I2C_BASE+0x10)
++#define ISR		*(unsigned int*)(I2C_BASE+0x18)
++#define ISAR		*(unsigned int*)(I2C_BASE+0x20)
++#define ILCR		*(unsigned int*)(I2C_BASE+0x28)
++
++/* Bit Position Macros */
++#define BIT_0    ( 1u << 0 )
++#define BIT_1    ( 1u << 1 )
++#define BIT_2    ( 1u << 2 )
++#define BIT_3    ( 1u << 3 )
++#define BIT_4    ( 1u << 4 )
++#define BIT_5    ( 1u << 5 )
++#define BIT_6    ( 1u << 6 )
++#define BIT_7    ( 1u << 7 )
++#define BIT_8    ( 1u << 8 )
++#define BIT_9    ( 1u << 9 )
++#define BIT_10   ( 1u << 10 )
++#define BIT_11   ( 1u << 11 )
++#define BIT_12   ( 1u << 12 )
++#define BIT_13   ( 1u << 13 )
++#define BIT_14   ( 1u << 14 )
++#define BIT_15   ( 1u << 15 )
++#define BIT_16   ( 1u << 16 )
++#define BIT_17   ( 1u << 17 )
++#define BIT_18   ( 1u << 18 )
++#define BIT_19   ( 1u << 19 )
++#define BIT_20   ( 1u << 20 )
++#define BIT_21   ( 1u << 21 )
++#define BIT_22   ( 1u << 22 )
++#define BIT_23   ( 1u << 23 )
++#define BIT_24   ( 1u << 24 )
++#define BIT_25   ( 1u << 25 )
++#define BIT_26   ( 1u << 26 )
++#define BIT_27   ( 1u << 27 )
++#define BIT_28   ( 1u << 28 )
++#define BIT_29   ( 1u << 29 )
++#define BIT_30   ( 1u << 30 )
++#define BIT_31   ( 1u << 31 )
++
++/*  bus monitor register */
++#define	IBMR_SDA		BIT_0  /* reflects the status of SDA pin */
++#define	IBMR_SCL		BIT_1 /* reflects the status of SCL pin */
++
++/* data buffer regiter mask */
++#define	IDBR_ADDR		0xFF;  /*buffer for I2C bus send/receive data */
++#define	IDBR_MODE		BIT_0	
++/* Control Register */
++#define	ICR_START		BIT_0 /* 1:send a Start condition to the I2C when in master mode */
++#define	ICR_STOP		BIT_1 /* 1:send a Stop condition after next data byte transferred on I2C bus in master mode */
++#define	ICR_ACKNACK	BIT_2  /* Ack/Nack control: 1:Nack, 0:Ack (negative or positive pulse) */
++#define	ICR_TB			BIT_3  /* 1:send/receive byte, 0:cleared by I2C unit when done */
++#define	ICR_MA			BIT_4  /* 1:I2C sends STOP w/out data permission, 0:ICR bit used only */
++#define	ICR_SCLEA		BIT_5  /* I2C clock output: 1:Enabled, 0:Disabled. ICCR configured before ! */
++#define	ICR_UIE		BIT_6 /* I2C unit: 1:Enabled, 0:Disabled */
++#define	ICR_GCD		BIT_7  /* General Call: 1:Disabled, 0:Enabled */
++#define	ICR_ITEIE		BIT_8  /* 1: IDBR Transmit Empty Interrupt Enable */
++#define	ICR_DRFIE		BIT_9  /* 1: IDBR Receive Full Interrupt Enable */
++#define	ICR_BEIE		BIT_10  /* 1: Bus Error Interrupt Enable */
++#define	ICR_SSDIE		BIT_11 /* 1: Slave Stop Detected Interrupt Enable */
++#define	ICR_ALDIE		BIT_12  /* 1: Arbitration Loss Detected Interrupt Enable */
++#define	ICR_SADIE		BIT_13  /* 1: Slave Address Detected Interrupt Enable */
++#define	ICR_UR			BIT_14  /* 1: I2C unit reset */
++#define ICR_FM   		BIT_15 /* 1: Fast mode - 400 KBit/sec. operation. Default is 100 KBit/sec */
++
++/* Status Register */
++#define	ISR_RWM		BIT_0  /* 1: I2C in master receive = slave transmit mode */
++#define	ISR_ACKNACK	BIT_1  /* 1: I2C received/sent a Nack, 0: Ack */
++#define	ISR_UB			BIT_2  /* 1: Processor's I2C unit busy */
++#define	ISR_IBB		BIT_3  /* 1: I2C bus busy. Processor's I2C unit not involved */
++#define	ISR_SSD		BIT_4  /* 1: Slave Stop detected (when in slave mode: receive or transmit) */
++#define	ISR_ALD		BIT_5  /* 1: Arbitration Loss Detected */
++#define	ISR_ITE		BIT_6  /* 1: Transfer finished on I2C bus. If enabled in ICR, interrupt signaled */
++#define	ISR_IRF		BIT_7  /* 1: IDBR received new byte from I2C bus. If ICR, interrupt signaled */
++#define	ISR_GCAD		BIT_8  /* 1: I2C unit received a General Call address */
++#define	ISR_SAD		BIT_9  /* 1: I2C unit detected a 7-bit address matching the general call or ISAR */
++#define	ISR_BED		BIT_10  /* Bit set by unit when a Bus Error detected */
++
++/*  slave address mask */
++#define	ISAR_ADDR		0x7F;	/*  7-bit(6:0) add to which I2C unit responses to in slave/receive mode*/
++
++#define ICR_INIT_VALUE (ICR_UIE|ICR_SCLEA)
++
++#define I2C_NO_STOP     0    /* Don't issue stop bit */
++#define I2C_STOP        1    /* Issue stop bit */
++
++/* Processor I2C Device ID */
++#define I2C_SLAVE_ID 0x4E  /* 0100_111x */ /* The Phillips spec says it must be a value between 0001_000xB and 1110_111xB */
++
++int i2c_init(unsigned int dev_id) 
+ {
++	int re;
++
+ 	/* setup MFPRs for I2C */
+ 	reg_write(MFP_I2C_SCL, 0xa842);
+ 	reg_write(MFP_I2C_SDA, 0xa842);
+@@ -623,61 +704,156 @@ static void init_i2c(void)
+ 	/* enable i2c clock */
+ 	reg_write(TWSI_CLK, 0x3);		/* enable i2c clock */
+ 
+-	/* Initialize I2C Unit */
+-	reg_write(ISAR, 0x0);
+-	reg_write(ICR, 0x4000);		/* reset I2C */
+-	reg_write(ICR, 0x60);		/* set IUE and SCLE */
++	ICR = 0;
++	/* Setup I2C slave address */ 
++	ISAR = dev_id;
++	ICR = ICR_SCLEA;
++	ICR |= ICR_UIE;
++
++	return 0;
+ }
+ 
+-static int waiti2c(void)
++int i2c_rx_full(int timeout) 
+ {
+-	u32 temp;
+-	int i;
++	unsigned int temp;
++	while (timeout--) {
++		temp = ISR;
++		if ((temp & ISR_IRF) == ISR_IRF) {
++			ISR = temp | ISR_IRF;
++			return 0;
++		}
++		 udelay(200);
++	}
++	return -1;
++}
+ 
+-	/* wait until tx buffer empty */
+-	for (i = 0; i < 0x80000; i++) {
+-		temp = reg_read(ISR);	/* ITE in ISR */
+-		if ((temp &= 0x40) != 0) break;
++int i2c_tx_empty(int timeout) 
++{
++	unsigned int temp;
++
++	while (timeout--) {
++		temp = ISR;
++		if ((temp & ISR_ITE) == ISR_ITE) {
++			ISR = temp | ISR_ITE;
++			if ((temp & ISR_ALD) == ISR_ALD) {
++				ISR |= ISR_ALD;
++			}
++			return 0;
++		}
++		udelay(200);
+ 	}
+-	if (i >= 0x80000) return -1;
+-	reg_write(ISR, temp);		/* clear status */
+-	return 0;
++	return -1;
+ }
+ 
+-static void writei2c(u32 slave_addr, u32 addr, u32 data)
++int __i2c_write(unsigned char slave_addr, unsigned char * bytes_buf,
++	   unsigned int bytes_count, int stop) 
+ {
+-	u32 temp;
+-
+-	/* Set slave I2C address */
+-	reg_write(IDBR, slave_addr);
+-
+-	/* send a start condition */
+-	temp = reg_read(ICR);
+-	temp |= 0x9;				/* START & TB */
+-	temp &= 0xffffeffd;			/* ~(STOP | ALDIE) */
+-	reg_write(ICR, temp);		/* ICR */
+-	if (waiti2c()) {
+-		printf("i2c error: could not start condition\n");
+-		return;
++	unsigned int reg;
++	
++	IDBR = (slave_addr << 1) & ~IDBR_MODE;
++	reg = ICR;
++	reg |= (ICR_START | ICR_TB);
++	reg &= ~(ICR_STOP | ICR_ALDIE);
++	ICR = reg;
++	if (i2c_tx_empty(20) == -1){
++		return -1;
+ 	}
+ 
+-	/* send first byte(register address) */
+-	reg_write(IDBR, addr);
+-	temp = reg_read(ICR);
+-	reg_write(ICR, ((temp | 0x1008) & 0xfffffffe) & 0xfffffffd);
+-	if (waiti2c()) {
+-		printf("i2c error: write register address failed\n");
+-		return;
++	/* Send all the bytes */
++	while (bytes_count--) {
++		IDBR = (unsigned int) (*bytes_buf++);
++		reg = ICR;
++		reg &= ~ICR_START;
++		reg |= (ICR_ALDIE | ICR_TB);
++		if ((bytes_count == 0) && stop)
++			reg |= ICR_STOP;
++
++		else
++			reg &= ~ICR_STOP;
++		ICR = reg;
++		if (i2c_tx_empty(250) == -1) {
++			return -1;
++		}
++	}
++
++	/* Clear the STOP bit always */
++	ICR &= ~ICR_STOP;
++	return 0;
++}
++
++int __i2c_read(unsigned char slave_addr, unsigned char * bytes_buf,
++		unsigned int bytes_count, int stop) 
++{
++	unsigned int reg;
++
++	IDBR = (slave_addr << 1) | IDBR_MODE;
++	reg = ICR;
++	reg |= (ICR_START | ICR_TB);
++	reg &= ~(ICR_STOP | ICR_ALDIE);
++	ICR = reg;
++	if (i2c_tx_empty(20) == -1) {
++		return -1;
++	}
++	while (bytes_count--) {
++		reg = ICR;
++		reg &= ~ICR_START;
++		reg |= ICR_ALDIE | ICR_TB;
++		if (bytes_count == 0) {
++			reg |= ICR_ACKNACK;
++			if (stop)
++				reg |= ICR_STOP;
++
++			else
++				reg &= ~ICR_STOP;
++		} else {
++			reg &= ~ICR_ACKNACK;
++		}
++		ICR = reg;
++		if (i2c_rx_full(60) == -1) {
++			return -1;
++		}
++		reg = IDBR & 0xFF;
++		*bytes_buf++ = (unsigned char) reg;
+ 	}
++	ICR &= ~(ICR_STOP | ICR_ACKNACK);
++	return 0;
++}
++
++int i2c_writeb(unsigned int slave_addr, unsigned char reg, unsigned char val)
++{
++	unsigned char buffer[2];
++	int status;
++
++	buffer[0] = reg;
++	buffer[1] = val;
++	status = __i2c_write(slave_addr, buffer, 2, 1);
+ 
+-	/* send second byte(register value) */
+-	reg_write(IDBR, data);
+-	temp = reg_read(ICR);
+-	reg_write(ICR, ((temp | 0x1008) & 0xfffffffe) | 0x2);
+-	if (waiti2c()) {
+-		printf("i2c error: write register value failed\n");
+-		return;
++	return status;
++}
++
++int i2c_write_addr(unsigned int slave_addr, unsigned char reg)
++{
++	unsigned char buffer[1];
++	int status;
++
++	buffer[0] = reg;
++	status = __i2c_write(slave_addr, buffer, 1, 1);
++
++	return status;
++}
++
++int i2c_readb(unsigned int slave_addr, unsigned char reg, unsigned char *pval)
++{
++	unsigned char buffer[1];
++	int status;
++	buffer[0] = reg;
++
++	status = __i2c_write(slave_addr, buffer, 1, 1);
++	if (!status) {
++		status = __i2c_read(slave_addr, buffer, 1, 1);
++		*pval = buffer[0];
+ 	}
++	return status;
+ }
+ 
+ #if CONFIG_TAVOREVB
+@@ -693,7 +869,7 @@ static void writei2c(u32 slave_addr, u32 addr, u32 data)
+ 	#define VBUCK1_CNT(x)	(-1)
+ #endif
+ 
+-int set_volt(u32 vol)
++int set_volt(unsigned int vol)
+ {
+ 	int cnt;
+ 	static int first_time = 1;
+@@ -703,25 +879,26 @@ int set_volt(u32 vol)
+ 		return -1;
+ 
+ 	if (first_time) {
+-		init_i2c();			/* init I2C */
++		i2c_init(0);			/* init I2C */
+ 		first_time = 0;
+ 	}
+ 
+ #if CONFIG_TAVOREVB
+-	writei2c(0x68, 0x10, 0x07);	/* enable LDO2, BUCK1, BUCK2 */
+-	writei2c(0x68, 0x24, cnt);	/* set BUCK1 voltage in ADTV2 */
+-	writei2c(0x68, 0x20, 0x03);	/* select ADTV2 and let it go ramping */
++	i2c_writeb(0x34, 0x10, 0x07);	/* enable LDO2, BUCK1, BUCK2 */
++	i2c_writeb(0x34, 0x24, cnt);	/* set BUCK1 voltage in ADTV2 */
++	i2c_writeb(0x34, 0x20, 0x03);	/* select ADTV2 and let it go ramping */
+ #elif CONFIG_TTC_DKB
+-	writei2c(0x60, 0x40, 0x0);	/* enable GI2C access to BUCK1_SET */
+-	writei2c(0x60, 0x24, cnt);	/* set BUCK1 voltage */
+-	writei2c(0x60, 0x20, 0x01);	/* let it go ramping */
++	i2c_writeb(0x30, 0x40, 0x0);	/* enable GI2C access to BUCK1_SET */
++	i2c_writeb(0x30, 0x24, cnt);	/* set BUCK1 voltage */
++	i2c_writeb(0x30, 0x20, 0x01);	/* let it go ramping */
++	sanremo_ttc_mode();
+ #endif
+ 	return 0;
+ }
+ 
+ int do_setvol(cmd_tbl_t * cmdtp, int flag, int argc, char *argv[])
+ {
+-	u32 vol;
++	unsigned int vol;
+ 
+ 	if (argc != 2)
+ 		return -1;
+@@ -744,7 +921,7 @@ int do_wfi(cmd_tbl_t * cmdtp, int flag, int argc, char *argv[])
+ {
+        __asm__ __volatile__ ("\n\t\
+                mov     r0, #0\n\t\
+-               mrc     p15, 0, r1, c1, c0, 0   @ Read control register\n\t\
++               mrc     p15, 0, r1, c1, c0, 0   @ read control register\n\t\
+                mcr     p15, 0, r0, c7, c10, 4  @ Drain write buffer\n\t\
+                bic     r2, r1, #1 << 12\n\t\
+                mrs     r3, cpsr                @ Disable FIQs while Icache\n\t\
+@@ -764,3 +941,101 @@ U_BOOT_CMD(
+                " - Wait For Interrupt\n"
+          );
+ #endif
++
++int sanremo_ttc_mode(void)
++{
++	/* set on_key hold bit */
++	i2c_writeb(0x30, 0x0b, 0x82);
++	/* enter test mode */
++	i2c_write_addr(0x30, 0xfa);
++	i2c_write_addr(0x30, 0xfb);
++	i2c_write_addr(0x30, 0xff);
++	/* switch to ttc mode */
++	i2c_writeb(0x30, 0xd0, 0x10);
++	i2c_writeb(0x30, 0xb0, 0xad);
++	i2c_writeb(0x30, 0xb1, 0x05);
++	/* exit test mode */
++	i2c_write_addr(0x30, 0xfe);
++}
++
++int do_i2c_read(cmd_tbl_t * cmdtp, int flag, int argc, char *argv[])
++{
++	unsigned char slave_addr;
++	unsigned char reg;
++	unsigned char val;
++
++	if (argc != 3)
++		return -1;
++
++	slave_addr = simple_strtoul(&argv[1][2], NULL, 16);
++	reg = simple_strtoul(&argv[2][2], NULL, 16);
++
++	printf("slave_addr: 0x%02x reg: 0x%02x\n", slave_addr, reg);
++
++	if (!i2c_readb(slave_addr, reg, &val))
++		printf("i2c_read: success! return 0x%02x\n", val);
++	else
++		printf("i2c_read: failed!\n");
++
++	return 0;
++}
++
++U_BOOT_CMD(
++               i2c_read,    6,      1,      do_i2c_read,
++               "i2c_read	- read I2C device (byte)\n",
++               " - read I2C\n"
++         );
++
++int do_i2c_write(cmd_tbl_t * cmdtp, int flag, int argc, char *argv[])
++{
++	unsigned char slave_addr;
++	unsigned char reg;
++	unsigned char val;
++
++	if (argc != 4)
++		return -1;
++
++	slave_addr = simple_strtoul(&argv[1][2], NULL, 16);
++	reg = simple_strtoul(&argv[2][2], NULL, 16);
++	val = simple_strtoul(&argv[3][2], NULL, 16);
++
++	printf("slave_addr: 0x%02x reg: 0x%02x val: 0x%02x\n", slave_addr, reg, val);
++	if (!i2c_writeb(slave_addr, reg, val))
++		printf("i2c_write: success!\n");
++	else
++		printf("i2c_write: failed!\n");
++
++	return 0;
++}
++
++U_BOOT_CMD(
++               i2c_write,    6,      1,      do_i2c_write,
++               "i2c_write	- write I2C device (byte)\n",
++               " - write I2C\n"
++         );
++
++int do_i2c_write_addr(cmd_tbl_t * cmdtp, int flag, int argc, char *argv[])
++{
++	unsigned char slave_addr;
++	unsigned char reg;
++
++	if (argc != 3)
++		return -1;
++
++	slave_addr = simple_strtoul(&argv[1][2], NULL, 16);
++	reg = simple_strtoul(&argv[2][2], NULL, 16);
++
++	printf("slave_addr: 0x%02x reg: 0x%02x\n", slave_addr, reg);
++	if (!i2c_write_addr(slave_addr, reg))
++		printf("i2c_write_addr: success!\n");
++	else
++		printf("i2c_write_addr: failed!\n");
++
++	return 0;
++}
++
++U_BOOT_CMD(
++               i2c_write_addr,    6,      1,      do_i2c_write_addr,
++               "i2c_write_addr	- write addr to I2C device (byte)\n",
++               " - write I2C\n"
++         );
+-- 
+1.6.0.4
+

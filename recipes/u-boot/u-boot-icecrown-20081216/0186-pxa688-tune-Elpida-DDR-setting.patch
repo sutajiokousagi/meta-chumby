@@ -1,0 +1,26 @@
+From efcf35f987829c6fc5e6531b4e04e3a2ad3c2967 Mon Sep 17 00:00:00 2001
+From: mhu4 <mhu4@mhu4-desktop.(none)>
+Date: Mon, 22 Mar 2010 15:55:34 +0800
+Subject: [PATCH] pxa688: tune Elpida DDR setting
+
+Signed-off-by: mhu4 <mhu4@mhu4-desktop.(none)>
+---
+ board/pxa/common/freq_ll.S |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/board/pxa/common/freq_ll.S b/board/pxa/common/freq_ll.S
+index e88dbae..40a7770 100644
+--- a/board/pxa/common/freq_ll.S
++++ b/board/pxa/common/freq_ll.S
+@@ -358,7 +358,7 @@ freq_sram_start:
+ 	str	r7, [r4, #0x200]
+ 
+ 	#if (defined(CONFIG_DDR_EPD_512M))
+-	ldr	r7, =0x20004444
++	ldr	r7, =0x20004433
+ 	str	r7, [r4, #0x140]
+ 	ldr	r7, =0x13300559
+ 	str	r7, [r4, #0x1D0]
+-- 
+1.6.0.4
+

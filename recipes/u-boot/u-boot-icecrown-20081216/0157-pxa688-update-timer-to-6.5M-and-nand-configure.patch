@@ -1,0 +1,648 @@
+From a7a979f770a9fdbeb5212f10df38c5f54c2f6742 Mon Sep 17 00:00:00 2001
+From: Mingliang Hu <mhu4@marvell.com>
+Date: Thu, 29 Oct 2009 18:46:17 -0700
+Subject: [PATCH] pxa688: update timer to 6.5M and nand configure
+
+Signed-off-by: Mingliang Hu <mhu4@marvell.com>
+---
+ board/pxa/flint/flint.c                      |  146 ++++++++++++-----------
+ board/pxa/jasper/jasper.c                    |  166 +++++++++++++------------
+ cpu/88SV581xV6/pxa688/timer.c                |    9 +-
+ include/asm-arm/arch-pxa688/mfp-pxa688.h     |   69 +++++++----
+ include/asm-arm/arch-pxa688/nand_supported.h |    4 +-
+ include/asm-arm/arch-pxa688/pxa3xx_nand.h    |    2 +-
+ include/configs/mmp2_flint.h                 |    6 +-
+ include/configs/mmp2_jasper.h                |   10 +-
+ 8 files changed, 222 insertions(+), 190 deletions(-)
+ mode change 100755 => 100644 board/pxa/flint/flint.c
+ mode change 100755 => 100644 board/pxa/jasper/jasper.c
+
+diff --git a/board/pxa/flint/flint.c b/board/pxa/flint/flint.c
+old mode 100755
+new mode 100644
+index f7db6cf..b4bf9f6
+--- a/board/pxa/flint/flint.c
++++ b/board/pxa/flint/flint.c
+@@ -37,72 +37,74 @@ static mfp_cfg_t flint_pin_config[] __initdata = {
+ 	SM_BE1_SM_BE1,
+ 
+ 	/* DFI */
+-	PXA910_DF_IO0_ND_IO0,
+-	PXA910_DF_IO1_ND_IO1,
+-	PXA910_DF_IO2_ND_IO2,
+-	PXA910_DF_IO3_ND_IO3,
+-	PXA910_DF_IO4_ND_IO4,
+-	PXA910_DF_IO5_ND_IO5,
+-	PXA910_DF_IO6_ND_IO6,
+-	PXA910_DF_IO7_ND_IO7,
+-	PXA910_DF_IO8_ND_IO8,
+-	PXA910_DF_IO9_ND_IO9,
+-	PXA910_DF_IO10_ND_IO10,
+-	PXA910_DF_IO11_ND_IO11,
+-	PXA910_DF_IO12_ND_IO12,
+-	PXA910_DF_IO13_ND_IO13,
+-	PXA910_DF_IO14_ND_IO14,
+-	PXA910_DF_IO15_ND_IO15,
+-	DF_nCS0_SM_nCS2_nCS0,
+-	DF_ALE_SM_WEn_ND_ALE,
+-	DF_CLE_SM_OEn_ND_CLE,
+-	DF_WEn_DF_WEn,
+-	DF_REn_DF_REn,
+-	DF_RDY0_DF_RDY0,
++	GPIO168_DFI_D0,	
++	GPIO167_DFI_D1,	
++	GPIO166_DFI_D2,	
++	GPIO165_DFI_D3,	
++	GPIO107_DFI_D4,	
++	GPIO106_DFI_D5,	
++	GPIO105_DFI_D6,	
++	GPIO104_DFI_D7,	
++	GPIO111_DFI_D8,	
++	GPIO164_DFI_D9,	
++	GPIO163_DFI_D10,
++	GPIO162_DFI_D11,
++	GPIO161_DFI_D12,
++	GPIO110_DFI_D13,
++	GPIO109_DFI_D14,
++	GPIO108_DFI_D15,
++	GPIO143_ND_nCS0,
++	GPIO144_ND_nCS1,	
++	GPIO147_ND_nWE,			
++	GPIO148_ND_nRE,					
++	GPIO150_ND_ALE,				
++	GPIO149_ND_CLE,			
++	GPIO112_ND_RDY0,	
++	GPIO160_ND_RDY1,
+ };
+ 
+ static struct pxa3xx_mfp_addr_map pxa688_mfp_addr_map[] __initdata = {
+ 
+-	MFP_ADDR_X(GPIO0, GPIO54, 0xdc),
+-	MFP_ADDR_X(GPIO67, GPIO98, 0x1b8),
+-	MFP_ADDR_X(GPIO100, GPIO109, 0x238),
+-
+-	MFP_ADDR(GPIO123, 0xcc),
+-	MFP_ADDR(GPIO124, 0xd0),
+-
+-	MFP_ADDR(DF_IO0, 0x40),
+-	MFP_ADDR(DF_IO1, 0x3c),
+-	MFP_ADDR(DF_IO2, 0x38),
+-	MFP_ADDR(DF_IO3, 0x34),
+-	MFP_ADDR(DF_IO4, 0x30),
+-	MFP_ADDR(DF_IO5, 0x2c),
+-	MFP_ADDR(DF_IO6, 0x28),
+-	MFP_ADDR(DF_IO7, 0x24),
+-	MFP_ADDR(DF_IO8, 0x20),
+-	MFP_ADDR(DF_IO9, 0x1c),
+-	MFP_ADDR(DF_IO10, 0x18),
+-	MFP_ADDR(DF_IO11, 0x14),
+-	MFP_ADDR(DF_IO12, 0x10),
+-	MFP_ADDR(DF_IO13, 0xc),
+-	MFP_ADDR(DF_IO14, 0x8),
+-	MFP_ADDR(DF_IO15, 0x4),
+-
+-	MFP_ADDR(DF_nCS0_SM_nCS2, 0x44),
+-	MFP_ADDR(DF_nCS1_SM_nCS3, 0x48),
+-	MFP_ADDR(SM_nCS0, 0x4c),
+-	MFP_ADDR(SM_nCS1, 0x50),
+-	MFP_ADDR(DF_WEn, 0x54),
+-	MFP_ADDR(DF_REn, 0x58),
+-	MFP_ADDR(DF_CLE_SM_OEn, 0x5c),
+-	MFP_ADDR(DF_ALE_SM_WEn, 0x60),
+-	MFP_ADDR(SM_SCLK, 0x64),
+-	MFP_ADDR(DF_RDY0, 0x68),
+-	MFP_ADDR(SM_BE0, 0x6c),
+-	MFP_ADDR(SM_BE1, 0x70),
+-	MFP_ADDR(SM_ADV, 0x74),
+-	MFP_ADDR(DF_RDY1, 0x78),
+-	MFP_ADDR(SM_ADVMUX, 0x7c),
+-	MFP_ADDR(SM_RDY, 0x80),
++	MFP_ADDR_X(GPIO0, GPIO58, 0x54),
++	MFP_ADDR_X(GPIO59, GPIO73, 0x280),
++	MFP_ADDR_X(GPIO74, GPIO101, 0x170),
++	MFP_ADDR_X(GPIO115, GPIO122, 0x260),
++	MFP_ADDR_X(GPIO124, GPIO141, 0xc),
++	MFP_ADDR_X(GPIO143, GPIO151, 0x220),
++	MFP_ADDR_X(GPIO152, GPIO153, 0x248),
++	MFP_ADDR_X(GPIO154, GPIO155, 0x254),
++
++	MFP_ADDR(GPIO114, 0x164),
++	MFP_ADDR(GPIO123, 0x148),
++
++	MFP_ADDR(GPIO102, 0x0),
++	MFP_ADDR(GPIO103, 0x4),
++	MFP_ADDR(GPIO104, 0x142),
++	MFP_ADDR(GPIO168, 0x1e0),
++	MFP_ADDR(GPIO167, 0x1e4),
++	MFP_ADDR(GPIO166, 0x1e8),
++	MFP_ADDR(GPIO165, 0x1ec),
++	MFP_ADDR(GPIO107, 0x1f0),
++	MFP_ADDR(GPIO106, 0x1f4),
++	MFP_ADDR(GPIO105, 0x1f8),
++	MFP_ADDR(GPIO104, 0x1fc),
++	MFP_ADDR(GPIO111, 0x200),
++	MFP_ADDR(GPIO164, 0x204),
++	MFP_ADDR(GPIO163, 0x208),
++	MFP_ADDR(GPIO162, 0x20c),
++	MFP_ADDR(GPIO161, 0x210),
++	MFP_ADDR(GPIO110, 0x214),
++	MFP_ADDR(GPIO109, 0x218),
++	MFP_ADDR(GPIO108, 0x21c),
++	MFP_ADDR(GPIO110, 0x214),
++	MFP_ADDR(GPIO109, 0x218),
++	MFP_ADDR(GPIO112, 0x244),
++	MFP_ADDR(GPIO160, 0x250),
++	MFP_ADDR(GPIO113, 0x25c),
++
++	MFP_ADDR(TWSI1_SCL, 0x140),
++	MFP_ADDR(TWSI1_SDA, 0x144),
++	MFP_ADDR(CLK_REQ, 0x160),
+ 
+ 
+ 	MFP_ADDR_END,
+@@ -131,27 +133,31 @@ int board_init (void)
+     /* Turn on clock gating (PMUM_CGR_PJ) */
+     *(volatile unsigned int *)0xd4051024 = 0x0818e33c;
+ 
++    /* AIB clock */
++    *(volatile unsigned int *)0xD4015064 = 0x7;
++    *(volatile unsigned int *)0xD4015064 = 0x3;
++	
+     /* Below is for IRE */
+     *(volatile unsigned int *)0xd4282848 = 0x00000008;
+     *(volatile unsigned int *)0xd4282848 = 0x00000009;
+-	
++
+     /* UART2 clk */
+-    *(volatile unsigned int *)0xD4015030 = 0x3; 
++    *(volatile unsigned int *)0xD4015030 = 0x3 | (1<<4); /*26MHz clock*/
+ 
+     /* TWSI1 clk*/
+     *(volatile unsigned int *)0xD4015004 = 0x3; 
+     dummy_delay(99999);
+-	
++
+     /* no clock gated*/
+-    *(volatile unsigned int *)0xd405000c=0x80E50FFF;
++    //*(volatile unsigned int *)0xd405000c=0x80E50FFF;
+ 
+     /* audio bus clock*/
+-    *(volatile unsigned int *)0xd42820c=0x1710;
+-    *(volatile unsigned int *)0xd42820c=0x1712;
++    //*(volatile unsigned int *)0xd42820c=0x1710;
++    //*(volatile unsigned int *)0xd42820c=0x1712;
+ 
+     /* vmeta clock*/
+-    *(volatile unsigned int *)0xd4282a4=0x718;
+-    *(volatile unsigned int *)0xd4282a4=0x71B;
++    //*(volatile unsigned int *)0xd4282a4=0x718;
++    //*(volatile unsigned int *)0xd4282a4=0x71B;
+ 
+     /* enable GPIO clock */
+     *(volatile unsigned int *)0xd4015038=0x03;
+diff --git a/board/pxa/jasper/jasper.c b/board/pxa/jasper/jasper.c
+old mode 100755
+new mode 100644
+index 337a85c..a4c45eb
+--- a/board/pxa/jasper/jasper.c
++++ b/board/pxa/jasper/jasper.c
+@@ -24,9 +24,9 @@
+ #include <asm/arch/mfp-pxa688.h>
+ 
+ static mfp_cfg_t jasper_pin_config[] __initdata = {
+-	/* UART2 */
+-	GPIO47_UART2_RXD,
+-	GPIO48_UART2_TXD,
++	/* UART3 */
++	GPIO51_UART3_RXD,
++	GPIO52_UART3_TXD,
+ 
+ 	/* SMC */
+ 	SM_nCS0_nCS0,
+@@ -37,74 +37,76 @@ static mfp_cfg_t jasper_pin_config[] __initdata = {
+ 	SM_BE1_SM_BE1,
+ 
+ 	/* DFI */
+-	PXA910_DF_IO0_ND_IO0,
+-	PXA910_DF_IO1_ND_IO1,
+-	PXA910_DF_IO2_ND_IO2,
+-	PXA910_DF_IO3_ND_IO3,
+-	PXA910_DF_IO4_ND_IO4,
+-	PXA910_DF_IO5_ND_IO5,
+-	PXA910_DF_IO6_ND_IO6,
+-	PXA910_DF_IO7_ND_IO7,
+-	PXA910_DF_IO8_ND_IO8,
+-	PXA910_DF_IO9_ND_IO9,
+-	PXA910_DF_IO10_ND_IO10,
+-	PXA910_DF_IO11_ND_IO11,
+-	PXA910_DF_IO12_ND_IO12,
+-	PXA910_DF_IO13_ND_IO13,
+-	PXA910_DF_IO14_ND_IO14,
+-	PXA910_DF_IO15_ND_IO15,
+-	DF_nCS0_SM_nCS2_nCS0,
+-	DF_ALE_SM_WEn_ND_ALE,
+-	DF_CLE_SM_OEn_ND_CLE,
+-	DF_WEn_DF_WEn,
+-	DF_REn_DF_REn,
+-	DF_RDY0_DF_RDY0,
++	GPIO168_DFI_D0,	
++	GPIO167_DFI_D1,	
++	GPIO166_DFI_D2,	
++	GPIO165_DFI_D3,	
++	GPIO107_DFI_D4,	
++	GPIO106_DFI_D5,	
++	GPIO105_DFI_D6,	
++	GPIO104_DFI_D7,	
++	GPIO111_DFI_D8,	
++	GPIO164_DFI_D9,	
++	GPIO163_DFI_D10,
++	GPIO162_DFI_D11,
++	GPIO161_DFI_D12,
++	GPIO110_DFI_D13,
++	GPIO109_DFI_D14,
++	GPIO108_DFI_D15,
++	GPIO143_ND_nCS0,
++	GPIO144_ND_nCS1,	
++	GPIO147_ND_nWE,			
++	GPIO148_ND_nRE,					
++	GPIO150_ND_ALE,				
++	GPIO149_ND_CLE,			
++	GPIO112_ND_RDY0,	
++	GPIO160_ND_RDY1,
++	GPIO154_SMC_IRQ,			
+ };
+ 
+ static struct pxa3xx_mfp_addr_map pxa688_mfp_addr_map[] __initdata = {
+ 
+-	MFP_ADDR_X(GPIO0, GPIO54, 0xdc),
+-	MFP_ADDR_X(GPIO67, GPIO98, 0x1b8),
+-	MFP_ADDR_X(GPIO100, GPIO109, 0x238),
+-
+-	MFP_ADDR(GPIO123, 0xcc),
+-	MFP_ADDR(GPIO124, 0xd0),
+-
+-	MFP_ADDR(DF_IO0, 0x40),
+-	MFP_ADDR(DF_IO1, 0x3c),
+-	MFP_ADDR(DF_IO2, 0x38),
+-	MFP_ADDR(DF_IO3, 0x34),
+-	MFP_ADDR(DF_IO4, 0x30),
+-	MFP_ADDR(DF_IO5, 0x2c),
+-	MFP_ADDR(DF_IO6, 0x28),
+-	MFP_ADDR(DF_IO7, 0x24),
+-	MFP_ADDR(DF_IO8, 0x20),
+-	MFP_ADDR(DF_IO9, 0x1c),
+-	MFP_ADDR(DF_IO10, 0x18),
+-	MFP_ADDR(DF_IO11, 0x14),
+-	MFP_ADDR(DF_IO12, 0x10),
+-	MFP_ADDR(DF_IO13, 0xc),
+-	MFP_ADDR(DF_IO14, 0x8),
+-	MFP_ADDR(DF_IO15, 0x4),
+-
+-	MFP_ADDR(DF_nCS0_SM_nCS2, 0x44),
+-	MFP_ADDR(DF_nCS1_SM_nCS3, 0x48),
+-	MFP_ADDR(SM_nCS0, 0x4c),
+-	MFP_ADDR(SM_nCS1, 0x50),
+-	MFP_ADDR(DF_WEn, 0x54),
+-	MFP_ADDR(DF_REn, 0x58),
+-	MFP_ADDR(DF_CLE_SM_OEn, 0x5c),
+-	MFP_ADDR(DF_ALE_SM_WEn, 0x60),
+-	MFP_ADDR(SM_SCLK, 0x64),
+-	MFP_ADDR(DF_RDY0, 0x68),
+-	MFP_ADDR(SM_BE0, 0x6c),
+-	MFP_ADDR(SM_BE1, 0x70),
+-	MFP_ADDR(SM_ADV, 0x74),
+-	MFP_ADDR(DF_RDY1, 0x78),
+-	MFP_ADDR(SM_ADVMUX, 0x7c),
+-	MFP_ADDR(SM_RDY, 0x80),
+-
+-
++	MFP_ADDR_X(GPIO0, GPIO58, 0x54),
++	MFP_ADDR_X(GPIO59, GPIO73, 0x280),
++	MFP_ADDR_X(GPIO74, GPIO101, 0x170),
++	MFP_ADDR_X(GPIO115, GPIO122, 0x260),
++	MFP_ADDR_X(GPIO124, GPIO141, 0xc),
++	MFP_ADDR_X(GPIO143, GPIO151, 0x220),
++	MFP_ADDR_X(GPIO152, GPIO153, 0x248),
++	MFP_ADDR_X(GPIO154, GPIO155, 0x254),
++
++	MFP_ADDR(GPIO114, 0x164),
++	MFP_ADDR(GPIO123, 0x148),
++
++	MFP_ADDR(GPIO102, 0x0),
++	MFP_ADDR(GPIO103, 0x4),
++	MFP_ADDR(GPIO104, 0x142),
++	MFP_ADDR(GPIO168, 0x1e0),
++	MFP_ADDR(GPIO167, 0x1e4),
++	MFP_ADDR(GPIO166, 0x1e8),
++	MFP_ADDR(GPIO165, 0x1ec),
++	MFP_ADDR(GPIO107, 0x1f0),
++	MFP_ADDR(GPIO106, 0x1f4),
++	MFP_ADDR(GPIO105, 0x1f8),
++	MFP_ADDR(GPIO104, 0x1fc),
++	MFP_ADDR(GPIO111, 0x200),
++	MFP_ADDR(GPIO164, 0x204),
++	MFP_ADDR(GPIO163, 0x208),
++	MFP_ADDR(GPIO162, 0x20c),
++	MFP_ADDR(GPIO161, 0x210),
++	MFP_ADDR(GPIO110, 0x214),
++	MFP_ADDR(GPIO109, 0x218),
++	MFP_ADDR(GPIO108, 0x21c),
++	MFP_ADDR(GPIO110, 0x214),
++	MFP_ADDR(GPIO109, 0x218),
++	MFP_ADDR(GPIO112, 0x244),
++	MFP_ADDR(GPIO160, 0x250),
++	MFP_ADDR(GPIO113, 0x25c),
++
++	MFP_ADDR(TWSI1_SCL, 0x140),
++	MFP_ADDR(TWSI1_SDA, 0x144),
++	MFP_ADDR(CLK_REQ, 0x160),
++	
+ 	MFP_ADDR_END,
+ };
+ 
+@@ -131,27 +133,31 @@ int board_init (void)
+     /* Turn on clock gating (PMUM_CGR_PJ) */
+     *(volatile unsigned int *)0xd4051024 = 0x0818e33c;
+ 
++    /* AIB clock */
++    *(volatile unsigned int *)0xD4015064 = 0x7;
++    *(volatile unsigned int *)0xD4015064 = 0x3;
++	
+     /* Below is for IRE */
+     *(volatile unsigned int *)0xd4282848 = 0x00000008;
+     *(volatile unsigned int *)0xd4282848 = 0x00000009;
+-	
+-    /* UART2 clk */
+-    *(volatile unsigned int *)0xD4015030 = 0x3; 
++
++    /* UART3 clk */
++    *(volatile unsigned int *)0xD4015034 = 0x3 | (1<<4); /*26MHz clock*/
+ 
+     /* TWSI1 clk*/
+     *(volatile unsigned int *)0xD4015004 = 0x3; 
+     dummy_delay(99999);
+-	
++
+     /* no clock gated*/
+-    *(volatile unsigned int *)0xd405000c=0x80E50FFF;
++    //*(volatile unsigned int *)0xd405000c=0x80E50FFF;
+ 
+     /* audio bus clock*/
+-    *(volatile unsigned int *)0xd42820c=0x1710;
+-    *(volatile unsigned int *)0xd42820c=0x1712;
++    //*(volatile unsigned int *)0xd42820c=0x1710;
++    //*(volatile unsigned int *)0xd42820c=0x1712;
+ 
+     /* vmeta clock*/
+-    *(volatile unsigned int *)0xd4282a4=0x718;
+-    *(volatile unsigned int *)0xd4282a4=0x71B;
++    //*(volatile unsigned int *)0xd4282a4=0x718;
++    //*(volatile unsigned int *)0xd4282a4=0x71B;
+ 
+     /* enable GPIO clock */
+     *(volatile unsigned int *)0xd4015038=0x03;
+@@ -202,16 +208,16 @@ int board_init (void)
+ 	BU_REG_WRITE(0xd4015000, 0x83 );
+ 	BU_REG_WRITE(0xd4015074, 0x3 );
+ 	BU_REG_WRITE(0xd4282864, 0x9 );
+-	BU_REG_WRITE(0xd4282860, 0x3f|(0<<6));
++	BU_REG_WRITE(0xd4282860, 0xbf);
+ 
+ 	/*configure for MFP*/
+ 	pxa3xx_init_mfp();
+     pxa3xx_mfp_init_addr(pxa688_mfp_addr_map);
+ 
+     pxa3xx_mfp_config(ARRAY_AND_SIZE(jasper_pin_config));
+-    pxa3xx_mfp_set_pull(MFP_CFG_PIN(GPIO47_UART2_RXD), MFP_PULL_HIGH);
+-    pxa3xx_mfp_set_pull(MFP_CFG_PIN(GPIO48_UART2_TXD), MFP_PULL_HIGH);
+-    pxa3xx_mfp_set_pull(MFP_CFG_PIN(DF_RDY0_DF_RDY0), MFP_PULL_HIGH);
++    //pxa3xx_mfp_set_pull(MFP_CFG_PIN(GPIO47_UART2_RXD), MFP_PULL_HIGH);
++    //pxa3xx_mfp_set_pull(MFP_CFG_PIN(GPIO48_UART2_TXD), MFP_PULL_HIGH);
++    //pxa3xx_mfp_set_pull(MFP_CFG_PIN(DF_RDY0_DF_RDY0), MFP_PULL_HIGH);
+ 
+     return 0;
+ }
+diff --git a/cpu/88SV581xV6/pxa688/timer.c b/cpu/88SV581xV6/pxa688/timer.c
+index 68fda86..443176b 100644
+--- a/cpu/88SV581xV6/pxa688/timer.c
++++ b/cpu/88SV581xV6/pxa688/timer.c
+@@ -57,12 +57,12 @@ int timer_init(void)
+ 	i = 0x10000;
+ 	while(i --);
+ 
+-	*(volatile unsigned int *)0xD4015024 = 0x3; //KV - Choose 32 KHz Clock Frequency for OS Timer
++	*(volatile unsigned int *)0xD4015024 = 0x3 | (1<<4); //6.5MHz timer
+ 	i = 0x10000;
+ 	while(i --);
+ 
+ 	/* timer configure */
+-	/* Select clock 32 KHz */
++	/* Select clock 6.5MHz */
+ 	*(volatile ulong *)(CONFIG_SYS_TIMERBASE + 0) = 0x0; //KV
+ 	/* Select match register */
+ 	*(volatile ulong *)(CONFIG_SYS_TIMERBASE + 4) = 0xffffffff;
+@@ -98,7 +98,7 @@ void reset_timer (void)
+ 
+ ulong get_timer (ulong base)
+ {
+-	return get_timer_masked () * 3 / 100 - base;
++	return get_timer_masked () * 6 / 10000 - base;
+ }
+ 
+ void set_timer (ulong t)
+@@ -121,8 +121,7 @@ void udelay (unsigned long usec)
+ 	}
+ 
+ 	/* tune tmo */
+-	tmo /= 7;
+-	tmo *= 3;
++	tmo /= (CONFIG_SYS_HZ / 6000000);
+ 	tmp = get_timer_masked ();	/* get current timestamp */
+ 	if( (tmo + tmp + 1) < tmp ) 	/* if setting this fordward will roll time stamp */
+ 		reset_timer_masked ();	/* reset "advancing" timestamp to 0, set lastdec value */
+diff --git a/include/asm-arm/arch-pxa688/mfp-pxa688.h b/include/asm-arm/arch-pxa688/mfp-pxa688.h
+index f3da356..9043550 100644
+--- a/include/asm-arm/arch-pxa688/mfp-pxa688.h
++++ b/include/asm-arm/arch-pxa688/mfp-pxa688.h
+@@ -20,9 +20,25 @@
+ /*Slave reset out*/
+ #define SLAVE_RESET_OUT_GPIO122       MFP_CFG(SLAVE_RESET_OUT, AF1)
+ 
++/* UART1 */
++#define GPIO45_UART1_RXD			MFP_CFG(GPIO45, AF1)
++#define GPIO46_UART1_TXD			MFP_CFG(GPIO46, AF1)
++#define GPIO29_UART1_RXD			MFP_CFG(GPIO29, AF1)
++#define GPIO30_UART1_TXD			MFP_CFG(GPIO30, AF1)
++#define GPIO31_UART1_CTS			MFP_CFG(GPIO31, AF1)
++#define GPIO32_UART1_RTS			MFP_CFG(GPIO32, AF1)
++
+ /* UART2 */
+-#define GPIO47_UART2_RXD              MFP_CFG(GPIO47, AF6)
+-#define GPIO48_UART2_TXD              MFP_CFG(GPIO48, AF6)
++#define GPIO47_UART2_RXD			MFP_CFG(GPIO47, AF1)
++#define GPIO48_UART2_TXD			MFP_CFG(GPIO48, AF1)
++#define GPIO49_UART2_CTS			MFP_CFG(GPIO49, AF1)
++#define GPIO50_UART2_RTS			MFP_CFG(GPIO50, AF1)
++
++/* UART3 */
++#define GPIO51_UART3_RXD			MFP_CFG(GPIO51, AF1)
++#define GPIO52_UART3_TXD			MFP_CFG(GPIO52, AF1)
++#define GPIO53_UART3_CTS			MFP_CFG(GPIO53, AF1)
++#define GPIO54_UART3_RTS			MFP_CFG(GPIO54, AF1)
+ 
+ #ifdef CONFIG_CPU_PXA910_168
+ #define GPIO107_FFTXD               MFP_CFG(GPIO107, AF2)
+@@ -68,28 +84,33 @@
+ 
+ 
+ /* DFI */
+-#define PXA910_DF_IO0_ND_IO0               MFP_CFG_LPM(DF_IO0, AF0, PULL_LOW)
+-#define PXA910_DF_IO1_ND_IO1               MFP_CFG_LPM(DF_IO1, AF0, PULL_LOW)
+-#define PXA910_DF_IO2_ND_IO2               MFP_CFG_LPM(DF_IO2, AF0, PULL_LOW)
+-#define PXA910_DF_IO3_ND_IO3               MFP_CFG_LPM(DF_IO3, AF0, PULL_LOW)
+-#define PXA910_DF_IO4_ND_IO4               MFP_CFG_LPM(DF_IO4, AF0, PULL_LOW)
+-#define PXA910_DF_IO5_ND_IO5               MFP_CFG_LPM(DF_IO5, AF0, PULL_LOW)
+-#define PXA910_DF_IO6_ND_IO6               MFP_CFG_LPM(DF_IO6, AF0, PULL_LOW)
+-#define PXA910_DF_IO7_ND_IO7               MFP_CFG_LPM(DF_IO7, AF0, PULL_LOW)
+-#define PXA910_DF_IO8_ND_IO8               MFP_CFG_LPM(DF_IO8, AF0, PULL_LOW)
+-#define PXA910_DF_IO9_ND_IO9               MFP_CFG_LPM(DF_IO9, AF0, PULL_LOW)
+-#define PXA910_DF_IO10_ND_IO10             MFP_CFG_LPM(DF_IO10, AF0, PULL_LOW)
+-#define PXA910_DF_IO11_ND_IO11             MFP_CFG_LPM(DF_IO11, AF0, PULL_LOW)
+-#define PXA910_DF_IO12_ND_IO12             MFP_CFG_LPM(DF_IO12, AF0, PULL_LOW)
+-#define PXA910_DF_IO13_ND_IO13             MFP_CFG_LPM(DF_IO13, AF0, PULL_LOW)
+-#define PXA910_DF_IO14_ND_IO14             MFP_CFG_LPM(DF_IO14, AF0, PULL_LOW)
+-#define PXA910_DF_IO15_ND_IO15             MFP_CFG_LPM(DF_IO15, AF0, PULL_LOW)
+-#define DF_nCS0_SM_nCS2_nCS0        MFP_CFG(DF_nCS0_SM_nCS2, AF0)
+-#define DF_ALE_SM_WEn_ND_ALE        MFP_CFG(DF_ALE_SM_WEn, AF1)
+-#define DF_CLE_SM_OEn_ND_CLE        MFP_CFG(DF_CLE_SM_OEn, AF0)
+-#define DF_WEn_DF_WEn	        MFP_CFG(DF_WEn, AF1)
+-#define DF_REn_DF_REn	        MFP_CFG(DF_REn, AF1)
+-#define DF_RDY0_DF_RDY0	        MFP_CFG(DF_RDY0, AF0)
++#define GPIO108_DFI_D15		MFP_CFG(GPIO108, AF0)
++#define GPIO109_DFI_D14		MFP_CFG(GPIO109, AF0)
++#define GPIO110_DFI_D13		MFP_CFG(GPIO110, AF0)
++#define GPIO161_DFI_D12		MFP_CFG(GPIO161, AF0)
++#define GPIO162_DFI_D11		MFP_CFG(GPIO162, AF0)
++#define GPIO163_DFI_D10		MFP_CFG(GPIO163, AF0)
++#define GPIO164_DFI_D9		MFP_CFG(GPIO164, AF0)
++#define GPIO111_DFI_D8		MFP_CFG(GPIO111, AF0)
++#define GPIO104_DFI_D7		MFP_CFG(GPIO104, AF0)
++#define GPIO105_DFI_D6		MFP_CFG(GPIO105, AF0)
++#define GPIO106_DFI_D5		MFP_CFG(GPIO106, AF0)
++#define GPIO107_DFI_D4		MFP_CFG(GPIO107, AF0)
++#define GPIO165_DFI_D3		MFP_CFG(GPIO165, AF0)
++#define GPIO166_DFI_D2		MFP_CFG(GPIO166, AF0)
++#define GPIO167_DFI_D1		MFP_CFG(GPIO167, AF0)
++#define GPIO168_DFI_D0		MFP_CFG(GPIO168, AF0)
++#define GPIO143_ND_nCS0		MFP_CFG(GPIO143, AF0)
++#define GPIO144_ND_nCS1		MFP_CFG(GPIO144, AF0)
++#define GPIO147_ND_nWE		MFP_CFG(GPIO147, AF0)
++#define GPIO148_ND_nRE		MFP_CFG(GPIO148, AF0)
++#define GPIO150_ND_ALE		MFP_CFG(GPIO150, AF0)
++#define GPIO149_ND_CLE		MFP_CFG(GPIO149, AF0)
++#define GPIO112_ND_RDY0		MFP_CFG(GPIO112, AF0)
++#define GPIO160_ND_RDY1		MFP_CFG(GPIO160, AF0)
++
++#define GPIO154_SMC_IRQ		MFP_CFG(GPIO154, AF0)
++
+ /*keypad*/
+ #define GPIO00_KP_MKIN0          MFP_CFG_LPM(GPIO0, AF1,PULL_LOW)
+ #define GPIO01_KP_MKOUT0          MFP_CFG(GPIO1, AF1)
+diff --git a/include/asm-arm/arch-pxa688/nand_supported.h b/include/asm-arm/arch-pxa688/nand_supported.h
+index 6d8d71f..2c56b36 100644
+--- a/include/asm-arm/arch-pxa688/nand_supported.h
++++ b/include/asm-arm/arch-pxa688/nand_supported.h
+@@ -252,7 +252,7 @@ static struct pxa3xx_nand_flash micron4GbX16 = {
+ };
+ 
+ static struct pxa3xx_nand_flash micron8GbX8 = {
+-	.timing		= &micron_timing,
++	.timing		= &common_timing,
+ 	.cmdset         = &largepage_cmdset,
+ 	.name		= "Micron 8Gibx8",
+ 	.page_per_block	= 128,
+@@ -260,7 +260,7 @@ static struct pxa3xx_nand_flash micron8GbX8 = {
+ 	.flash_width	= 8,
+ 	.dfc_width	= 8,
+ 	.num_blocks	= 2048,
+-	.chip_id	= 0x282c,
++	.chip_id	= 0x382c,
+ 	.ecc_type	= ECC_HAMMIN,
+ };
+ 
+diff --git a/include/asm-arm/arch-pxa688/pxa3xx_nand.h b/include/asm-arm/arch-pxa688/pxa3xx_nand.h
+index 90460ee..c728450 100644
+--- a/include/asm-arm/arch-pxa688/pxa3xx_nand.h
++++ b/include/asm-arm/arch-pxa688/pxa3xx_nand.h
+@@ -5,7 +5,7 @@
+ 
+ #define NUM_CHIP_SELECT		(2)
+ #define CMD_POLL_SIZE		(5)
+-#define NAND_DEF_CLOCK		(200 * 1000000)
++#define NAND_DEF_CLOCK		(100 * 1000000)
+ 
+ struct pxa3xx_nand_timing {
+ 	unsigned int		tCH;  /* Enable signal hold time */
+diff --git a/include/configs/mmp2_flint.h b/include/configs/mmp2_flint.h
+index fd7cb55..34cabb2 100644
+--- a/include/configs/mmp2_flint.h
++++ b/include/configs/mmp2_flint.h
+@@ -53,7 +53,7 @@
+ #define CONFIG_SYS_MEMTEST_END        	0x00f00000
+ #endif
+ 
+-#define CONFIG_SYS_HZ   		(32768)      /* KV - Timer 0 is clocked at 3.25 MHz */
++#define CONFIG_SYS_HZ   		(6500000)      /* KV - Timer 0 is clocked at 3.25 MHz */
+ #define CONFIG_SYS_TIMERBASE 		0xD4014000 
+ #define CONFIG_SYS_CPUSPEED		0x161		/* set core clock to 400/200/100 MHz */
+ #define CONFIG_DISPLAY_BOARDINFO
+@@ -77,8 +77,8 @@
+ #define CONFIG_SYS_NS16550
+ #define CONFIG_SYS_NS16550_SERIAL
+ #define CONFIG_SYS_NS16550_REG_SIZE   	-4
+-#define CONFIG_SYS_NS16550_CLK        	14745600
+-#define CONFIG_BAUDRATE        		115200
++#define CONFIG_SYS_NS16550_CLK        	26000000
++#define CONFIG_BAUDRATE        		38400
+ #define CONFIG_SYS_BAUDRATE_TABLE     	{ 9600, 19200, 38400, 57600, 115200 }
+ #define CONFIG_SYS_NS16550_COM1       	0xD4017000 /* configure for PXA910*/
+ 
+diff --git a/include/configs/mmp2_jasper.h b/include/configs/mmp2_jasper.h
+index 012dde8..33b10f4 100644
+--- a/include/configs/mmp2_jasper.h
++++ b/include/configs/mmp2_jasper.h
+@@ -53,7 +53,7 @@
+ #define CONFIG_SYS_MEMTEST_END        	0x00f00000
+ #endif
+ 
+-#define CONFIG_SYS_HZ   		(32768)      /* KV - Timer 0 is clocked at 3.25 MHz */
++#define CONFIG_SYS_HZ   		(6500000)      /* KV - Timer 0 is clocked at 3.25 MHz */
+ #define CONFIG_SYS_TIMERBASE 		0xD4014000 
+ #define CONFIG_SYS_CPUSPEED		0x161		/* set core clock to 400/200/100 MHz */
+ #define CONFIG_DISPLAY_BOARDINFO
+@@ -77,10 +77,10 @@
+ #define CONFIG_SYS_NS16550
+ #define CONFIG_SYS_NS16550_SERIAL
+ #define CONFIG_SYS_NS16550_REG_SIZE   	-4
+-#define CONFIG_SYS_NS16550_CLK        	14745600
+-#define CONFIG_BAUDRATE        		115200
++#define CONFIG_SYS_NS16550_CLK        	26000000
++#define CONFIG_BAUDRATE        		38400
+ #define CONFIG_SYS_BAUDRATE_TABLE     	{ 9600, 19200, 38400, 57600, 115200 }
+-#define CONFIG_SYS_NS16550_COM1       	0xD4017000 /* configure for PXA910*/
++#define CONFIG_SYS_NS16550_COM1       	0xD4018000 /* configure for PXA910*/
+ 
+ #define CONFIG_SHOW_BOOT_PROGRESS
+ 
+@@ -196,7 +196,7 @@
+ #define PHYS_SDRAM_SIZE_DEC     	126
+ #else
+ #define PHYS_SDRAM_1            	0x00000000   /* SDRAM Bank #1 */
+-#define PHYS_SDRAM_1_SIZE       	0x08000000   /* 126 MB */
++#define PHYS_SDRAM_1_SIZE       	0x08000000   /* 128 MB */
+ #define PHYS_SDRAM_SIZE_DEC     	128
+ #endif
+ #define CONFIG_SYS_ENV_SIZE            	0x10000   /* Total Size of Environment Sector */
+-- 
+1.6.0.4
+

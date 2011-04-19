@@ -1,0 +1,30 @@
+From e751d8e44fb2b81cd1b0eb61ca6e09bd8d2ddcfb Mon Sep 17 00:00:00 2001
+From: Ning Jiang <ning.jiang@marvell.com>
+Date: Tue, 23 Jun 2009 15:54:39 +0800
+Subject: [PATCH] pxa168: lowering RTC setting could improve Vmin
+
+Signed-off-by: Ning Jiang <ning.jiang@marvell.com>
+Acked-by: Lei Wen <leiwen@marvell.com>
+---
+ board/pxa/aspenite/aspenite_pxa168.c |    5 +++++
+ 1 files changed, 5 insertions(+), 0 deletions(-)
+
+diff --git a/board/pxa/aspenite/aspenite_pxa168.c b/board/pxa/aspenite/aspenite_pxa168.c
+index c61f0a0..7abdd75 100644
+--- a/board/pxa/aspenite/aspenite_pxa168.c
++++ b/board/pxa/aspenite/aspenite_pxa168.c
+@@ -101,6 +101,11 @@ int board_init (void)
+ 
+     /* ensure L2 cache is not mapped as SRAM */
+     *(unsigned int *)0xd4282c08 &= ~(1<<4);
++
++    /* lowering RTC setting could improve Vmin */
++    *(unsigned int *)0xd4282c10 = 0x16b5ad6d;
++    *(unsigned int *)0xd4282c18 = 0x2d5b56b5;
++
+     /* Enable clocks */
+     *(unsigned int *)0xD4051024 = 0xffffffff;
+     /* enable UART2 clock */
+-- 
+1.6.0.4
+

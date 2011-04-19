@@ -1,0 +1,25 @@
+From 2d83a9938a4160951d8bfaa0800f0a8755c8cdea Mon Sep 17 00:00:00 2001
+From: Lei Wen <leiwen@marvell.com>
+Date: Fri, 5 Jun 2009 10:24:12 +0800
+Subject: [PATCH] add netconsole function to support FASTBOOT
+
+Signed-off-by: Lei Wen <leiwen@marvell.com>
+---
+ include/configs/avengers.h |    1 +
+ 1 files changed, 1 insertions(+), 0 deletions(-)
+
+diff --git a/include/configs/avengers.h b/include/configs/avengers.h
+index d35af27..8649278 100644
+--- a/include/configs/avengers.h
++++ b/include/configs/avengers.h
+@@ -76,6 +76,7 @@
+ #define CONFIG_CMD_PING
+ #define CONFIG_CMD_NET
+ #define CONFIG_NET_MULTI
++#define CONFIG_NETCONSOLE
+ #define MV_ETH_DEVS 			1
+ 
+ #define CONFIG_IPADDR      		192.168.1.101
+-- 
+1.6.0.4
+

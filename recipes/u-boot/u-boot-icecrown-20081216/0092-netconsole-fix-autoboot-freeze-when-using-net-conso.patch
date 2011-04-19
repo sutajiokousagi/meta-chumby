@@ -1,0 +1,109 @@
+From dca99a64af792e5a77de401ddca8fe904fc203b9 Mon Sep 17 00:00:00 2001
+From: Lei Wen <leiwen@marvell.com>
+Date: Mon, 29 Jun 2009 18:35:31 +0800
+Subject: [PATCH] netconsole: fix autoboot freeze when using net console
+
+Signed-off-by: Lei Wen <leiwen@marvell.com>
+---
+ board/pxa/common/usbeth/ether-mvu2o.c |    2 +-
+ common/console.c                      |    4 ++++
+ common/main.c                         |   14 ++++++++++++++
+ cpu/88SV331xV5/pxa168/timer.c         |    2 +-
+ 4 files changed, 20 insertions(+), 2 deletions(-)
+
+diff --git a/board/pxa/common/usbeth/ether-mvu2o.c b/board/pxa/common/usbeth/ether-mvu2o.c
+index cdef5d2..6dfd10f 100644
+--- a/board/pxa/common/usbeth/ether-mvu2o.c
++++ b/board/pxa/common/usbeth/ether-mvu2o.c
+@@ -263,7 +263,7 @@ void dump_buffer(char *buf, unsigned length);
+ 
+ static int usb_eth_rx(struct eth_device *dev)
+ {
+-	int i=1000000;
++	int i=10000;
+ 
+ 	if(!usb_connected)check_usb_connection();
+ 
+diff --git a/common/console.c b/common/console.c
+index 89aeab6..00f3384 100644
+--- a/common/console.c
++++ b/common/console.c
+@@ -283,6 +283,9 @@ int getc (void)
+ 
+ int tstc (void)
+ {
++#ifdef CONFIG_NETCONSOLE
++	return nc_tstc();
++#else
+ #ifdef CONFIG_DISABLE_CONSOLE
+ 	if (gd->flags & GD_FLG_DISABLE_CONSOLE)
+ 		return 0;
+@@ -295,6 +298,7 @@ int tstc (void)
+ 
+ 	/* Send directly to the handler */
+ 	return serial_tstc ();
++#endif
+ }
+ 
+ void putc (const char c)
+diff --git a/common/main.c b/common/main.c
+index a999a5d..8945fb1 100644
+--- a/common/main.c
++++ b/common/main.c
+@@ -213,7 +213,9 @@ static int menukey = 0;
+ static __inline__ int abortboot(int bootdelay)
+ {
+ 	int abort = 0;
++	unsigned long long tmo;
+ 
++	tmo = CONFIG_SYS_HZ;
+ #ifdef CONFIG_MENUPROMPT
+ 	printf(CONFIG_MENUPROMPT);
+ #else
+@@ -236,10 +238,15 @@ static __inline__ int abortboot(int bootdelay)
+ 
+ 	while ((bootdelay > 0) && (!abort)) {
+ 		int i;
++		unsigned long long start, end, usleft;
+ 
+ 		--bootdelay;
+ 		/* delay 100 * 10ms */
++#ifndef CONFIG_NETCONSOLE
+ 		for (i=0; !abort && i<100; ++i) {
++#else
++			start = get_ticks();
++#endif
+ 			if (tstc()) {	/* we got a key press	*/
+ 				abort  = 1;	/* don't auto boot	*/
+ 				bootdelay = 0;	/* no more delay	*/
+@@ -250,8 +257,15 @@ static __inline__ int abortboot(int bootdelay)
+ # endif
+ 				break;
+ 			}
++#ifndef CONFIG_NETCONSOLE
+ 			udelay(10000);
+ 		}
++#else
++		do {
++			end = get_ticks();
++			usleft = (start < end) ? (end - start) : (end + ~start);
++		} while (usleft < tmo);
++#endif
+ 
+ 		printf("\b\b\b%2d ", bootdelay);
+ 	}
+diff --git a/cpu/88SV331xV5/pxa168/timer.c b/cpu/88SV331xV5/pxa168/timer.c
+index b71a030..638873a 100644
+--- a/cpu/88SV331xV5/pxa168/timer.c
++++ b/cpu/88SV331xV5/pxa168/timer.c
+@@ -170,6 +170,6 @@ void udelay_masked (unsigned long usec)
+  */
+ unsigned long long get_ticks(void)
+ {
+-	return get_timer_masked ();
++	return READ_TIMER;
+ }
+ 
+-- 
+1.6.0.4
+

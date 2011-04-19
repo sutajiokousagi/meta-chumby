@@ -1,0 +1,591 @@
+From 436e83903ffa341407171836aa0bd2f470526dbd Mon Sep 17 00:00:00 2001
+From: Lei Wen <leiwen@marvell.com>
+Date: Mon, 7 Sep 2009 21:04:14 +0800
+Subject: [PATCH] spi: add spi simulating driver using pxa ssp
+
+Signed-off-by: Lei Wen <leiwen@marvell.com>
+---
+ board/pxa/aspenite/aspenite_pxa168.c     |   20 +++-
+ drivers/serial/ns16550.c                 |    2 +
+ drivers/spi/Makefile                     |    1 +
+ drivers/spi/pxa3xx_spi.c                 |  245 ++++++++++++++++++++++++++++++
+ include/asm-arm/arch-pxa168/gpio.h       |   38 +++++
+ include/asm-arm/arch-pxa168/mfp-pxa168.h |    6 +
+ include/asm-arm/arch-pxa168/regs-ssp.h   |  129 ++++++++++++++++
+ include/configs/aspenite.h               |   16 ++
+ lib_arm/board.c                          |    5 +
+ 9 files changed, 461 insertions(+), 1 deletions(-)
+ create mode 100644 drivers/spi/pxa3xx_spi.c
+ create mode 100644 include/asm-arm/arch-pxa168/gpio.h
+ create mode 100644 include/asm-arm/arch-pxa168/regs-ssp.h
+
+diff --git a/board/pxa/aspenite/aspenite_pxa168.c b/board/pxa/aspenite/aspenite_pxa168.c
+index e9da54a..97ecec3 100644
+--- a/board/pxa/aspenite/aspenite_pxa168.c
++++ b/board/pxa/aspenite/aspenite_pxa168.c
+@@ -25,10 +25,19 @@
+ 
+ extern void aspen_init();
+ static mfp_cfg_t zyloniteii_mfp_cfg[] __initdata = {
++#ifdef CONFIG_PXA3XX_SPI
++	/* SSP1 */
++	GPIO107_SPI_NOR_RXD,
++	GPIO108_SPI_NOR_TXD,
++	GPIO109_SPI_NOR_SYSCLK,
++	GPIO110_GPIO,
++	GPIO111_SPI_NOR_CLK,
++#else
+ 	/* FFUART */
+ 	GPIO108_FFRXD,
+ 	GPIO107_FFTXD,
+-	
++#endif
++
+ 	/* DFC */
+ 	GPIO0_DFI_D15,
+ 	GPIO1_DFI_D14,
+@@ -108,8 +117,17 @@ int board_init (void)
+ 
+     /* Enable clocks */
+     *(unsigned int *)0xD4051024 = 0xffffffff;
++
++#ifdef CONFIG_PXA3XX_SPI
++    /* Enable SSP1 clock */
++    *(unsigned int *)0xD4015820 = 0x3;
++    /* configure GPIO110 as output (slave reset out) */
++    *(volatile unsigned int *)(0xd4019100 + 0x54)=1<<14;
++    *(volatile unsigned int *)(0xd4019100 + 0x18)=1<<14;
++#else
+     /* enable UART2 clock */
+     *(unsigned int *)0xD4015000 = 0x13;
++#endif
+ 
+     /* enable PMU user access */
+     __asm__ __volatile__ (
+diff --git a/drivers/serial/ns16550.c b/drivers/serial/ns16550.c
+index 488eea6..1c071cb 100644
+--- a/drivers/serial/ns16550.c
++++ b/drivers/serial/ns16550.c
+@@ -70,8 +70,10 @@ void NS16550_putc (NS16550_t com_port, char c)
+ 	if(__count < 1000)
+ 		__log_buf[__count ++] = c;
+ 
++#ifndef CONFIG_PXA3XX_SPI
+ 	while ((com_port->lsr & LSR_THRE) == 0);
+ 	com_port->thr = c;
++#endif
+ }
+ 
+ char NS16550_getc (NS16550_t com_port)
+diff --git a/drivers/spi/Makefile b/drivers/spi/Makefile
+index 15e0f7a..4465a87 100644
+--- a/drivers/spi/Makefile
++++ b/drivers/spi/Makefile
+@@ -28,6 +28,7 @@ LIB	:= $(obj)libspi.a
+ COBJS-$(CONFIG_ATMEL_SPI) += atmel_spi.o
+ COBJS-$(CONFIG_MPC8XXX_SPI) += mpc8xxx_spi.o
+ COBJS-$(CONFIG_MXC_SPI) += mxc_spi.o
++COBJS-$(CONFIG_PXA3XX_SPI) += pxa3xx_spi.o
+ COBJS-$(CONFIG_SOFT_SPI) += soft_spi.o
+ 
+ COBJS	:= $(COBJS-y)
+diff --git a/drivers/spi/pxa3xx_spi.c b/drivers/spi/pxa3xx_spi.c
+new file mode 100644
+index 0000000..b464705
+--- /dev/null
++++ b/drivers/spi/pxa3xx_spi.c
+@@ -0,0 +1,245 @@
++/*
++ * Driver for simulating ssp as spi device for pxa
++ *
++ * Copyright (c) 2009 Marvell Inc.
++ * Lei Wen <leiwen@marvell.com>
++ *
++ * Licensed under the GPL-2 or later.
++ */
++
++
++#include <common.h>
++#include <malloc.h>
++#include <spi.h>
++
++#include <asm/io.h>
++#include <asm/arch/regs-ssp.h>
++#include <asm/arch/gpio.h>
++
++struct pxa_spi_slave {
++	struct spi_slave slave;
++	u32 cr0, cr1;
++	u32 int_cr1;
++	u32 clear_sr;
++	void *tx;
++	void *rx;
++	int gpio_cs_inverted;
++
++	void (*write)(struct pxa_spi_slave *pss);
++	void (*read)(struct pxa_spi_slave *pss);
++};
++
++#define to_pxa_spi_slave(s) container_of(s, struct pxa_spi_slave, slave)
++
++#define DEFINE_SSP_REG(reg, off) \
++	static inline u32 read_##reg() \
++{ return __raw_readl(CONFIG_SYS_SSP_BASE + (off)); } \
++\
++static inline void write_##reg(u32 v) \
++{ __raw_writel(v, CONFIG_SYS_SSP_BASE + (off)); }
++
++DEFINE_SSP_REG(SSCR0, 0x00)
++DEFINE_SSP_REG(SSCR1, 0x04)
++DEFINE_SSP_REG(SSSR, 0x08)
++DEFINE_SSP_REG(SSITR, 0x0c)
++DEFINE_SSP_REG(SSDR, 0x10)
++DEFINE_SSP_REG(SSTO, 0x28)
++DEFINE_SSP_REG(SSPSP, 0x2c)
++
++#define DEFAULT_WORD_LEN	8
++#define SSP_FLUSH_NUM		0x2000
++#define RX_THRESH_DFLT		8
++#define TX_THRESH_DFLT		8
++#define TIMOUT_DFLT		1000
++
++void spi_cs_activate(struct spi_slave *slave)
++{
++	struct pxa_spi_slave *pss = to_pxa_spi_slave(slave);
++	gpio_set_value(slave->cs, pss->gpio_cs_inverted);
++}
++
++void spi_cs_deactivate(struct spi_slave *slave)
++{
++	struct pxa_spi_slave *pss = to_pxa_spi_slave(slave);
++	gpio_set_value(slave->cs, !pss->gpio_cs_inverted);
++}
++
++static void null_writer(struct pxa_spi_slave *pss)
++{
++	while (!(read_SSSR() & SSSR_TNF));
++
++	write_SSDR(0);
++}
++
++static void null_reader(struct pxa_spi_slave *pss)
++{
++	while (!(read_SSSR() & SSSR_RNE));
++	read_SSDR();
++}
++
++static void u8_writer(struct pxa_spi_slave *pss)
++{
++	while (!(read_SSSR() & SSSR_TNF));
++
++	write_SSDR(*(u8 *)(pss->tx));
++	++pss->tx;
++}
++
++static void u8_reader(struct pxa_spi_slave *pss)
++{
++	while (!(read_SSSR() & SSSR_RNE));
++	*(u8 *)(pss->rx) = read_SSDR();
++	++pss->rx;
++}
++
++static int flush(void)
++{
++	unsigned long limit = SSP_FLUSH_NUM;
++
++	do {
++		while (read_SSSR() & SSSR_RNE) {
++			read_SSDR();
++		}
++	} while ((read_SSSR() & SSSR_BSY) && limit--);
++	write_SSSR(SSSR_ROR);
++
++	return limit;
++}
++
++struct spi_slave *spi_setup_slave(unsigned int bus, unsigned int cs,
++		unsigned int max_hz, unsigned int mode)
++{
++	struct pxa_spi_slave *pss;
++	unsigned int clk_div;
++
++	clk_div = ((CONFIG_SSP_CLK / max_hz - 1) & 0xfff) << 8;
++
++	pss = malloc(sizeof(*pss));
++	if (!pss)
++		return NULL;
++
++	pss->slave.bus = bus;
++	pss->slave.cs = cs;
++
++	pss->cr0 = clk_div
++		| SSCR0_Motorola
++		| SSCR0_DataSize(DEFAULT_WORD_LEN)
++		| SSCR0_SSE;
++
++	pss->cr1 = (SSCR1_RxTresh(RX_THRESH_DFLT) & SSCR1_RFT) |
++		(SSCR1_TxTresh(TX_THRESH_DFLT) & SSCR1_TFT);
++	pss->cr1 &= ~(SSCR1_SPO | SSCR1_SPH);
++	pss->cr1 |= (((mode & SPI_CPHA) != 0) ? SSCR1_SPH : 0)
++		| (((mode & SPI_CPOL) != 0) ? SSCR1_SPO : 0);
++
++	pss->int_cr1 = SSCR1_TIE | SSCR1_RIE | SSCR1_TINTE;
++	pss->clear_sr = SSSR_ROR | SSSR_TINT;
++
++	pss->gpio_cs_inverted = mode & SPI_CS_HIGH;
++	gpio_set_value(cs, !pss->gpio_cs_inverted);
++
++	return &pss->slave;
++}
++
++void spi_free_slave(struct spi_slave *slave)
++{
++	struct pxa_spi_slave *pss = to_pxa_spi_slave(slave);
++	free(pss);
++}
++
++void spi_init()
++{
++	struct spi_slave *flash;
++	struct pxa_spi_slave *pss;
++	u8 cmd = 0x9f;
++	u8 null_word = 0xff;
++	int reader;
++	char init_cmd[100];
++
++	/* Load default SSP configuration */
++	write_SSCR0(0);
++	write_SSCR1(SSCR1_RxTresh(RX_THRESH_DFLT) |
++			SSCR1_TxTresh(TX_THRESH_DFLT));
++	write_SSCR0(SSCR0_SerClkDiv(2)
++			| SSCR0_Motorola
++			| SSCR0_DataSize(DEFAULT_WORD_LEN));
++	write_SSTO(0);
++	write_SSPSP(0);
++
++#ifdef CONFIG_PROBE_FLASH_INIT
++	sprintf(init_cmd, "sf probe %d 26000 0", CONFIG_SPI_CS_PIN);
++	run_command(init_cmd, 0);
++#endif
++}
++
++int spi_claim_bus(struct spi_slave *slave)
++{
++	debug("%s: bus:%i cs:%i\n", __func__, slave->bus, slave->cs);
++	if (flush() == 0) {
++		return -1;
++	}
++
++	return 0;
++}
++
++void spi_release_bus(struct spi_slave *slave)
++{
++}
++
++int spi_xfer(struct spi_slave *slave, unsigned int bitlen, const void *dout,
++		void *din, unsigned long flags)
++{
++	struct pxa_spi_slave *pss = to_pxa_spi_slave(slave);
++	uint bytes = bitlen / 8;
++	unsigned long limit;
++	int ret = 0;
++
++	if (bitlen == 0)
++		goto done;
++
++	/* we can only do 8 bit transfers */
++	if (bitlen % 8) {
++		flags |= SPI_XFER_END;
++		goto done;
++	}
++
++	if (dout) {
++		pss->tx = dout;
++		pss->write = u8_writer;
++	}
++	else
++		pss->write = null_writer;
++
++	if (din) {
++		pss->rx = din;
++		pss->read = u8_reader;
++	}
++	else
++		pss->read = null_reader;
++
++	if (flags & SPI_XFER_BEGIN) {
++		spi_cs_activate(slave);
++		write_SSCR1(pss->cr1 | pss->int_cr1);
++		write_SSTO(TIMOUT_DFLT);
++		write_SSCR0(pss->cr0);
++	}
++
++	while (bytes--) {
++		limit = SSP_FLUSH_NUM;
++		pss->write(pss);
++		while ((read_SSSR() & SSSR_BSY) && limit--)
++			udelay(1);
++		pss->read(pss);
++	}
++
++ done:
++	if (flags & SPI_XFER_END) {
++		/* Stop SSP */
++		write_SSSR(pss->clear_sr);
++		write_SSCR1(read_SSCR1() & ~pss->int_cr1);
++		write_SSTO(0);
++		spi_cs_deactivate(slave);
++	}
++
++	return ret;
++}
+diff --git a/include/asm-arm/arch-pxa168/gpio.h b/include/asm-arm/arch-pxa168/gpio.h
+new file mode 100644
+index 0000000..7aa7ca3
+--- /dev/null
++++ b/include/asm-arm/arch-pxa168/gpio.h
+@@ -0,0 +1,38 @@
++#ifndef __PXA_GPIO_H
++#define __PXA_GPIO_H
++
++
++#define GPIO_REGS_VIRT 	(0xD4019000)
++
++#define BANK_OFF(n)     (((n) < 3) ? (n) << 2 : 0x100 + (((n) - 3) << 2))
++#define GPIO_REG(x)     (*((volatile u32 *)(GPIO_REGS_VIRT + (x))))
++
++#define NR_BUILTIN_GPIO (128)
++
++#define GPIO_bit(gpio)  (1 << ((gpio) & 0x1f))
++
++#define GPLR(x)         GPIO_REG(BANK_OFF((x) >> 5) + 0x00)
++#define GPDR(x)         GPIO_REG(BANK_OFF((x) >> 5) + 0x0c)
++#define GPSR(x)         GPIO_REG(BANK_OFF((x) >> 5) + 0x18)
++#define GPCR(x)         GPIO_REG(BANK_OFF((x) >> 5) + 0x24)
++
++static inline int gpio_get_value(unsigned gpio)
++{
++	if (gpio < NR_BUILTIN_GPIO)
++		return GPLR(gpio) & GPIO_bit(gpio);
++	else
++		panic("Invalid GPIO pin %u\n", gpio);
++}
++
++static inline void gpio_set_value(unsigned gpio, int value)
++{
++	if (gpio < NR_BUILTIN_GPIO) {
++		if (value)
++			GPSR(gpio) = GPIO_bit(gpio);
++		else
++			GPCR(gpio) = GPIO_bit(gpio);
++	} else
++		panic("Invalid GPIO pin %u\n", gpio);
++}
++
++#endif	/* __PXA_GPIO_H */
+diff --git a/include/asm-arm/arch-pxa168/mfp-pxa168.h b/include/asm-arm/arch-pxa168/mfp-pxa168.h
+index f3da356..40ab938 100644
+--- a/include/asm-arm/arch-pxa168/mfp-pxa168.h
++++ b/include/asm-arm/arch-pxa168/mfp-pxa168.h
+@@ -27,6 +27,12 @@
+ #ifdef CONFIG_CPU_PXA910_168
+ #define GPIO107_FFTXD               MFP_CFG(GPIO107, AF2)
+ #define GPIO108_FFRXD               MFP_CFG(GPIO108, AF2)
++/* SSP1*/
++#define GPIO107_SPI_NOR_RXD		MFP_CFG(GPIO107,AF4)
++#define GPIO108_SPI_NOR_TXD		MFP_CFG(GPIO108,AF4)
++#define GPIO109_SPI_NOR_SYSCLK		MFP_CFG(GPIO109,AF4)
++#define GPIO110_GPIO			MFP_CFG(GPIO110, AF0)
++#define GPIO111_SPI_NOR_CLK		MFP_CFG(GPIO111,AF4)
+ #endif
+ 
+ /*IRDA*/
+diff --git a/include/asm-arm/arch-pxa168/regs-ssp.h b/include/asm-arm/arch-pxa168/regs-ssp.h
+new file mode 100644
+index 0000000..9d06cdb
+--- /dev/null
++++ b/include/asm-arm/arch-pxa168/regs-ssp.h
+@@ -0,0 +1,129 @@
++#ifndef __ASM_ARCH_REGS_SSP_H
++#define __ASM_ARCH_REGS_SSP_H
++
++/*
++ * SSP Serial Port Registers
++ * PXA250, PXA255, PXA26x and PXA27x SSP controllers are all slightly different.
++ * PXA255, PXA26x and PXA27x have extra ports, registers and bits.
++ */
++
++#define SSCR0		(0x00)  /* SSP Control Register 0 */
++#define SSCR1		(0x04)  /* SSP Control Register 1 */
++#define SSSR		(0x08)  /* SSP Status Register */
++#define SSITR		(0x0C)  /* SSP Interrupt Test Register */
++#define SSDR		(0x10)  /* SSP Data Write/Data Read Register */
++
++#define SSTO		(0x28)  /* SSP Time Out Register */
++#define SSPSP		(0x2C)  /* SSP Programmable Serial Protocol */
++#define SSTSA		(0x30)  /* SSP Tx Timeslot Active */
++#define SSRSA		(0x34)  /* SSP Rx Timeslot Active */
++#define SSTSS		(0x38)  /* SSP Timeslot Status */
++#define SSACD		(0x3C)  /* SSP Audio Clock Divider */
++
++#if defined(CONFIG_PXA3xx) || defined(CONFIG_CPU_PXA910)
++#define SSACDD		(0x40)	/* SSP Audio Clock Dither Divider */
++#endif
++
++/* Common PXA2xx bits first */
++#define SSCR0_DSS	(0x0000000f)	/* Data Size Select (mask) */
++#define SSCR0_DataSize(x)  ((x) - 1)	/* Data Size Select [4..16] */
++#define SSCR0_FRF	(0x00000030)	/* FRame Format (mask) */
++#define SSCR0_Motorola	(0x0 << 4)	/* Motorola's Serial Peripheral Interface (SPI) */
++#define SSCR0_TI	(0x1 << 4)	/* Texas Instruments' Synchronous Serial Protocol (SSP) */
++#define SSCR0_National	(0x2 << 4)	/* National Microwire */
++#define SSCR0_ECS	(1 << 6)	/* External clock select */
++#define SSCR0_SSE	(1 << 7)	/* Synchronous Serial Port Enable */
++
++#if defined(CONFIG_PXA25x)
++#define SSCR0_SCR	(0x0000ff00)	/* Serial Clock Rate (mask) */
++#define SSCR0_SerClkDiv(x) ((((x) - 2)/2) << 8) /* Divisor [2..512] */
++#elif defined(CONFIG_PXA27x) || defined(CONFIG_PXA3xx) || defined(CONFIG_CPU_PXA910)
++#define SSCR0_SCR	(0x000fff00)	/* Serial Clock Rate (mask) */
++#define SSCR0_SerClkDiv(x) (((x) - 1) << 8) /* Divisor [1..4096] */
++#endif
++
++#if defined(CONFIG_PXA27x) || defined(CONFIG_PXA3xx) || defined(CONFIG_CPU_PXA910)
++#define SSCR0_EDSS	(1 << 20)	/* Extended data size select */
++#define SSCR0_NCS	(1 << 21)	/* Network clock select */
++#define SSCR0_RIM	(1 << 22)	/* Receive FIFO overrrun interrupt mask */
++#define SSCR0_TUM	(1 << 23)	/* Transmit FIFO underrun interrupt mask */
++#define SSCR0_FRDC	(0x07000000)	/* Frame rate divider control (mask) */
++#define SSCR0_SlotsPerFrm(x) (((x) - 1) << 24)	/* Time slots per frame [1..8] */
++#define SSCR0_ADC	(1 << 30)	/* Audio clock select */
++#define SSCR0_MOD	(1 << 31)	/* Mode (normal or network) */
++#endif
++
++#if defined(CONFIG_PXA3xx) || defined(CONFIG_CPU_PXA910)
++#define SSCR0_FPCKE	(1 << 29)	/* FIFO packing enable */
++#endif
++
++#define SSCR1_RIE	(1 << 0)	/* Receive FIFO Interrupt Enable */
++#define SSCR1_TIE	(1 << 1)	/* Transmit FIFO Interrupt Enable */
++#define SSCR1_LBM	(1 << 2)	/* Loop-Back Mode */
++#define SSCR1_SPO	(1 << 3)	/* Motorola SPI SSPSCLK polarity setting */
++#define SSCR1_SPH	(1 << 4)	/* Motorola SPI SSPSCLK phase setting */
++#define SSCR1_MWDS	(1 << 5)	/* Microwire Transmit Data Size */
++#define SSCR1_TFT	(0x000003c0)	/* Transmit FIFO Threshold (mask) */
++#define SSCR1_TxTresh(x) (((x) - 1) << 6) /* level [1..16] */
++#define SSCR1_RFT	(0x00003c00)	/* Receive FIFO Threshold (mask) */
++#define SSCR1_RxTresh(x) (((x) - 1) << 10) /* level [1..16] */
++
++#define SSSR_TNF	(1 << 2)	/* Transmit FIFO Not Full */
++#define SSSR_RNE	(1 << 3)	/* Receive FIFO Not Empty */
++#define SSSR_BSY	(1 << 4)	/* SSP Busy */
++#define SSSR_TFS	(1 << 5)	/* Transmit FIFO Service Request */
++#define SSSR_RFS	(1 << 6)	/* Receive FIFO Service Request */
++#define SSSR_ROR	(1 << 7)	/* Receive FIFO Overrun */
++
++#define SSCR0_TIM		(1 << 23)	/* Transmit FIFO Under Run Interrupt Mask */
++#define SSCR0_RIM		(1 << 22)	/* Receive FIFO Over Run interrupt Mask */
++#define SSCR0_NCS		(1 << 21)	/* Network Clock Select */
++#define SSCR0_EDSS		(1 << 20)	/* Extended Data Size Select */
++
++/* extra bits in PXA255, PXA26x and PXA27x SSP ports */
++#define SSCR0_TISSP		(1 << 4)	/* TI Sync Serial Protocol */
++#define SSCR0_PSP		(3 << 4)	/* PSP - Programmable Serial Protocol */
++#define SSCR1_TTELP		(1 << 31)	/* TXD Tristate Enable Last Phase */
++#define SSCR1_TTE		(1 << 30)	/* TXD Tristate Enable */
++#define SSCR1_EBCEI		(1 << 29)	/* Enable Bit Count Error interrupt */
++#define SSCR1_SCFR		(1 << 28)	/* Slave Clock free Running */
++#define SSCR1_ECRA		(1 << 27)	/* Enable Clock Request A */
++#define SSCR1_ECRB		(1 << 26)	/* Enable Clock request B */
++#define SSCR1_SCLKDIR		(1 << 25)	/* Serial Bit Rate Clock Direction */
++#define SSCR1_SFRMDIR		(1 << 24)	/* Frame Direction */
++#define SSCR1_RWOT		(1 << 23)	/* Receive Without Transmit */
++#define SSCR1_TRAIL		(1 << 22)	/* Trailing Byte */
++#define SSCR1_TSRE		(1 << 21)	/* Transmit Service Request Enable */
++#define SSCR1_RSRE		(1 << 20)	/* Receive Service Request Enable */
++#define SSCR1_TINTE		(1 << 19)	/* Receiver Time-out Interrupt enable */
++#define SSCR1_PINTE		(1 << 18)	/* Peripheral Trailing Byte Interupt Enable */
++#define SSCR1_IFS		(1 << 16)	/* Invert Frame Signal */
++#define SSCR1_STRF		(1 << 15)	/* Select FIFO or EFWR */
++#define SSCR1_EFWR		(1 << 14)	/* Enable FIFO Write/Read */
++
++#define SSSR_BCE		(1 << 23)	/* Bit Count Error */
++#define SSSR_CSS		(1 << 22)	/* Clock Synchronisation Status */
++#define SSSR_TUR		(1 << 21)	/* Transmit FIFO Under Run */
++#define SSSR_EOC		(1 << 20)	/* End Of Chain */
++#define SSSR_TINT		(1 << 19)	/* Receiver Time-out Interrupt */
++#define SSSR_PINT		(1 << 18)	/* Peripheral Trailing Byte Interrupt */
++
++#define SSPSP_FSRT		(1 << 25)	/* Frame Sync Relative Timing */
++#define SSPSP_DMYSTOP(x)	((x) << 23)	/* Dummy Stop */
++#define SSPSP_SFRMWDTH(x)	((x) << 16)	/* Serial Frame Width */
++#define SSPSP_SFRMDLY(x)	((x) << 9)	/* Serial Frame Delay */
++#define SSPSP_DMYSTRT(x)	((x) << 7)	/* Dummy Start */
++#define SSPSP_STRTDLY(x)	((x) << 4)	/* Start Delay */
++#define SSPSP_ETDS		(1 << 3)	/* End of Transfer data State */
++#define SSPSP_SFRMP		(1 << 2)	/* Serial Frame Polarity */
++#define SSPSP_SCMODE(x)		((x) << 0)	/* Serial Bit Rate Clock Mode */
++
++#define SSACD_SCDB		(1 << 3)	/* SSPSYSCLK Divider Bypass */
++#define SSACD_ACPS(x)		((x) << 4)	/* Audio clock PLL select */
++#define SSACD_ACDS(x)		((x) << 0)	/* Audio clock divider select */
++#if defined(CONFIG_PXA3xx) || defined(CONFIG_CPU_PXA910)
++#define SSACD_SCDX8		(1 << 7)	/* SYSCLK division ratio select */
++#endif
++
++
++#endif /* __ASM_ARCH_REGS_SSP_H */
+diff --git a/include/configs/aspenite.h b/include/configs/aspenite.h
+index f02cb9a..0c9cbf8 100644
+--- a/include/configs/aspenite.h
++++ b/include/configs/aspenite.h
+@@ -56,6 +56,7 @@
+  */
+ #define CONFIG_SYS_MALLOC_LEN      	(CONFIG_SYS_ENV_SIZE + 512*1024)
+ #define CONFIG_SYS_GBL_DATA_SIZE   	128   /* size in bytes reserved for initial data */
++#define CONFIG_CMD_MEMORY
+ 
+ /*
+  *  Configuration
+@@ -177,6 +178,21 @@
+  */
+ #define CONFIG_CMD_CPUID 		1
+ 
++/*---------------------------------------------
++ * SPI NOR configuration
++ */
++//#define CONFIG_PXA3XX_SPI
++#if defined(CONFIG_PXA3XX_SPI)
++#define CONFIG_NETCONSOLE
++#define CONFIG_SSP_CLK			6500000
++#define CONFIG_SYS_SSP_BASE		0xD401C000
++#define CONFIG_SPI_CS_PIN		110
++#define CONFIG_CMD_SF
++#define CONFIG_SPI_FLASH
++#define CONFIG_PROBE_FLASH_INIT
++#define CONFIG_SPI_FLASH_MACRONIX	1
++#endif
++
+ /*-----------------------------------------------------------------------
+  * NAND and DFC configuration
+  */
+diff --git a/lib_arm/board.c b/lib_arm/board.c
+index 500e190..3cd4b34 100644
+--- a/lib_arm/board.c
++++ b/lib_arm/board.c
+@@ -344,6 +344,11 @@ void start_armboot (void)
+ 	nand_init();		/* go init the NAND */
+ #endif
+ 
++#if defined(CONFIG_CMD_SF)
++	puts ("SPI NOR: ");
++	spi_init();
++#endif
++
+ #if defined(CONFIG_CMD_ONENAND)
+ 	onenand_init();
+ #endif
+-- 
+1.6.0.4
+

@@ -1,0 +1,43 @@
+From e1019df42a49f565d3daca2b6dce81cbae0a58e6 Mon Sep 17 00:00:00 2001
+From: Mingliang Hu <mingliang.hu@marvell.com>
+Date: Sun, 28 Feb 2010 17:41:49 +0800
+Subject: [PATCH] pxa688: add eMMC PRV info to console
+
+Signed-off-by: Mingliang Hu <mingliang.hu@marvell.com>
+
+Bonnell eMMC may has firmware issue.
+Need check PRV in CID of this eMMC chip.
+
+The way to check the parts is to read the PRV (Product Revision) in the Card Identification Register (CID). If you does this on a known good platform, then it should contain either the value "0.4" or "0.5". The failures are likely on "0.1". Although it is possible that a PRV of "0.4" is also failing. The PRV will allow you to identify any suspect systems.
+---
+ drivers/mmc/mmc.c |    7 ++++++-
+ 1 files changed, 6 insertions(+), 1 deletions(-)
+
+diff --git a/drivers/mmc/mmc.c b/drivers/mmc/mmc.c
+index d6603ee..d31d6ee 100644
+--- a/drivers/mmc/mmc.c
++++ b/drivers/mmc/mmc.c
+@@ -958,7 +958,7 @@ static int mmc_decode_cid(struct mmc *mmc)
+ 		mmc->bcid.prod_name[3]	= UNSTUFF_BITS(resp, 72, 8);
+ 		mmc->bcid.prod_name[4]	= UNSTUFF_BITS(resp, 64, 8);
+ 		mmc->bcid.prod_name[5]	= UNSTUFF_BITS(resp, 56, 8);
+-		mmc->bcid.prod_ver	= UNSTUFF_BITS(resp, 40, 4);
++		mmc->bcid.prod_ver	= UNSTUFF_BITS(resp, 48, 8);
+ 		mmc->bcid.prod_sn	= UNSTUFF_BITS(resp, 16, 32);
+ 		mmc->bcid.month		= UNSTUFF_BITS(resp, 12, 4);
+ 		mmc->bcid.year		= UNSTUFF_BITS(resp, 8, 4) + 1997;
+@@ -1255,6 +1255,11 @@ int mmc_startup(struct mmc *mmc)
+ 	sprintf(mmc->block_dev.product, "%s", mmc->bcid.prod_name);
+ 	sprintf(mmc->block_dev.revision, "%d.%d", (mmc->bcid.prod_ver >> 4) & 0xf,
+ 			mmc->bcid.prod_ver & 0xf);
++	printf("MMC: Man %06x Snr %08x", mc->bcid.manu_id,
++                        mmc->bcid.prod_sn);
++	printf("MMC PNM:  %s", mmc->bcid.prod_name);
++	printf("MMC PRV: %d.%d", (mmc->bcid.prod_ver >> 4) & 0xf,
++                        mmc->bcid.prod_ver & 0xf);
+ 	init_part(&mmc->block_dev);
+ 
+ 	return 0;
+-- 
+1.6.0.4
+

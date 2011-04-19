@@ -1,0 +1,111 @@
+From fd47f650c1680c881374356e9f0976c5203d7247 Mon Sep 17 00:00:00 2001
+From: Jack Ren <jack.ren@marvell.com>
+Date: Mon, 29 Jun 2009 20:08:07 +0800
+Subject: [PATCH] pxa: uart/netconsole switch automatically
+
+When USB cable is pluggin, netconsole will be used;
+otherwise uart will be used.
+
+Signed-off-by: Jack Ren <jack.ren@marvell.com>
+Signed-off-by: Bin Yang <bin.yang@marvell.com>
+---
+ board/pxa/common/usbeth/ether-mvu2o.c |   23 +++++++++++++++++++++--
+ common/console.c                      |    9 +++++----
+ 2 files changed, 26 insertions(+), 6 deletions(-)
+
+diff --git a/board/pxa/common/usbeth/ether-mvu2o.c b/board/pxa/common/usbeth/ether-mvu2o.c
+index 6dfd10f..9f7108e 100644
+--- a/board/pxa/common/usbeth/ether-mvu2o.c
++++ b/board/pxa/common/usbeth/ether-mvu2o.c
+@@ -199,6 +199,7 @@ void ep2_begin(void)
+ static inline int check_usb_connection(void)
+ {
+ 	unsigned int cnt = 0;
++	unsigned long long start;
+ 
+ 	if (usb_connected) return 0;
+ 	else 
+@@ -207,10 +208,15 @@ static inline int check_usb_connection(void)
+ 	/* waiting util connected */
+ 	printf("***** Plug-in USB cable & config usbdnet now ****** \n");
+ 	
++	start = get_ticks();
+ 	while (!usb_connected) {
+ 		//if ( __raw_readl(ICU_INT_STATUS_1) & (1<<(44-32)) ) {
+ 			u2o_int_hndlr(0x11, 0);
+ 		//}
++		if ((start + 3*CONFIG_SYS_HZ) < get_ticks()) {
++			printf("wait for USB cable timeout\n");
++			return 1;
++		}
+ 	}
+ 
+ 	while ( cnt < 0x1000) {
+@@ -265,7 +271,8 @@ static int usb_eth_rx(struct eth_device *dev)
+ {
+ 	int i=10000;
+ 
+-	if(!usb_connected)check_usb_connection();
++	if(!usb_connected)
++		return 0;//check_usb_connection();
+ 
+ 	do{
+ 		//if ( __raw_readl(ICU_INT_STATUS_1) & (1<<(44-32)) ) {
+@@ -292,7 +299,10 @@ static int usb_eth_tx(struct eth_device *dev, volatile void *packet,
+ 	int i,tx_size = length;
+ 	int retry = 3, ret;
+ 
+-	check_usb_connection();
++	//check_usb_connection();
++
++	if(!usb_connected)
++		return 0;//check_usb_connection();
+ 
+ 	tx_done = 0;
+ 	do {
+@@ -338,6 +348,15 @@ int u2o_eth_initialize(u32 base)
+ 
+ 	pxa_usb_open("u2o-eth");
+ 	pxa_usb_start();
++	check_usb_connection();
++#ifdef CONFIG_NETCONSOLE
++	if(usb_connected) {
++		/* switch to netconsole */
++		setenv("ncip","192.168.1.100");
++		setenv("stdin","nc");
++		setenv("stdout","nc");
++	}
++#endif
+ 	return 1;
+ }
+ 
+diff --git a/common/console.c b/common/console.c
+index 00f3384..689d8b0 100644
+--- a/common/console.c
++++ b/common/console.c
+@@ -283,9 +283,11 @@ int getc (void)
+ 
+ int tstc (void)
+ {
+-#ifdef CONFIG_NETCONSOLE
+-	return nc_tstc();
+-#else
++	char *env;
++	env = getenv("stdin");
++	if (strcmp(env, "nc") == 0) {
++		return nc_tstc();
++	}
+ #ifdef CONFIG_DISABLE_CONSOLE
+ 	if (gd->flags & GD_FLG_DISABLE_CONSOLE)
+ 		return 0;
+@@ -298,7 +300,6 @@ int tstc (void)
+ 
+ 	/* Send directly to the handler */
+ 	return serial_tstc ();
+-#endif
+ }
+ 
+ void putc (const char c)
+-- 
+1.6.0.4
+

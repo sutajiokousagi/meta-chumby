@@ -1,0 +1,25 @@
+From 09804602b2af6e0bfdf2167cd919f6cf84a07864 Mon Sep 17 00:00:00 2001
+From: Bin Yang <bin.yang@marvell.com>
+Date: Mon, 6 Jul 2009 17:14:39 +0800
+Subject: [PATCH] pxa: disable levante ttc mode by default
+
+Signed-off-by: Bin Yang <bin.yang@marvell.com>
+---
+ board/pxa/common/freq.c |    1 -
+ 1 files changed, 0 insertions(+), 1 deletions(-)
+
+diff --git a/board/pxa/common/freq.c b/board/pxa/common/freq.c
+index f2c329c..ef71ed7 100644
+--- a/board/pxa/common/freq.c
++++ b/board/pxa/common/freq.c
+@@ -891,7 +891,6 @@ int set_volt(unsigned int vol)
+ 	i2c_writeb(0x30, 0x40, 0x0);	/* enable GI2C access to BUCK1_SET */
+ 	i2c_writeb(0x30, 0x24, cnt);	/* set BUCK1 voltage */
+ 	i2c_writeb(0x30, 0x20, 0x01);	/* let it go ramping */
+-	sanremo_ttc_mode();
+ #endif
+ 	return 0;
+ }
+-- 
+1.6.0.4
+

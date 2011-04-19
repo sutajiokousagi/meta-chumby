@@ -1,0 +1,135 @@
+From c7b803324d9340ef5c6f6b27bd669f93ba2f9a55 Mon Sep 17 00:00:00 2001
+From: Lei Wen <leiwen@marvell.com>
+Date: Tue, 16 Jun 2009 17:50:12 +0800
+Subject: [PATCH] bbm: correct bbm behavior when erase meet bad block
+
+Signed-off-by: Lei Wen <leiwen@marvell.com>
+---
+ drivers/mtd/nand/pxa3xx_nand.c           |    7 ++++---
+ drivers/mtd/pxa3xx_bbm.c                 |   22 +++++++---------------
+ include/asm-arm/arch-pxa168/pxa3xx_bbm.h |    1 +
+ include/nand.h                           |    4 ++--
+ 4 files changed, 14 insertions(+), 20 deletions(-)
+
+diff --git a/drivers/mtd/nand/pxa3xx_nand.c b/drivers/mtd/nand/pxa3xx_nand.c
+index 758c7ec..d5594ba 100644
+--- a/drivers/mtd/nand/pxa3xx_nand.c
++++ b/drivers/mtd/nand/pxa3xx_nand.c
+@@ -690,7 +690,9 @@ RETRY:
+ 		/* Stop State Machine for next command cycle */
+ 		pxa3xx_nand_stop(nand);
+ 
+-		if (!ret && !nand->errcode) {
++		if (nand->errcode & ERR_BBERR)
++			mtd->block_markbad(mtd, addr);
++		else if (!ret && !nand->errcode) {
+ 			printk(KERN_ERR "IRQ timeout, command %x, ndcb1 %x, \
+ 					\nndcb2 %x, state %x, cmd seqs %x\n", \
+ 					command, info->ndcb1, info->ndcb2,  \
+@@ -781,7 +783,7 @@ static int pxa3xx_nand_waitfunc(struct mtd_info *mtd, struct nand_chip *this)
+ 	struct pxa3xx_nand_info *info = mtd->priv;
+ 	struct pxa3xx_nand *nand = info->nand_data;
+ 
+-	if (nand->errcode & (ERR_BBERR | ERR_SENDCMD))
++	if (nand->errcode & ERR_SENDCMD)
+ 		return NAND_STATUS_FAIL;
+ 	else
+ 		return 0;
+@@ -1294,7 +1296,6 @@ static int pxa3xx_nand_probe(struct platform_device *pdev)
+ 			bbm->show(mtd);
+ 			printk("\n");
+ 
+-			mtd->size -= bbm->max_reloc_entry << bbm->erase_shift;
+ 			add_mtd_partitions(mtd, pdata->parts[i],    \
+ 					pdata->nr_parts[i]);
+ 		}
+diff --git a/drivers/mtd/pxa3xx_bbm.c b/drivers/mtd/pxa3xx_bbm.c
+index 5a229a5..ced7d44 100644
+--- a/drivers/mtd/pxa3xx_bbm.c
++++ b/drivers/mtd/pxa3xx_bbm.c
+@@ -38,12 +38,13 @@ static int pxa3xx_init_reloc_tb(struct mtd_info *mtd)
+ 	bbm->erase_shift = ffs(mtd->erasesize) - 1;
+ 
+ 	pages = mtd->erasesize >> bbm->page_shift;
+-	slots = mtd_div_by_eb(mtd->size, mtd);
+-	slots = (slots * 2) / 100;
++	bbm->reloc_begin = mtd_div_by_eb(mtd->size, mtd);
++	slots = (bbm->reloc_begin * 2) / 100;
+ 	slots = (slots < PXA_MAX_RELOC_ENTRY) ? slots : PXA_MAX_RELOC_ENTRY;
+ 
+ 	bbm->max_slots		= pages;
+ 	bbm->max_reloc_entry	= slots;
++	bbm->reloc_begin	-= bbm->max_reloc_entry;
+ 	bbm->table_init		= 0;
+ 
+ 	bbm->data_buf = kzalloc(size, GFP_KERNEL);
+@@ -105,7 +106,7 @@ int update_reloc_tb(struct mtd_info *mtd, int block)
+ 	for (i = 0; i < table->total; i ++) {
+ 		int _rel = (item[i].to != 65535) ? item[i].to : item[i].from;
+ 
+-		rel_dist[(_rel - mtd_div_by_eb(mtd->size, mtd) + bbm->max_reloc_entry)] = 1;
++		rel_dist[_rel - bbm->reloc_begin] = 1;
+ 	}
+ 
+ 	while (1) {
+@@ -116,19 +117,10 @@ int update_reloc_tb(struct mtd_info *mtd, int block)
+ 			}
+ 		}
+ 
+-		reloc_block = reloc_block + mtd_div_by_eb(mtd->size, mtd) - bbm->max_reloc_entry;
+-
+-		if (reloc_block < (mtd_div_by_eb(mtd->size, mtd) - bbm->max_reloc_entry)) {
+-			if (entry_num >= 0) {
+-				item[entry_num].from = item[entry_num].to;
+-				item[entry_num].to = 65535;
+-			}
+-			return -ENOSPC;
+-		}
+-
++		reloc_block = reloc_block + bbm->reloc_begin;
+ 		memset(&instr, 0, sizeof(struct erase_info));
+ 		instr.mtd = mtd;
+-		instr.addr = reloc_block << bbm->erase_shift;
++		instr.addr = (unsigned long long)reloc_block << bbm->erase_shift;
+ 		instr.len = (1 << bbm->erase_shift);
+ 
+ 		ret = mtd->erase(mtd, &instr);
+@@ -143,7 +135,7 @@ int update_reloc_tb(struct mtd_info *mtd, int block)
+ 
+ 				item[table->total].to = 65535;
+ 				table->total++;
+-				rel_dist[(reloc_block - (mtd_div_by_eb(mtd->size, mtd) + bbm->max_reloc_entry))] = 1;;
++				rel_dist[reloc_block - bbm->reloc_begin] = 1;;
+ 				continue;
+ 			} else
+ 				return -EINVAL;
+diff --git a/include/asm-arm/arch-pxa168/pxa3xx_bbm.h b/include/asm-arm/arch-pxa168/pxa3xx_bbm.h
+index b90f14b..3585073 100644
+--- a/include/asm-arm/arch-pxa168/pxa3xx_bbm.h
++++ b/include/asm-arm/arch-pxa168/pxa3xx_bbm.h
+@@ -19,6 +19,7 @@ struct pxa3xx_bbm {
+ 	/* NOTES: this field impact the partition table. Please make sure
+ 	 * that this value align with partitions definition.
+ 	 */
++	int			reloc_begin;
+ 	int			max_reloc_entry;
+ 	int			max_slots;
+ 	int			current_slot;
+diff --git a/include/nand.h b/include/nand.h
+index 293d481..8af6f77 100644
+--- a/include/nand.h
++++ b/include/nand.h
+@@ -103,8 +103,8 @@ struct nand_read_options {
+ typedef struct nand_read_options nand_read_options_t;
+ 
+ struct nand_erase_options {
+-	ulong length;		/* number of bytes to erase */
+-	ulong offset;		/* first address in NAND to erase */
++	unsigned long long length;		/* number of bytes to erase */
++	unsigned long long offset;		/* first address in NAND to erase */
+ 	int quiet;		/* don't display progress messages */
+ 	int jffs2;		/* if true: format for jffs2 usage
+ 				 * (write appropriate cleanmarker blocks) */
+-- 
+1.6.0.4
+

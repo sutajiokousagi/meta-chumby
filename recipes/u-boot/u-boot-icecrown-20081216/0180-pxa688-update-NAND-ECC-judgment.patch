@@ -1,0 +1,26 @@
+From 3f41bcbbc7c643d982cff308e04c54fe6422567d Mon Sep 17 00:00:00 2001
+From: Mingliang Hu <mingliang.hu@marvell.com>
+Date: Thu, 25 Feb 2010 18:27:52 +0800
+Subject: [PATCH] pxa688: update NAND ECC judgment
+
+Signed-off-by: Mingliang Hu <mingliang.hu@marvell.com>
+---
+ drivers/mtd/nand/pxa3xx_nand.c |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/drivers/mtd/nand/pxa3xx_nand.c b/drivers/mtd/nand/pxa3xx_nand.c
+index 9855148..f382621 100644
+--- a/drivers/mtd/nand/pxa3xx_nand.c
++++ b/drivers/mtd/nand/pxa3xx_nand.c
+@@ -1243,7 +1243,7 @@ static int pxa3xx_nand_detect_flash(struct pxa3xx_nand *nand)
+ 				printf("detect chip id %x on cs %d, %s\n",
+ 						f->chip_id, chip_select, f->name);
+ #ifdef CONFIG_CPU_PXA688
+-				if(cpu_is_pxa688_z0()){
++				if(cpu_is_pxa688_z0() && (f->chip_id == 0x382c)){
+ 					printf("MMP2 Z0 is using ECC_HAMMIN\n");
+ 					f->ecc_type = ECC_HAMMIN;
+ 				}
+-- 
+1.6.0.4
+

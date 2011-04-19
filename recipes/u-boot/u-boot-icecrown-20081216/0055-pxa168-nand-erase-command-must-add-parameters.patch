@@ -1,0 +1,29 @@
+From 13e17c3d04f8aa63e4d9cfee193a059d79b5380d Mon Sep 17 00:00:00 2001
+From: Lei Wen <leiwen@marvell.com>
+Date: Wed, 20 May 2009 14:05:49 +0800
+Subject: [PATCH] pxa168: nand erase command must add parameters
+
+Signed-off-by: Lei Wen <leiwen@marvell.com>
+---
+ common/cmd_nand.c |    5 +++++
+ 1 files changed, 5 insertions(+), 0 deletions(-)
+
+diff --git a/common/cmd_nand.c b/common/cmd_nand.c
+index 4cc827a..8614962 100644
+--- a/common/cmd_nand.c
++++ b/common/cmd_nand.c
+@@ -154,6 +154,11 @@ arg_off_size(int argc, char *argv[], nand_info_t *nand, ulong *off, size_t *size
+ 	}
+ #endif
+ 
++	if (argc < 2) {
++		printf("You should specify the offset and size parameters!!!\n");
++		return -1;
++	}
++
+ 	if (argc >= 1) {
+ 		if (!(str2long(argv[0], off))) {
+ 			printf("'%s' is not a number\n", argv[0]);
+-- 
+1.6.0.4
+

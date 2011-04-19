@@ -1,0 +1,27 @@
+From e4b425c08119e905c9291583c7e564bb520bd35d Mon Sep 17 00:00:00 2001
+From: Lei Wen <leiwen@marvell.com>
+Date: Thu, 13 Aug 2009 14:08:03 +0800
+Subject: [PATCH] console: disbale repeatable command by default
+
+---
+ common/main.c |    4 ++++
+ 1 files changed, 4 insertions(+), 0 deletions(-)
+
+diff --git a/common/main.c b/common/main.c
+index 8945fb1..abbdc56 100644
+--- a/common/main.c
++++ b/common/main.c
+@@ -1308,6 +1308,10 @@ int run_command (const char *cmd, int flag)
+ 	int repeatable = 1;
+ 	int rc = 0;
+ 
++#ifndef CONFIG_REPEAT_COMMNAD
++	repeatable = 0;
++#endif
++
+ #ifdef DEBUG_PARSER
+ 	printf ("[RUN_COMMAND] cmd[%p]=\"", cmd);
+ 	puts (cmd ? cmd : "NULL");	/* use puts - string may be loooong */
+-- 
+1.6.0.4
+

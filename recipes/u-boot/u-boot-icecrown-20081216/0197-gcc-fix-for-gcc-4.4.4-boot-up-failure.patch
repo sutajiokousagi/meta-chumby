@@ -1,0 +1,56 @@
+From 4024a82a88a6513084791c4b4d473f47acefb58e Mon Sep 17 00:00:00 2001
+From: Mingliang Hu <mhu4@marvell.com>
+Date: Wed, 2 Jun 2010 17:48:38 +0800
+Subject: [PATCH] gcc: fix for gcc-4.4.4 boot up failure
+
+Signed-off-by: Mingliang Hu <mhu4@marvell.com>
+---
+ board/pxa/flint/flint.c   |    3 ++-
+ board/pxa/jasper/jasper.c |    3 ++-
+ 2 files changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/board/pxa/flint/flint.c b/board/pxa/flint/flint.c
+index cebbcc0..4430174 100644
+--- a/board/pxa/flint/flint.c
++++ b/board/pxa/flint/flint.c
+@@ -23,6 +23,8 @@
+ #include <asm/arch/mfp.h>
+ #include <asm/arch/mfp-pxa688.h>
+ 
++DECLARE_GLOBAL_DATA_PTR;
++
+ static mfp_cfg_t flint_pin_config[] __initdata = {
+ 	/* UART3 */
+ 	GPIO51_UART3_RXD,
+@@ -228,7 +230,6 @@ void freq_chg_seq(u32 sram_code_addr, u32 sram_stack_addr, u32 op);
+ 
+ int board_init (void)
+ {
+-	DECLARE_GLOBAL_DATA_PTR;
+ 	volatile unsigned int reg;
+ 	clock_config();
+ 	freq_init_sram(0xd1020000);
+diff --git a/board/pxa/jasper/jasper.c b/board/pxa/jasper/jasper.c
+index 15d09ff..230ced0 100644
+--- a/board/pxa/jasper/jasper.c
++++ b/board/pxa/jasper/jasper.c
+@@ -23,6 +23,8 @@
+ #include <asm/arch/mfp.h>
+ #include <asm/arch/mfp-pxa688.h>
+ 
++DECLARE_GLOBAL_DATA_PTR;
++
+ static mfp_cfg_t jasper_pin_config[] __initdata = {
+ 	/*TWSI1*/
+ 	TWSI1_SCL,
+@@ -180,7 +182,6 @@ unsigned long initdram (int board_type)
+ 
+ int board_init (void)
+ {
+-    DECLARE_GLOBAL_DATA_PTR;
+     volatile unsigned int reg;
+ 
+     /* TODO: Should only enable the bits that make sense at this point */
+-- 
+1.6.0.4
+

@@ -1,0 +1,105 @@
+From 1741e902f79e593568db3616266c267625680736 Mon Sep 17 00:00:00 2001
+From: Mingliang Hu <mingliang.hu@marvell.com>
+Date: Thu, 20 Aug 2009 15:05:33 +0800
+Subject: [PATCH] pxa688: add cache flush all replacement
+ Signed-off-by: Jiangang Jing <jgjing@marvell.com>
+ Acked-by: Mingliang Hu <mingliang.hu@marvell.com>
+
+---
+ cpu/88SV581xV6/cpu.c        |   22 ++++++++++++++++++++++
+ cpu/88SV581xV6/start.S      |   22 ++++++++++++++++++++++
+ include/configs/mmp2_fpga.h |    5 +++++
+ 3 files changed, 49 insertions(+), 0 deletions(-)
+ mode change 100644 => 100755 cpu/88SV581xV6/start.S
+
+diff --git a/cpu/88SV581xV6/cpu.c b/cpu/88SV581xV6/cpu.c
+index 1e94f7d..d6b2a05 100644
+--- a/cpu/88SV581xV6/cpu.c
++++ b/cpu/88SV581xV6/cpu.c
+@@ -181,8 +181,30 @@ int dcache_status (void)
+ /* flush I/D-cache */
+ static void cache_flush (void)
+ {
++#ifdef CONFIG_FLUSH_ALL_REPLACEMENT
++	unsigned long set_way;
++	int set, way;
++
++	for (set = 0; set < 0x80; set++) {
++		for (way = 0; way < 8; way++) {
++			set_way = (way << 29) | (set << 5);
++			__asm__("mcr p15, 0, %0, c7, c6, 2" : : "r"(set_way));
++		}
++	}
++
++	for (set = 0; set < 0x100; set++) {
++		for (way = 0; way < 4; way++) {
++			set_way = (way << 30) | (set << 5);
++			__asm__("mcr p15, 0, %0, c7, c5, 2" : : "r"(set_way));
++		}
++	}
++	__asm__("mcr p15, 0, %0, c7, c5, 4" : : "r"(0));
++	__asm__("mcr p15, 0, %0, c7, c5, 6" : : "r"(0));
++#else
+ 	/* invalidate both caches and flush btb */
+ 	asm ("mcr p15, 0, %0, c7, c7, 0": :"r" (0));
++#endif
++
+ 	/* mem barrier to sync things */
+ 	asm ("mcr p15, 0, %0, c7, c10, 4": :"r" (0));
+ }
+diff --git a/cpu/88SV581xV6/start.S b/cpu/88SV581xV6/start.S
+old mode 100644
+new mode 100755
+index 32292ee..7cb86fa
+--- a/cpu/88SV581xV6/start.S
++++ b/cpu/88SV581xV6/start.S
+@@ -159,9 +159,31 @@ cpu_init_crit:
+ 	 * flush v4 I/D caches
+ 	 */
+ 	mov	r0, #0
++#ifdef CONFIG_FLUSH_ALL_REPLACEMENT
++	mov     r0, #0xf00
++	orr     r0, r0, #0x00e0
++1:	mcr     p15, 0, r0, c7, c6, 2         @ invalidate L1 D line
++	adds    r0, r0, #0x20000000
++	bcc     1b
++	subs    r0, r0, #0x20
++	bpl     1b
++	
++	mov     r0, #0x1f00
++	orr     r0, r0, #0x00e0
++2:	mcr     p15, 0, r0, c7, c5, 2         @ invalidate icache line
++	adds    r0, r0, #0x40000000
++	bcc     2b
++	subs    r0, r0, #0x20
++	bpl     2b
++	mov	r0, #0
++	mcr     p15, 0, r0, c7, c5, 4         @ flush frefetch buffers
++	mcr     p15, 0, r0, c7, c5, 6         @ flush entire branch target cache
++#else
+ 	mcr	p15, 0, r0, c7, c7, 0	/* flush v3/v4 cache */
++#endif
+ 	mcr	p15, 0, r0, c8, c7, 0	/* flush v4 TLB */
+ 
++
+ 	/*
+ 	 * disable MMU stuff and caches
+ 	 */
+diff --git a/include/configs/mmp2_fpga.h b/include/configs/mmp2_fpga.h
+index a94259c..6c0fc4e 100644
+--- a/include/configs/mmp2_fpga.h
++++ b/include/configs/mmp2_fpga.h
+@@ -235,5 +235,10 @@
+ #endif
+ #define CONFIG_NET_RETRY_COUNT 		10000
+ 
++/*-----------------------------------------------------------------------
++ * cache set/way configuration
++ */
++#undef CONFIG_FLUSH_ALL_REPLACEMENT
++
+ #endif
+ /* __CONFIG_H */
+-- 
+1.6.0.4
+

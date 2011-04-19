@@ -1,0 +1,4475 @@
+From 210cd2aa5a1a0b81d4edf898692d1110d3fc8429 Mon Sep 17 00:00:00 2001
+From: Mingliang Hu <mingliang.hu@marvell.com>
+Date: Tue, 9 Feb 2010 19:18:14 +0800
+Subject: [PATCH] pxa688: sync flash driver with master
+
+Signed-off-by: Mingliang Hu <mingliang.hu@marvell.com>
+---
+ board/pxa/common/bbt.c                       |  147 ++-
+ board/pxa/common/nand.c                      |  249 +++++
+ board/pxa/common/tftp.c                      |   34 +-
+ common/env_common.c                          |    3 +
+ drivers/mtd/nand/nand_base.c                 |    9 +-
+ drivers/mtd/nand/pxa3xx_nand.c               |  844 +++++++++-------
+ drivers/mtd/onenand/onenand_base.c           |   68 +-
+ drivers/mtd/onenand/onenand_uboot.c          |   19 +-
+ drivers/mtd/pxa3xx_bbm.c                     | 1402 ++++++++++++++++++++++----
+ drivers/serial/ns16550.c                     |    2 +
+ include/asm-arm/arch-pxa688/common.h         |   16 +-
+ include/asm-arm/arch-pxa688/nand_supported.h |  175 +++-
+ include/asm-arm/arch-pxa688/pxa3xx_bbm.h     |  127 ++-
+ include/asm-arm/arch-pxa688/pxa3xx_nand.h    |   52 +-
+ include/configs/mmp2_flint.h                 |    2 +
+ include/configs/mmp2_jasper.h                |    6 +-
+ include/linux/mtd/mtd.h                      |   13 +
+ include/linux/mtd/nand.h                     |    2 +
+ include/linux/mtd/onenand.h                  |    2 +
+ include/ubi_uboot.h                          |    4 -
+ 20 files changed, 2467 insertions(+), 709 deletions(-)
+ mode change 100755 => 100644 include/configs/mmp2_jasper.h
+
+diff --git a/board/pxa/common/bbt.c b/board/pxa/common/bbt.c
+index be0ce81..e2a92b0 100644
+--- a/board/pxa/common/bbt.c
++++ b/board/pxa/common/bbt.c
+@@ -1,28 +1,24 @@
+ #include <command.h>
+ #include <malloc.h>
+-#include <asm/arch-pxa168/common.h>
++#include <asm/arch/common.h>
+ #include <linux/mtd/mtd.h>
+-#include <asm/arch-pxa168/pxa3xx_bbm.h>
++#include <asm/arch/pxa3xx_bbm.h>
+ 
+ extern int nand_curr_device;
+ extern struct mtd_info nand_info[];
+ extern struct mtd_info onenand_mtd;
+-extern int update_reloc_tb(struct mtd_info *mtd, int block);
++extern int pxa3xx_update_bbt(struct mtd_info *mtd, loff_t offs);
+ 
++int not_updating = 1;
+ int do_bbt (cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
+ {
+ 	struct pxa3xx_bbm *bbm;
+ 	struct mtd_info *mtd;
+-	struct reloc_table *table;
+-	struct reloc_item *item;
++	int is_nand = 0, ret, block, bbm_type = BBM_NONE;
+ 	struct erase_info instr = {
+-		.callback	= NULL,
++		.callback       = NULL,
+ 	};
+-	int ntim_s, reloc_s, pages, ofs, block;
+-	int is_nand = 0, ret, maxsize;
+-	size_t retlen;
+ 	ulong addr;
+-	void *buf;
+ 
+ 	switch (argc) {
+ 	case 0:
+@@ -33,6 +29,7 @@ int do_bbt (cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
+ 		return 1;
+ 	case 3:
+ 	case 4:
++	case 5:
+ 		if (strcmp(argv[2], "nand") == 0) {
+ 
+ 			is_nand = 1;
+@@ -43,7 +40,8 @@ int do_bbt (cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
+ 			}
+ 		}
+ #ifdef CONFIG_CMD_ONENAND
+-		else if (strcmp(argv[2], "onenand") == 0) {
++		if (strcmp(argv[2], "onenand") == 0) {
++			is_nand = 2;
+ 			if (onenand_mtd.size == 0) {
+ 				printf ("There is no onenand device\n");
+ 				return 0;
+@@ -52,68 +50,101 @@ int do_bbt (cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
+ 			mtd = &onenand_mtd;
+ 		}
+ #endif
+-		else {
++		if (!is_nand)
++		{
+ 			printf ("Usage:\n%s\n", cmdtp->usage);
+ 			return 1;
+ 		}
+ 
+ 		bbm = mtd->bbm;
++		if (strcmp (argv[1], "show") == 0) {
++			if (bbm)
++				bbm->is_init = 0;
+ 
+-		if (strcmp (argv[1], "show") == 0)
+-			bbm->show(mtd);
++			pxa3xx_scan_bbt(mtd);
++		}
+ 		else if (strcmp(argv[1], "init") == 0) {
+-			buf = malloc(mtd->erasesize);
+-			if (!buf) {
+-				printf("Malloc fail, exit\n");
+-				return 0;
++			if (argc == 3)
++				bbm_type = BBM_LEGACY;
++			else {
++				if (strcmp(argv[3], "new") == 0)
++					bbm_type = BBM_NEW;
++				else if (strcmp(argv[3], "old") == 0)
++					bbm_type = BBM_LEGACY;
++
++				if (bbm_type == BBM_NONE) {
++					printf("You should either select"
++							" new or old\n");
++					return 1;
++				}
+ 			}
+-			instr.addr = 0;
+-			instr.len = mtd->erasesize;
+ 
+-			if (is_nand)
+-				printf("NAND relocation table init... ");
+-			else
+-				printf("ONENAND relocation table init... ");
++			pxa3xx_bbm_recovery(mtd, bbm_type, NULL, 0, 1);
++		}
++		else if (strcmp(argv[1], "recreate") == 0) {
++			puts("Warning: "
++			"recreate option will erase all content on your flash!\n"
++			"         "
++			"are sure of what you are doing!\n"
++			"Also SHOULD NOTE THAT this only for old BBM scheme!\n"
++			"\nReally erase this NAND flash for recreate bbt? <y/N>\n");
++
++			do {
++				if (getc() == 'y' && getc() == '\r')
++					break;
++
++				puts("recreate aborted\n");
++				return -1;
++			} while (0);
+ 
+-			printf("waiting... ");
+-			mtd->read(mtd, 0, mtd->erasesize, &retlen, buf);
+-			ret = mtd->erase(mtd, &instr);
+-			if (ret) {
+-				printf("erase block 0 failed\n");
+-				return 0;
++			addr = (ulong)simple_strtoul(argv[3], NULL, 16);
++			block = addr >> mtd->erasesize_shift;
++			if (block <= 0)
++				block = 1;
++			printf("ready to init flash...\n");
++			bbm->no_sync = 1;
++			instr.addr = mtd->erasesize * block;
++			instr.len = mtd->erasesize;
++
++			printf("erasing..\n");
++			while (instr.addr < mtd->size) {
++				printf("%llx\r", instr.addr);
++				ret = mtd->erase(mtd, &instr);
++				if (ret) {
++					printf("erase failed at %llx\n", instr.addr);
++					return -1;
++				}
++				instr.addr += mtd->erasesize;
++			}
++			printf("\ndone!\n");
++			bbm->no_sync = 0;
++			pxa3xx_update_bbt(mtd, 0);
++		}
++		else if (strcmp(argv[1], "convert") == 0) {
++			struct reloc_table *table;
++			struct reloc_item *item;
++			int old_bbm_slot;
++			char *buf;
++
++			buf = malloc(mtd->writesize);
++			old_bbm_slot = page_search(mtd, PXA_BEGIN_SLOT,
++			(mtd->erasesize >> mtd->writesize_shift) - 1,
++			ORDER_REVERSE, PXA_RELOC_HEADER, buf, BBM_HALF_MASK);
++			if (old_bbm_slot < 0) {
++				printf("Seems there is no old bbm slot on your board!!\n");
++				printf("Convertion failed!!!\n");
++				return 1;
+ 			}
+ 
+-			item	= bbm->reloc;
+-			table	= bbm->table;
+-			pages	= bbm->max_slots;
+-			ntim_s	= mtd->writesize * PXA_BEGIN_SLOT;
+-			reloc_s	= mtd->writesize * (pages - 1);
+-			maxsize = mtd->size - (bbm->max_reloc_entry << bbm->erase_shift);
+-
+-			memset(bbm->data_buf, 0xff, mtd->writesize);
+-			bbm->current_slot = bbm->max_slots - 1;
+-			table->header	  = PXA_RELOC_HEADER;
+-			table->total	  = 0;
+-			bbm->table_init	  = 0;
+-			
+-			for (ofs = 0; ofs < maxsize; ofs += mtd->erasesize)
+-				if (mtd->block_isbad(mtd, ofs))
+-					update_reloc_tb(mtd, ofs >> bbm->erase_shift);
+-
+-			bbm->table_init	  = 1;
+-			memset(buf + ntim_s, 0xff, mtd->erasesize - ntim_s);
+-			memcpy(buf + reloc_s, bbm->data_buf, mtd->writesize);
+-			
+-			mtd->write(mtd, 0, mtd->erasesize, &retlen, buf);
+-			printf("init done!!!\n\n");
+-
+-			free(buf);
++			table = (struct reloc_table *)buf;
++			item = (struct reloc_item *)&table[1];
++			pxa3xx_bbm_recovery(mtd, BBM_NEW, item, table->total, 0);
+ 		}
+ 		else if (strcmp(argv[1], "mark") == 0) {
+ 			addr = (ulong)simple_strtoul(argv[3], NULL, 16);
+-			block = addr >> bbm->erase_shift;
++			block = addr >> mtd->erasesize_shift;
+ 
+-			ret = bbm->markbad(mtd, addr);
++			ret = pxa3xx_block_markbad(mtd, addr);
+ 			if (ret == 0) {
+ 				printf("block %d successfully marked as bad\n",
+ 						block);
+@@ -137,5 +168,7 @@ U_BOOT_CMD(
+ 	"bbt\t- Bad Block Management\n",
+ 	"show  [nand | onenand]\t- show nand/onenand relocation table\n"
+ 	"bbt init  [nand | onenand]\t- init relocation table\n"
++	"bbt recreate [nand | onenand] addr\t- rebuild the bbt by erasing the whole flash after sepecified addr\n"
++	"bbt convert [nand | onenand]\t- convert the old bbm to new bbm scheme if old existed\n"
+ 	"bbt mark  [nand | onenand] addr\t- mark bad block\n"
+ );
+diff --git a/board/pxa/common/nand.c b/board/pxa/common/nand.c
+index 1411ce6..ea3c2aa 100644
+--- a/board/pxa/common/nand.c
++++ b/board/pxa/common/nand.c
+@@ -1,4 +1,5 @@
+ #include <nand.h>
++#include <spi_flash.h>
+ #include <common.h>
+ #include <linux/types.h>
+ #include <linux/mtd/mtd.h>
+@@ -25,7 +26,12 @@
+ #endif
+ 
+ int nand_curr_device = -1;
++#ifdef CONFIG_CMD_NAND
+ nand_info_t nand_info[CONFIG_SYS_MAX_NAND_DEVICE];
++#endif
++#ifdef CONFIG_CMD_ONENAND
++extern struct mtd_info onenand_mtd;
++#endif
+ 
+ void nand_init()
+ {
+@@ -55,3 +61,246 @@ void nand_init()
+ 	if (nand_curr_device < 0)
+ 		printf("No NAND dev is found !!!\n\n");
+ }
++
++struct yaffs_oob_desc {
++	int     offset;
++	int     size;
++};
++static struct yaffs_oob_desc yaffs_oob = {2, 38};
++extern int mtd_direct_write_addr;
++extern int callback_device_is_nand;
++extern int is_yaffs;
++int mtd_burn_callback(ulong load_addr, int *loop_offset, int force)
++{
++	struct mtd_info *mtd = NULL;
++	struct mtd_oob_ops ops;
++	struct erase_info instr = {
++		.callback	= NULL,
++	};
++	size_t retlen;
++	int ret, length, blocksize, is_nand;
++
++#ifdef CONFIG_CMD_NAND
++	if (callback_device_is_nand == 1) {
++		is_nand = 1;
++		mtd = &nand_info[nand_curr_device];
++	}
++#endif
++#ifdef CONFIG_CMD_ONENAND
++	if (callback_device_is_nand == 0) {
++		is_nand = 0;
++		mtd = &onenand_mtd;
++	}
++#endif
++
++	if (!mtd)
++		return 0;
++
++	if (is_yaffs)
++		blocksize = mtd->erasesize + (mtd->oobsize
++			<< (mtd->erasesize_shift - mtd->writesize_shift));
++	else
++		blocksize = mtd->erasesize;
++
++	if (*loop_offset >= blocksize || force){
++		instr.addr = mtd_direct_write_addr;
++		instr.len = mtd->erasesize;
++
++		ret = mtd->erase(mtd, &instr);
++		if (ret) {
++			printf("\nerase one block at %x failed\n", instr.addr);
++			return 1;
++		}
++
++		if (force) {
++			length = *loop_offset;
++			if (length < 0) {
++				printf("Error, seems buffer overflow...\n");
++				return 1;
++			}
++
++			if (is_nand || !is_yaffs)
++				length = (length + mtd->writesize - 1) & ~mtd->writesize_mask;
++			else {
++				length = length + mtd->writesize + mtd->oobsize - 1;
++				length /= (mtd->writesize + mtd->oobsize);
++				length *= (mtd->writesize + mtd->oobsize);
++			}
++
++			memset(load_addr + *loop_offset, 0xff, length - *loop_offset);
++		}
++		else {
++			if (is_nand)
++				length = mtd->erasesize;
++			else
++				length = blocksize;
++		}
++
++		if (unlikely(is_yaffs)) {
++			ops.datbuf = load_addr;
++			ops.oobbuf = load_addr;
++			ops.mode = MTD_OOB_PLACE;
++			ops.len = length;
++			ops.ooboffs = yaffs_oob.offset;
++			ops.ooblen = yaffs_oob.size;
++			ret = mtd->write_oob(mtd, mtd_direct_write_addr, &ops);
++		}
++		else
++			ret = mtd->write(mtd, mtd_direct_write_addr, length,
++					&retlen, (void *)load_addr);
++
++		if (ret) {
++			printf("\nWrite one block to %x failed!!!\n", instr.addr);
++			return 1;
++		}
++
++		*loop_offset -= blocksize;
++		if (*loop_offset > 0) {
++			memcpy(load_addr, load_addr + blocksize, *loop_offset);
++		}
++		mtd_direct_write_addr += mtd->erasesize;
++	}
++
++	return 0;
++}
++
++#ifdef CONFIG_SPI_COPYBACK_NAND
++#define BACK_NTIM_OF		0x1000
++#define BACK_OBM_OF		0x30000
++#define BACK_UBOOT_OF		0x40000
++#define BACK_ZIMAGE_OF		0x100000
++#define BURN_ZIMAGE_OF		0x400000
++#define MAX_NTIM_SIZE		0x1000
++#define MAX_OBM_SIZE		0xf000
++#define MAX_UBOOT_SIZE		0x30000
++#define MAX_ZIMAGE_SIZE		0x300000
++#define NTIM_HEADER_1		0x30102
++#define NTIM_HEADER_2		0x54494d48
++#define BBT_INIT_COMMAND	"bbt init nand new"
++int nand_update_callback(void)
++{
++	void *buf = (void *)0x500000;
++	size_t retlen;
++	int ret;
++	unsigned int header_1, header_2;
++	struct mtd_info *mtd;
++
++	if (nand_curr_device != 0)
++		return -1;
++
++	mtd = &nand_info[0];
++	mtd->read(mtd, 0, mtd->writesize, &retlen, buf);
++	header_1 = *(unsigned int*)buf;
++	header_2 = *((unsigned int*)buf + 1);
++	if (header_1 == NTIM_HEADER_1 && header_2 == NTIM_HEADER_2) {
++		return 1;
++	}
++	else {
++		extern int not_updating;
++		extern struct spi_flash *flash;
++		struct erase_info instr = {
++			.callback	= NULL,
++		};
++
++		printf("\n### begin to update nand from spi nor ###\n");
++		run_command("nand device 1", 0);
++		not_updating = 1;
++		run_command(BBT_INIT_COMMAND, 0);
++		run_command("nand device 0", 0);
++		not_updating = 0;
++		run_command(BBT_INIT_COMMAND, 0);
++		not_updating = 1;
++		instr.addr = mtd->erasesize;
++		instr.len = instr.addr * 3;
++		printf("\nerasing..");
++		ret = mtd->erase(mtd, &instr);
++		if (ret) {
++			printf("erase 1-3 block failed!!!\n");
++			goto UPDATE_FAILED;
++		}
++
++		instr.addr = BACK_ZIMAGE_OF;
++		instr.len = MAX_ZIMAGE_SIZE * 2;
++		ret = mtd->erase(mtd, &instr);
++		if (ret) {
++			printf("erase 0x100000-0x700000 failed!!!\n");
++			goto UPDATE_FAILED;
++		}
++
++		printf("spi read 1..");
++		ret = spi_flash_read(flash, BACK_NTIM_OF, MAX_NTIM_SIZE, buf);
++		if (ret) {
++			printf("read ntim failed\n");
++			goto UPDATE_FAILED;
++		}
++
++		printf("2..");
++		buf += MAX_NTIM_SIZE;
++		ret = spi_flash_read(flash, BACK_OBM_OF, MAX_OBM_SIZE, buf);
++		if (ret) {
++			printf("read obm failed\n");
++			goto UPDATE_FAILED;
++		}
++
++		printf("3..");
++		buf += MAX_OBM_SIZE;
++		ret = spi_flash_read(flash, BACK_UBOOT_OF, MAX_UBOOT_SIZE,
++				buf);
++		if (ret) {
++			printf("read uboot failed\n");
++			goto UPDATE_FAILED;
++		}
++
++		printf("4..");
++		buf += MAX_UBOOT_SIZE;
++		ret = spi_flash_read(flash, BACK_ZIMAGE_OF, MAX_ZIMAGE_SIZE,
++				buf);
++		if (ret) {
++			printf("read zImage failed\n");
++			goto UPDATE_FAILED;
++		}
++
++		printf("nand write 1..");
++		buf = (void *)0x500000;
++		ret = mtd->write(mtd, 0, MAX_NTIM_SIZE, &retlen, buf);
++		if (ret) {
++			printf("update ntim failed!!\n");
++			goto UPDATE_FAILED;
++		}
++
++		printf("2..");
++		buf += MAX_NTIM_SIZE;
++		ret = mtd->write(mtd, mtd->erasesize, MAX_OBM_SIZE, &retlen,
++				buf);
++		if (ret) {
++			printf("update obm failed!!\n");
++			goto UPDATE_FAILED;
++		}
++
++		printf("3..");
++		buf += MAX_OBM_SIZE;
++		ret = mtd->write(mtd, mtd->erasesize * 2, MAX_UBOOT_SIZE,
++				&retlen, buf);
++		if (ret) {
++			printf("update uboot failed!!\n");
++			goto UPDATE_FAILED;
++		}
++
++		printf("4..");
++		buf += MAX_UBOOT_SIZE;
++		ret = mtd->write(mtd, BURN_ZIMAGE_OF, MAX_ZIMAGE_SIZE,
++				&retlen, buf);
++		if (ret) {
++			printf("update zImage failed!!\n");
++			goto UPDATE_FAILED;
++		}
++
++		printf("update done!!\n");
++		return 0;
++UPDATE_FAILED:
++
++		printf("!!!update failed!!!\n");
++		return -1;
++	}
++}
++#endif
+diff --git a/board/pxa/common/tftp.c b/board/pxa/common/tftp.c
+index 38d41ee..cea3e26 100644
+--- a/board/pxa/common/tftp.c
++++ b/board/pxa/common/tftp.c
+@@ -82,6 +82,10 @@ U_BOOT_CMD(
+ );
+ 
+ extern int check_usb_connection(int);
++int mtd_direct_write;
++int is_yaffs;
++int mtd_direct_write_addr;
++int callback_device_is_nand;
+ int do_tftp (cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
+ {
+ 	char *s;
+@@ -106,6 +110,7 @@ int do_tftp (cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
+ 		load_addr = simple_strtoul(s, NULL, 16);
+ 	}
+ 
++	mtd_direct_write = 0;
+ 	switch (argc) {
+ 	case 1:
+ 		break;
+@@ -118,11 +123,36 @@ int do_tftp (cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
+ 			copy_filename(BootFile, argv[1], sizeof(BootFile));
+ 		break;
+ 
+-	case 3:	load_addr = simple_strtoul(argv[1], NULL, 16);
++	case 3:
++		load_addr = simple_strtoul(argv[1], NULL, 16);
+ 		copy_filename (BootFile, argv[2], sizeof(BootFile));
+ 
+ 		break;
+ 
++	case 5:
++		mtd_direct_write = 1;
++		if (strncmp(argv[3], "nand", 4) == 0)
++			callback_device_is_nand = 1;
++		else if (strncmp(argv[3], "onenand", 7) == 0)
++			callback_device_is_nand = 0;
++		else {
++			printf("What you specify is either not onenand or nand"
++				", so I don't do the burning\n");
++			mtd_direct_write = 0;
++		}
++
++		s = strchr(argv[3], '.');
++		if (!strcmp(s, ".y"))
++			is_yaffs= 1;
++		else
++			is_yaffs = 0;
++
++		load_addr = simple_strtoul(argv[1], NULL, 16);
++		copy_filename (BootFile, argv[2], sizeof(BootFile));
++		mtd_direct_write_addr = simple_strtoul(argv[4], NULL, 16);
++
++		break;
++
+ 	default: printf ("Usage:\n%s\n", cmdtp->usage);
+ 		show_boot_progress (-80);
+ 		return 1;
+@@ -135,7 +165,7 @@ int do_tftp (cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
+ U_BOOT_CMD(
+ 	tftpboot,	CONFIG_SYS_MAXARGS,	1,	do_tftp,
+ 	"tftpboot\t-download image via network using TFTP protocol\n",
+-	"[loadAddress] [[hostIPaddr:]filename]\n"
++	"[loadAddress] [[hostIPaddr:]filename] [nand[.y]/onenand[.y]] [address write to flash]\n"
+ );
+ 
+ #if defined(CONFIG_CMD_PING)
+diff --git a/common/env_common.c b/common/env_common.c
+index 6be3bb0..b037869 100644
+--- a/common/env_common.c
++++ b/common/env_common.c
+@@ -130,6 +130,9 @@ uchar default_environment[] = {
+ #ifdef  CONFIG_CLOCKS_IN_MHZ
+ 	"clocks_in_mhz=1\0"
+ #endif
++#ifdef CONFIG_NAND_INIT
++	"nandinit=0\0"
++#endif
+ #if defined(CONFIG_PCI_BOOTDELAY) && (CONFIG_PCI_BOOTDELAY > 0)
+ 	"pcidelay="	MK_STR(CONFIG_PCI_BOOTDELAY)	"\0"
+ #endif
+diff --git a/drivers/mtd/nand/nand_base.c b/drivers/mtd/nand/nand_base.c
+index a4caf1a..5b157d3 100644
+--- a/drivers/mtd/nand/nand_base.c
++++ b/drivers/mtd/nand/nand_base.c
+@@ -2180,7 +2180,7 @@ int nand_erase_nand(struct mtd_info *mtd, struct erase_info *instr,
+ 		return -EINVAL;
+ 	}
+ 
+-	instr->fail_addr = 0xffffffff;
++	instr->fail_addr = MTD_FAIL_ADDR_UNKNOWN;
+ 
+ 	/* Grab the lock and see if the device is available */
+ 	nand_get_device(chip, mtd, FL_ERASING);
+@@ -2298,6 +2298,13 @@ int nand_erase_nand(struct mtd_info *mtd, struct erase_info *instr,
+ 	/* Deselect and wake up anyone waiting on the device */
+ 	nand_release_device(mtd);
+ 
++	if (ret && (chip->options & BBT_RELOCATION_IFBAD)) {
++		chip->block_markbad(mtd,
++			(loff_t)(page & chip->pagemask) << chip->page_shift);
++		instr->state = MTD_ERASE_DONE;
++		ret = 0;
++	}
++
+ 	/* Do call back function */
+ 	if (!ret)
+ 		mtd_erase_callback(instr);
+diff --git a/drivers/mtd/nand/pxa3xx_nand.c b/drivers/mtd/nand/pxa3xx_nand.c
+index 21e30e1..9855148 100644
+--- a/drivers/mtd/nand/pxa3xx_nand.c
++++ b/drivers/mtd/nand/pxa3xx_nand.c
+@@ -22,6 +22,7 @@
+ #else
+ #ifdef CONFIG_CPU_PXA688
+ #include <asm/arch/regs-pxa688.h>
++#include <asm/arch/common.h>
+ #else
+ #include <asm/arch/regs-pxa168.h>
+ #endif
+@@ -33,11 +34,20 @@
+ 
+ /* convert nano-seconds to nand flash controller clock cycles */
+ #define ns2cycle(ns, clk)	(int)(((ns) * (clk / 1000000) / 1000) + 1)
++#define cycle2ns(cycle, clk)	(cycle * 1000 / (clk / 1000000))
+ #define	CHIP_DELAY_TIMEOUT	(10000)
++#define NAND_STOP_DELAY		(100)
+ #define BCH_THRESHOLD 		(8)
+ #define PAGE_CHUNK_SIZE		(2048)
+ #define OOB_CHUNK_SIZE		(64)
+ 
++#undef PXA3XX_NAND_DEBUG
++#ifdef PXA3XX_NAND_DEBUG
++#define DBG_NAND(x)	do{x;}while(0)
++#else
++#define DBG_NAND(x)
++#endif
++
+ static struct nand_ecclayout hw_smallpage_ecclayout = {
+ 	.eccbytes = 6,
+ 	.eccpos = {8, 9, 10, 11, 12, 13 },
+@@ -61,68 +71,244 @@ static inline int is_buf_blank(uint8_t *buf, size_t len)
+ 	return 1;
+ }
+ 
+-static void pxa3xx_nand_set_timing(struct pxa3xx_nand_info *info,
+-		const struct pxa3xx_nand_timing *t)
++static void nand_error_dump(struct pxa3xx_nand *nand)
+ {
+-	struct pxa3xx_nand *nand = info->nand_data;
+-	unsigned long nand_clk = NAND_DEF_CLOCK;
+-	uint32_t ndtr0, ndtr1, tRP;
++	struct mtd_info *mtd = nand->mtd[nand->chip_select];
++	struct pxa3xx_nand_info *info = mtd->priv;
++	int i;
++
++	printf("NAND controller state wrong!!!\n");
++	printf("state %x, current seqs %d, errcode %x, bad count %d\n",
++			nand->state, info->current_cmd_seqs,
++			nand->errcode, nand->bad_count);
++	printf("Totally %d command for sending\n",
++			info->total_cmds);
++	for (i = 0; i < info->total_cmds; i ++)
++		printf("NDCB0:%d: %x\n", i, info->ndcb0[i]);
++
++	printf("\nRegister DUMPing ##############\n");
++	printf("NDCR %x\n"
++			"NDSR %x\n"
++			"NDCB0 %x\n"
++			"NDCB1 %x\n"
++			"NDCB2 %x\n"
++			"NDTR0CS0 %x\n"
++			"NDTR1CS0 %x\n"
++			"NDBBR0 %x\n"
++			"NDBBR1 %x\n"
++			"NDREDEL %x\n"
++			"NDECCCTRL %x\n"
++			"NDBZCNT %x\n\n",
++			nand_readl(nand, NDCR),
++			nand_readl(nand, NDSR),
++			nand_readl(nand, NDCB0),
++			nand_readl(nand, NDCB1),
++			nand_readl(nand, NDCB2),
++			nand_readl(nand, NDTR0CS0),
++			nand_readl(nand, NDTR1CS0),
++			nand_readl(nand, NDBBR0),
++			nand_readl(nand, NDBBR1),
++			nand_readl(nand, NDREDEL),
++			nand_readl(nand, NDECCCTRL),
++			nand_readl(nand, NDBZCNT));
++}
+ 
+-	ndtr0 = ndtr1 = 0;
+-	tRP = (t->tRP > 0xf) ? 0xf : t->tRP;
+-	if (tRP > 0x7) {
+-		ndtr0 |= NDTR0_ETRP;
+-		tRP &= 0x7;
++/*
++ * This function shows the real timing when NAND controller
++ * send signal to the NAND chip.
++ */
++static void show_real_timing(uint32_t ndtr0, uint32_t ndtr1, unsigned long nand_clk)
++{
++	uint32_t rtADL, rtCH, rtCS, rtWH, rtWP, rtRH, rtRP;
++	uint32_t rtR, rtRHW, rtWHR, rtAR, tmp;
++
++	rtCH = ((ndtr0 >> 19) & 0x7) + 1;
++	rtCS = ((ndtr0 >> 16) & 0x7) + 1;
++	rtWH = ((ndtr0 >> 11) & 0x7) + 1;
++	rtWP = ((ndtr0 >> 8) & 0x7) + 1;
++	rtADL= (ndtr0 >> 27) & 0x1f;
++	rtRH = ((ndtr0 >> 3) & 0x7) + 1;
++	rtRP = (ndtr0 & NDTR0_ETRP) ? ((0x8 | (ndtr0 & 0x7)) + 1)
++			: ((ndtr0 & 0x7) + 1);
++	rtRHW = (ndtr1 >> 8) & 0x3;
++	rtWHR = (ndtr1 >> 4) & 0xf;
++	rtAR = ndtr1 & 0xf;
++
++	if (rtADL != 0)
++		rtADL -= 3 + rtWP;
++	rtR = (ndtr1 >> 16) & 0xffff;
++	if (ndtr1 & NDTR1_PRESCALE)
++		rtR *= 16;
++
++	rtR += rtCH + 2;
++	switch(rtRHW) {
++	case 0:
++		rtRHW = 0;
++		break;
++	case 1:
++		rtRHW = 16;
++		break;
++	case 2:
++		rtRHW = 32;
++		break;
++	case 3:
++		rtRHW = 48;
++		break;
+ 	}
+ 
+-	if (nand->RD_CNT_DEL > 0)
+-		ndtr0 |= NDTR0_SELCNTR
+-			| (NDTR0_RD_CNT_DEL(nand->RD_CNT_DEL - 1));
+-
+-	ndtr0 |= NDTR0_tCH(ns2cycle(t->tCH, nand_clk))		    \
+-		| NDTR0_tCS(ns2cycle(t->tCS, nand_clk))		    \
+-		| NDTR0_tWH(ns2cycle(t->tWH, nand_clk))		    \
+-		| NDTR0_tWP(ns2cycle(t->tWP, nand_clk))		    \
+-		| NDTR0_tRH(ns2cycle(t->tRH, nand_clk))		    \
+-		| NDTR0_tRP(ns2cycle(tRP, nand_clk));
+-
+-	if (nand->wait_mode)
+-		ndtr1 |= NDTR1_WAIT_MODE;
++	/*
++	 * TWHR delay=max(tAR, max(0, tWHR-max(tWH, tCH)))
++	 * TAR delay=max(tAR, max(0, tWHR-max(tWH, tCH))) + 2
++	 */
++	if (rtWH > rtCH)
++		tmp = rtWH - 1;
++	else
++		tmp = rtCH - 1;
++	if (rtWHR < tmp)
++		rtWHR = rtAR;
++	else {
++		if (rtAR > (rtWHR - tmp))
++			rtWHR = rtAR;
++		else
++			rtWHR = rtWHR - tmp;
++	}
++	rtAR = rtWHR + 2;
++	printk("Shows real timing(ns):\n");
++	if (ndtr0 & NDTR0_SELCNTR)
++		printk("NDTR0 SELCNTR is set\n");
++	else
++		printk("NDTR0 SELCNTR is not set\n");
++	if (ndtr0 & NDTR0_RD_CNT_DEL_MASK)
++		printk("Read Strobe delay is %d\n",
++				(ndtr0 & NDTR0_RD_CNT_DEL_MASK) >> 22);
++	else
++		printk("No Read Stobe delay\n");
++	if (ndtr0 & NDTR0_sel_NRE_EDGE)
++		printk("Controller is using rising edge to detect RE\n");
++	else
++		printk("Controller is using falling edge to detect RE\n");
+ 
+-	ndtr1 |= NDTR1_tR(ns2cycle(t->tR, nand_clk))		    \
+-		| NDTR1_tWHR(ns2cycle(t->tWHR, nand_clk))	    \
+-		| NDTR1_tAR(ns2cycle(t->tAR, nand_clk));
++	if (ndtr1 & NDTR1_WAIT_MODE)
++		printk("NDTR1 wait mode is set\n");
++	else
++		printk("NDTR1 wait mode is not set\n");
++
++	printk("TADL is %ld TCH is %ld TCS is %ld TWH is %ld TWP is %ld TRH is %ld "
++		"TRP is %ld TR is %ld TRHW is %ld TWHR is %ld TAR is %ld\n",
++		cycle2ns(rtADL, nand_clk), cycle2ns(rtCH, nand_clk),
++		cycle2ns(rtCS, nand_clk), cycle2ns(rtWH, nand_clk),
++		cycle2ns(rtWP, nand_clk), cycle2ns(rtRH, nand_clk),
++		cycle2ns(rtRP, nand_clk), cycle2ns(rtR, nand_clk),
++		cycle2ns(rtRHW, nand_clk), cycle2ns(rtWHR, nand_clk),
++		cycle2ns(rtAR, nand_clk));
++}
+ 
++static void pxa3xx_nand_set_timing(struct pxa3xx_nand_info *info,
++		const struct pxa3xx_nand_timing *t, int show_timing)
++{
++	struct pxa3xx_nand *nand = info->nand_data;
++	unsigned long nand_clk = NAND_DEF_CLOCK;
++	uint32_t ndtr0, ndtr1, tRP, tR, tRHW, tADL;
++
++	if (!info->timing0 && !info->timing1) {
++		ndtr0 = ndtr1 = 0;
++		tRP = ns2cycle(t->tRP, nand_clk);
++		tRP = (tRP > 0xf) ? 0xf : tRP;
++		if (tRP > 0x7) {
++			ndtr0 |= NDTR0_ETRP;
++			tRP -= 0x7;
++		}
++		tR = ns2cycle(t->tR, nand_clk);
++		if (tR > 0xffff) {
++			ndtr1 |= NDTR1_PRESCALE;
++			tR /= 16;
++		}
++		if (t->tRHW > 0) {
++			tRHW = ns2cycle(t->tRHW, nand_clk);
++			if (tRHW < 16)
++				tRHW = 1;
++			else {
++				if (tRHW < 32)
++					tRHW = 2;
++				else
++					tRHW = 3;
++			}
++		}
++		else
++			tRHW = 0;
++		tADL = (t->tADL > 0) ? ns2cycle(t->tADL, nand_clk) : 0;
++
++		if (nand->RD_CNT_DEL > 0)
++			ndtr0 |= NDTR0_SELCNTR
++				| (NDTR0_RD_CNT_DEL(nand->RD_CNT_DEL - 1));
++
++		ndtr0 |= NDTR0_tADL(tADL)
++			 | NDTR0_tCH(ns2cycle(t->tCH, nand_clk))
++			 | NDTR0_tCS(ns2cycle(t->tCS, nand_clk))
++			 | NDTR0_tWH(ns2cycle(t->tWH, nand_clk))
++			 | NDTR0_tWP(ns2cycle(t->tWP, nand_clk))
++			 | NDTR0_tRH(ns2cycle(t->tRH, nand_clk))
++			 | NDTR0_tRP(tRP);
++
++		if (nand->wait_mode)
++			ndtr1 |= NDTR1_WAIT_MODE;
++
++		ndtr1 |= NDTR1_tR(tR)
++			 | NDTR1_tRHW(tRHW)
++			 | NDTR1_tWHR(ns2cycle(t->tWHR, nand_clk))
++			 | NDTR1_tAR(ns2cycle(t->tAR, nand_clk));
++
++		info->timing0 = ndtr0;
++		info->timing1 = ndtr1;
++		if (show_timing)
++			show_real_timing(ndtr0, ndtr1, nand_clk);
++	}
+ 
+-	nand_writel(nand, NDTR0CS0, ndtr0);
+-	nand_writel(nand, NDTR1CS0, ndtr1);
++	nand_writel(nand, NDTR0CS0, info->timing0);
++	nand_writel(nand, NDTR1CS0, info->timing1);
+ }
+ 
+-static void pxa3xx_set_datasize(struct pxa3xx_nand_info *info)
++static void pxa3xx_set_datasize(struct pxa3xx_nand_info *info, int oob_enable)
+ {
+ 	const struct pxa3xx_nand_flash *flash_info = info->flash_info;
+ 
+ 	if (likely(flash_info->page_size >= PAGE_CHUNK_SIZE)) {
++		info->data_size = 2048;
++		if (!oob_enable) {
++			info->oob_size = 0;
++			return;
++		}
++
+ 		switch (info->use_ecc) {
+ 			case ECC_HAMMIN:
+-				info->data_size = 2088;
++				info->oob_size = 40;
+ 				break;
+ 			case ECC_BCH:
+-				info->data_size = 2080;
++				info->oob_size = 32;
++
+ 				break;
+ 			default:
+-				info->data_size = 2112;
++				info->oob_size = 64;
+ 				break;
+ 		}
+ 	}
+ 	else {
++		info->data_size = 512;
++		if (!oob_enable) {
++			info->oob_size = 0;
++			return;
++		}
++
+ 		switch (info->use_ecc) {
+ 			case ECC_HAMMIN:
+-				info->data_size = 520;
++				info->oob_size = 8;
+ 				break;
+ 			case ECC_BCH:
++				printk("Don't support BCH on small"
++					       " page device!!!\n");
++				break;
+ 			default:
+-				info->data_size = 528;
++				info->oob_size = 16;
+ 				break;
+ 		}
+ 	}
+@@ -137,8 +323,7 @@ static void pxa3xx_nand_start(struct pxa3xx_nand_info *info)
+ 	struct pxa3xx_nand *nand = info->nand_data;
+ 
+ 	ndcr = info->reg_ndcr;
+-	ndeccctrl = nand_readl(nand, NDECCCTRL);
+-	ndeccctrl &=  ~(NDECCCTRL_BCH_EN | NDECCCTRL_ECC_THR_MSK);
++	ndeccctrl = 0;
+ 
+ 	switch (info->use_ecc) {
+ 	case ECC_BCH:
+@@ -151,8 +336,11 @@ static void pxa3xx_nand_start(struct pxa3xx_nand_info *info)
+ 		break;
+ 	}
+ 
+-	ndcr |= NDCR_ND_RUN;
++	ndcr |= (NDCR_ND_RUN | NDCR_STOP_ON_UNCOR);
+ 
++	DBG_NAND(printk("@@@ndcr set: %x, ndeccctrl set %x\n",
++				ndcr, ndeccctrl));
++	nand_writel(nand, NDCR, 0);
+ 	/* clear status bits and run */
+ 	nand_writel(nand, NDECCCTRL, ndeccctrl);
+ 	nand_writel(nand, NDSR, NDSR_MASK);
+@@ -162,20 +350,22 @@ static void pxa3xx_nand_start(struct pxa3xx_nand_info *info)
+ static void pxa3xx_nand_stop(struct pxa3xx_nand* nand)
+ {
+ 	uint32_t ndcr, ndeccctrl;
+-
+-	/* clear status bits */
+-	nand_writel(nand, NDSR, NDSR_MASK);
+-
+-	ndcr = nand_readl(nand, NDCR);
+-
+-	if (ndcr & NDCR_ND_RUN) {
+-		ndcr &= ~NDCR_ND_RUN;
++	int timeout = NAND_STOP_DELAY;
++
++	/* wait RUN bit in NDCR become 0 */
++	do {
++		/* clear status bits */
++		nand_writel(nand, NDSR, NDSR_MASK);
++		ndcr = nand_readl(nand, NDCR);
++		udelay(1);
++	} while ((ndcr & NDCR_ND_RUN) && (timeout -- > 0));
++
++	if (timeout <= 0) {
++		printf("NAND controller unable to stop,"
++				"please reconfigure your timing!!!\n");
++		nand_error_dump(nand);
++		ndcr &= ~(NDCR_ND_RUN);
+ 		nand_writel(nand, NDCR, ndcr);
+-
+-		/* wait RUN bit in NDCR become 0 */
+-		do {
+-			ndcr = nand_readl(nand, NDCR);
+-		} while (ndcr & NDCR_ND_RUN);
+ 	}
+ 
+ 	/* clear the ECC control register */
+@@ -184,53 +374,53 @@ static void pxa3xx_nand_stop(struct pxa3xx_nand* nand)
+ 	nand_writel(nand, NDECCCTRL, ndeccctrl);
+ }
+ 
+-static void handle_data_pio(struct pxa3xx_nand *nand)
++static void handle_data_pio(struct pxa3xx_nand *nand, int cmd_seqs)
+ {
+ 	unsigned int mmio_base = nand->mmio_base;
+ 	struct mtd_info *mtd = nand->mtd[nand->chip_select];
+ 	struct pxa3xx_nand_info *info = mtd->priv;
+-	int oob_size;
+-
+-	oob_size = info->data_size - PAGE_CHUNK_SIZE;
+ 
++	DBG_NAND(printk("data col %x, size %x, oob col %x, size %x\n",
++				info->data_column, info->ndcb3[cmd_seqs],
++				info->oob_column, info->oob_size));
+ 	if (nand->is_write) {
+-		if (oob_size > 0) {
++		if (info->oob_size > 0) {
+ 			/* write data part */
+ 			__raw_writesl(mmio_base + NDDB,				\
+ 					info->data_buff	+ info->data_column,	\
+-					PAGE_CHUNK_SIZE >> 2);
++					info->ndcb3[cmd_seqs] >> 2);
+ 
+ 			/* write oob part */
+ 			__raw_writesl(mmio_base + NDDB,				\
+ 					info->oob_buff + info->oob_column,	\
+-					oob_size >> 2);
++					info->oob_size >> 2);
+ 		}
+ 		else
+ 			__raw_writesl(mmio_base + NDDB,				\
+ 					info->data_buff	+ info->data_column,	\
+-					info->data_size >> 2);
++					info->ndcb3[cmd_seqs] >> 2);
+ 	}
+ 	else {
+-		if (oob_size > 0) {
++		if (info->oob_size > 0) {
+ 			/* read data part */
+ 			__raw_readsl(mmio_base + NDDB,				\
+ 					info->data_buff	+ info->data_column,	\
+-					PAGE_CHUNK_SIZE >> 2);
++					info->ndcb3[cmd_seqs] >> 2);
+ 
+ 			/* read oob part */
+ 			__raw_readsl(mmio_base + NDDB,				\
+ 					info->oob_buff + info->oob_column,	\
+-					oob_size >> 2);
++					info->oob_size >> 2);
+ 		}
+ 		else
+ 			__raw_readsl(mmio_base + NDDB,				\
+ 					info->data_buff	+ info->data_column,	\
+-					info->data_size >> 2);
++					info->ndcb3[cmd_seqs] >> 2);
+ 
+ 	}
+ 
+-	info->data_column += PAGE_CHUNK_SIZE;
+-	info->oob_column += OOB_CHUNK_SIZE;
++	info->data_column += info->ndcb3[cmd_seqs];
++	info->oob_column += info->oob_size;
+ }
+ 
+ static int pxa3xx_nand_irq(void *devid)
+@@ -240,7 +430,7 @@ static int pxa3xx_nand_irq(void *devid)
+ 	struct mtd_info *mtd;
+ 	unsigned int status;
+ 	int chip_select, cmd_done, ready, page_done, badblock_detect;
+-	int cmd_seqs, ndcb1, ndcb2;
++	int cmd_seqs, ndcb1, ndcb2, is_completed = 0;
+ 
+ 	chip_select 	= nand->chip_select;
+ 	ready		= (chip_select) ? NDSR_RDY : NDSR_FLASH_RDY;
+@@ -252,29 +442,45 @@ static int pxa3xx_nand_irq(void *devid)
+ 	cmd_seqs	= info->current_cmd_seqs;
+ 
+ 	status = nand_readl(nand, NDSR);
++	nand->bad_count = (status & NDSR_ERR_CNT_MASK) >> 16;
++	DBG_NAND(if (status != 0)
++		printk("\t\tcmd seqs %d, status %x\n", cmd_seqs, status));
++
++	if (status & NDSR_TRUSTVIO)
++		nand->errcode |= ERR_TRUSTVIO;
++
++	if (status & NDSR_CORERR)
++		nand->errcode |= ERR_CORERR;
++
++	if (status & NDSR_UNCERR)
++		nand->errcode |= ERR_DBERR;
++
++	if (status & badblock_detect)
++		nand->errcode |= ERR_BBERR;
+ 
+ 	if ((status & NDSR_WRDREQ) || (status & NDSR_RDDREQ)) {
+ 
+-		nand->state |= 2;
+-		handle_data_pio(nand);
++		nand->state |= STATE_DATA_PROCESSING;
++		handle_data_pio(nand, cmd_seqs - 1);
++		nand->state |= STATE_DATA_DONE;
+ 
+ 	}
+ 
+ 	if (status & cmd_done) {
+ 
+-		nand->state |= 4;
++		nand->state |= STATE_CMD_DONE;
+ 		/* complete the command cycle when all command
+ 		 * done, and don't wait for ready signal
+ 		 */
+ 		if ((cmd_seqs == info->total_cmds)	\
+ 				&& !(cmd_seqs == info->need_wait_ready)) {
+ 
+-			return 1;
++			is_completed = 1;
+ 		}
+ 	}
+ 
+ 	if (status & ready) {
+-		nand->state |= 8;
++		nand->state |= STATE_READY;
+ 		/* 
+ 		 * wait for the ready signal, 
+ 		 * then leavl the command cycle
+@@ -282,40 +488,25 @@ static int pxa3xx_nand_irq(void *devid)
+ 		if ((cmd_seqs == info->total_cmds) \
+ 				&& (cmd_seqs == info->need_wait_ready)) {
+ 
+-			return 1;
++			is_completed = 1;
+ 		}
+ 
+ 		nand->is_ready = 1;
+ 	}
+ 
+-	if (status & NDSR_TRUSTVIO) {
+-		nand->errcode |= ERR_TRUSTVIO;
+-	}
++	if (status & page_done)
++		nand->state |= STATE_PAGE_DONE;
+ 
+-	if (status & NDSR_ERR_CNT_MASK) {
+-		nand->bad_count = (status & NDSR_ERR_CNT_MASK) >> 16;
+-	}
+-
+-	if (status & NDSR_CORERR) {
+-		nand->errcode |= ERR_CORERR;
+-	}
+-
+-	if (status & NDSR_UNCERR) {
+-		nand->errcode |= ERR_DBERR;
+-	}
+-
+-	if (status & badblock_detect) {
+-		nand->errcode |= ERR_BBERR;
+-	}
+-
+-	if (status & page_done) {
+-	}
++	if (nand->errcode != ERR_NONE)
++		goto ERR_IRQ_EXIT;
+ 
+ 	if (status & NDSR_WRCMDREQ) {
++		nand_writel(nand, NDSR, NDSR_WRCMDREQ);
++		status &= ~NDSR_WRCMDREQ;
+ 		if (cmd_seqs < info->total_cmds) {
+ 
+ 			info->current_cmd_seqs ++;
+-			if (cmd_seqs == info->need_addressing) {
++			if (cmd_seqs == 0) {
+ 				ndcb1 = info->ndcb1;
+ 				ndcb2 = info->ndcb2;
+ 			}
+@@ -324,19 +515,33 @@ static int pxa3xx_nand_irq(void *devid)
+ 				ndcb2 = 0;
+ 			}
+ 
+-			nand->state |= 1;
++			nand->state = STATE_CMD_WAIT_DONE;
+ 			nand_writel(nand, NDCB0, info->ndcb0[cmd_seqs]);
+ 			nand_writel(nand, NDCB0, ndcb1);
+ 			nand_writel(nand, NDCB0, ndcb2);
++			if (info->need_additional_addressing) {
++				nand_writel(nand, NDCB0, info->ndcb3[cmd_seqs]);
++				DBG_NAND(printk("\tndcb0 %x ndcb1 %x, "
++							"ndcb2 %x, ndcb3 %x\n",
++							info->ndcb0[cmd_seqs],
++							ndcb1, ndcb2, info->ndcb3[cmd_seqs]));
++			}
++			else {
++				DBG_NAND(printk("\tndcb0 %x ndcb1 %x ndcb2 %x\n",
++							info->ndcb0[cmd_seqs],
++							ndcb1, ndcb2));
++			}
+ 		}
+ 		else
+-			return 1;
++			is_completed = 1;
+ 	}
+ 
++ERR_IRQ_EXIT:
+ 	/* clear NDSR to let the controller exit the IRQ */
+ 	nand_writel(nand, NDSR, status);
+-	return 0;
++	return is_completed || nand->errcode != ERR_NONE;
+ }
++
+ static int pxa3xx_nand_polling(struct pxa3xx_nand *nand, unsigned long timeout)
+ {
+ 	int i, ret = 0;
+@@ -361,154 +566,228 @@ static int pxa3xx_nand_dev_ready(struct mtd_info *mtd)
+ 	return (nand_readl(nand, NDSR) & ready_mask) ? 1 : 0;
+ }
+ 
+-static int prepare_command_poll(struct pxa3xx_nand *nand, int command, 
++static int prepare_command_pool(struct pxa3xx_nand *nand, int command,
+ 		uint16_t column, int page_addr)
+ {
+ 	uint16_t cmd;
+-	int addr_cycle = 0, exec_cmd = 1, ndcb0_csel,  i, chunks;
++	int addr_cycle, exec_cmd, ndcb0,  ndcb3 = 0, i, chunks = 0, ecc_strength;
+ 	struct mtd_info *mtd = nand->mtd[nand->chip_select];
+ 	struct pxa3xx_nand_info *info = mtd->priv;
+ 	struct nand_chip *chip = mtd->priv;
+ 	const struct pxa3xx_nand_flash *flash_info = info->flash_info;
+ 
+-	ndcb0_csel = (nand->chip_select) ? NDCB0_CSEL : 0;
+-	/* clear the command buffer */
+-	for (i = 0; i < CMD_POLL_SIZE; i ++)
+-		info->ndcb0[i] = ndcb0_csel;
++	ndcb0 = (nand->chip_select) ? NDCB0_CSEL : 0;
++	addr_cycle = 0;
++	exec_cmd = 1;
++
++	/* reset data and oob column point to handle data */
++	info->data_column = 0;
++	info->oob_column = 0;
+ 
+ 	info->buf_start		= 0;
+ 	info->buf_count		= 0;
+ 	info->current_cmd_seqs	= 0;
+-	info->need_addressing	= 0;
+ 	info->need_wait_ready	= -1;
++	info->oob_size		= 0;
++	info->use_ecc		= ECC_NONE;
+ 
+ 	nand->state		= 0;
+ 	nand->is_write		= 0;
+ 	nand->is_ready		= 0;
+ 	nand->errcode		= ERR_NONE;
+ 	nand->bad_count		= 0;
++	nand->command		= command;
++
++	switch (command) {
++	case NAND_CMD_READ0:
++	case NAND_CMD_PAGEPROG:
++		if (chip->ecc.mode == NAND_ECC_HW)
++			info->use_ecc = flash_info->ecc_type;
++
++	case NAND_CMD_READOOB:
++		ecc_strength = (command == NAND_CMD_READOOB) ? 1
++					: flash_info->ecc_strength;
++		if (ecc_strength > 1) {
++			info->reg_ndcr &= ~NDCR_SPARE_EN;
++			ndcb0 |= NDCB0_LEN_OVRD;
++		}
++		else
++			info->reg_ndcr |= NDCR_SPARE_EN;
++
++		pxa3xx_set_datasize(info, info->reg_ndcr & NDCR_SPARE_EN);
++		chunks = flash_info->page_size / info->data_size;
++		chunks = chunks * ecc_strength;
++		ndcb3 = info->data_size / ecc_strength;
++		break;
++	case NAND_CMD_SEQIN:
++		exec_cmd = 0;
++		break;
++	default:
++		info->ndcb1 = 0;
++		info->ndcb2 = 0;
++		break;
++	}
+ 
+-	chunks = flash_info->page_size / PAGE_CHUNK_SIZE;
+-	addr_cycle = NDCB0_ADDR_CYC(info->row_addr_cycles  	    \
++	/* clear the command buffer */
++	for (i = 0; i < CMD_POOL_SIZE; i ++)
++		info->ndcb0[i] = ndcb0;
++	addr_cycle = NDCB0_ADDR_CYC(info->row_addr_cycles
+ 			+ info->col_addr_cycles);
+ 
++	if ((ndcb0 & NDCB0_LEN_OVRD)
++		|| ((info->row_addr_cycles + info->col_addr_cycles) > 5)) {
++		info->need_additional_addressing = 1;
++	}
++	else
++		info->need_additional_addressing = 0;
++
+ 	switch (command) {
+ 	case NAND_CMD_READOOB:
+ 	case NAND_CMD_READ0:
+ 
+ 		cmd  = flash_info->cmdset->read1;
+-
+-		info->buf_count = mtd->writesize + mtd->oobsize;
+-		memset(info->data_buff, 0xFF, info->buf_count);
+-
+ 		if (command == NAND_CMD_READOOB) {
++			if (!(info->reg_ndcr & NDCR_SPARE_EN))
++				return 0;
++
+ 			info->buf_start = mtd->writesize + column;
+-			info->use_ecc = ECC_NONE;
++			for (i = 1; i <= chunks; i ++)
++				info->ndcb3[i] = info->data_size;
+ 		}
+ 		else {
++			info->ndcb3[0] = info->data_size;
++			for (i = 1; i <= chunks; i ++)
++				info->ndcb3[i] = ndcb3;
++
+ 			info->buf_start = column;
+-			if (chip->ecc.mode == NAND_ECC_HW)
+-				info->use_ecc = flash_info->ecc_type;
+-			else
+-				info->use_ecc = ECC_NONE;
+ 		}
+ 
+-		pxa3xx_set_datasize(info);
++		if (unlikely(flash_info->page_size < PAGE_CHUNK_SIZE)) {
++			info->total_cmds = 1;
+ 
+-		if (flash_info->page_size > PAGE_CHUNK_SIZE) {
++			info->ndcb0[0] |= NDCB0_CMD_TYPE(0)
++				| addr_cycle
++				| cmd;
++		}
++		else {
+ 			info->total_cmds = chunks + 1;
+ 
+ 			info->ndcb0[0] |= NDCB0_CMD_XTYPE(0x6)
+-				| NDCB0_CMD_TYPE(0)
+-				| NDCB0_DBC
+-				| NDCB0_NC
+-				| addr_cycle
+-				| cmd;
++					| NDCB0_CMD_TYPE(0)
++					| NDCB0_DBC
++					| NDCB0_NC
++					| addr_cycle
++					| cmd;
+ 
+ 			info->ndcb0[1] |= NDCB0_CMD_XTYPE(0x5)
+-				| NDCB0_NC
+-				| addr_cycle;
++					| NDCB0_NC
++					| addr_cycle;
+ 
+ 			for (i = 2; i <= chunks; i ++)
+ 				info->ndcb0[i] = info->ndcb0[1];
+ 
+ 			info->ndcb0[chunks] &= ~NDCB0_NC;
+-		} else {
+-			info->total_cmds = 1;
+-			info->need_wait_ready = 0;
+-			info->ndcb0[0] |= NDCB0_CMD_TYPE(0)
+-					  | NDCB0_DBC
+-					  | addr_cycle
+-					  | cmd;
+ 		}
+ 
++	case NAND_CMD_SEQIN:
++		/* small page addr setting */
++		if (unlikely(flash_info->page_size < PAGE_CHUNK_SIZE)) {
++			info->ndcb1 = ((page_addr & 0xFFFFFF) << 8)
++					| (column & 0xFF);
++
++			info->ndcb2 = 0;
++		}
++		else {
++			info->ndcb1 = ((page_addr & 0xFFFF) << 16)	\
++				      | (column & 0xFFFF);
++
++			if (page_addr & 0xFF0000)
++				info->ndcb2 = (page_addr & 0xFF0000) >> 16;
++			else
++				info->ndcb2 = 0;
++		}
++
++		info->buf_count = mtd->writesize + mtd->oobsize;
++		memset(info->data_buff, 0xFF, info->buf_count);
+ 		break;
+ 
+ 	case NAND_CMD_PAGEPROG:
++		if (is_buf_blank(info->data_buff,
++					(mtd->writesize + mtd->oobsize))) {
++			exec_cmd = 0;
++			break;
++		}
++
+ 		cmd = flash_info->cmdset->program;
+ 
+ 		nand->is_write = 1;
+-		pxa3xx_set_datasize(info);
++		info->need_wait_ready = chunks + 1;
+ 
+-		if (flash_info->page_size > PAGE_CHUNK_SIZE) {
++		if (unlikely(flash_info->page_size < PAGE_CHUNK_SIZE)) {
++			info->total_cmds = 1;
++
++			info->ndcb0[0] |= NDCB0_CMD_TYPE(0x1)
++					| NDCB0_AUTO_RS
++					| NDCB0_ST_ROW_EN
++					| NDCB0_DBC
++					| cmd
++					| addr_cycle;
++		}
++		else {
+ 			info->total_cmds = chunks + 1;
+-			info->need_wait_ready = chunks + 1;
+ 
+ 			info->ndcb0[0] |= NDCB0_CMD_XTYPE(0x4)
+-				| NDCB0_CMD_TYPE(0x1)
+-				| NDCB0_NC
+-				| NDCB0_AUTO_RS
+-				| (cmd & NDCB0_CMD1_MASK)
+-				| addr_cycle;
+-
+-			for (i = 1; i < chunks; i ++)
+-				info->ndcb0[i] |= NDCB0_CMD_XTYPE(0x5)
++					| NDCB0_CMD_TYPE(0x1)
+ 					| NDCB0_NC
+ 					| NDCB0_AUTO_RS
+-					| NDCB0_CMD_TYPE(0x1)
++					| (cmd & NDCB0_CMD1_MASK)
+ 					| addr_cycle;
+ 
++			for (i = 1; i < chunks; i ++)
++				info->ndcb0[i] |= NDCB0_CMD_XTYPE(0x5)
++						| NDCB0_NC
++						| NDCB0_AUTO_RS
++						| NDCB0_CMD_TYPE(0x1)
++						| addr_cycle;
++
+ 			info->ndcb0[chunks] |= NDCB0_CMD_XTYPE(0x3)
+-				| NDCB0_CMD_TYPE(0x1)
+-				| NDCB0_ST_ROW_EN
+-				| NDCB0_DBC
+-				| (cmd & NDCB0_CMD2_MASK)
+-				| NDCB0_CMD1_MASK
+-				| addr_cycle;
+-		} else {
+-			info->total_cmds = 1;
+-			info->need_wait_ready = 0;
+-			info->ndcb0[0] |= NDCB0_CMD_TYPE(1)
+-					  | NDCB0_AUTO_RS
+-					  | NDCB0_DBC
+-					  | cmd
+-					  | addr_cycle;
++						| NDCB0_CMD_TYPE(0x1)
++						| NDCB0_ST_ROW_EN
++						| NDCB0_DBC
++						| (cmd & NDCB0_CMD2_MASK)
++						| NDCB0_CMD1_MASK
++						| addr_cycle;
+ 		}
+ 
++		if (ndcb3) {
++			for (i = 0; i < chunks; i ++)
++				info->ndcb3[i] = ndcb3;
++			info->ndcb3[i] = info->data_size;
++		}
+ 
+ 		break;
+ 
+ 	case NAND_CMD_READID:
+ 		info->total_cmds = 1;
+ 		cmd = flash_info->cmdset->read_id;
+-		info->data_size = 8;
+ 		info->buf_count = info->read_id_bytes;
+ 
+ 		info->ndcb0[0] |= NDCB0_CMD_TYPE(3)		    \
+ 				  | NDCB0_ADDR_CYC(1)		    \
+ 				  | cmd;
++		info->ndcb3[0] = 8;
+ 
+ 		break;
+ 
+ 	case NAND_CMD_STATUS:
+ 		info->total_cmds = 1;
+ 		cmd = flash_info->cmdset->read_status;
+-		info->data_size = 8;
+ 		info->buf_count = 1;
+ 
+ 		info->ndcb0[0] |= NDCB0_CMD_TYPE(4)		    \
+ 				  | NDCB0_ADDR_CYC(1)		    \
+ 				  | cmd;
++		info->ndcb3[0] = 8;
+ 
+ 		break;
+ 
+@@ -516,11 +795,14 @@ static int prepare_command_poll(struct pxa3xx_nand *nand, int command,
+ 		info->total_cmds = 1;
+ 		cmd = flash_info->cmdset->erase;
+ 
+-		info->ndcb0[0] |= NDCB0_CMD_TYPE(2)		    \
+-			       | NDCB0_AUTO_RS 	    		    \
+-			       | NDCB0_ADDR_CYC(3)		    \
+-			       | NDCB0_DBC			    \
++		info->ndcb0[0] |= NDCB0_CMD_TYPE(2)
++			       | NDCB0_AUTO_RS
++			       | NDCB0_ADDR_CYC(3)
++			       | NDCB0_DBC
+ 			       | cmd;
++		info->ndcb1 = page_addr;
++		info->ndcb2 = 0;
++
+ 
+ 		break;
+ 	case NAND_CMD_RESET:
+@@ -532,8 +814,6 @@ static int prepare_command_poll(struct pxa3xx_nand *nand, int command,
+ 
+ 		break;
+ 
+-	case NAND_CMD_SEQIN:
+-		info->buf_count = mtd->writesize + mtd->oobsize;
+ 	case NAND_CMD_ERASE2:
+ 		exec_cmd = 0;
+ 		break;
+@@ -555,12 +835,12 @@ static void pxa3xx_nand_cmdfunc(struct mtd_info *mtd, unsigned command,
+ 	struct pxa3xx_nand *nand = info->nand_data;
+ 	const struct pxa3xx_nand_flash *flash_info = info->flash_info;
+ 	struct pxa3xx_bbm *pxa3xx_bbm = mtd->bbm;
+-	int ret, exec_cmd, retry_times = 0;
++	int ret, exec_cmd;
+ 	loff_t addr;
+ 
+ 	/* reset timing */
+ 	if (nand->chip_select != info->chip_select) {
+-		pxa3xx_nand_set_timing(info, flash_info->timing);
++		pxa3xx_nand_set_timing(info, flash_info->timing, 0);
+ 		nand->chip_select = info->chip_select;
+ 	}
+ 
+@@ -571,98 +851,29 @@ static void pxa3xx_nand_cmdfunc(struct mtd_info *mtd, unsigned command,
+ 	if (flash_info->flash_width == 16)
+ 		column /= 2;
+ 
+-	/* reset data and oob column point to handle data */
+-	info->data_column = 0;
+-	info->oob_column = 0;
+-
+-	addr = page_addr << pxa3xx_bbm->page_shift;
+-	if (command == NAND_CMD_READOOB || command == NAND_CMD_READ0 || command == NAND_CMD_SEQIN
+-			|| command == NAND_CMD_ERASE1) {
++	DBG_NAND(printk("command %x, page %x, ", command, page_addr););
++	if (pxa3xx_bbm && (command == NAND_CMD_READOOB
++				|| command == NAND_CMD_READ0
++				|| command == NAND_CMD_SEQIN
++				|| command == NAND_CMD_ERASE1)) {
+ 
++		addr = (loff_t)page_addr << mtd->writesize_shift;
+ 		addr = pxa3xx_bbm->search(mtd, addr);
+-		page_addr = addr >> pxa3xx_bbm->page_shift;
+-	}
+-
+-	nand->command = command;
+-RETRY:
+-	exec_cmd = prepare_command_poll(nand, command, column, page_addr);
+-
+-	switch (command) {
+-	case NAND_CMD_READOOB:
+-	case NAND_CMD_READ0:
+-	case NAND_CMD_SEQIN:
+-		/* small page addr setting */
+-		if (flash_info->page_size < PAGE_CHUNK_SIZE) {
+-			info->ndcb1 = page_addr * flash_info->page_size \
+-				      + (column & 0xFFFF);
+-
+-			info->ndcb2 = 0;
+-		}
+-		else {
+-			info->ndcb1 = ((page_addr & 0xFFFF) << 16)	\
+-				      | (column & 0xFFFF);
+-
+-			if (page_addr & 0xFF0000)
+-				info->ndcb2 = (page_addr & 0xFF0000) >> 16;
+-			else
+-				info->ndcb2 = 0;
+-		}
+-
+-		break;
+-
+-	case NAND_CMD_ERASE1:
+-		info->ndcb1 = page_addr;
+-		info->ndcb2 = 0;
+-
+-		break;
+-	
+-	case NAND_CMD_PAGEPROG:
+-		if (is_buf_blank(info->data_buff, (mtd->writesize +
+-						mtd->oobsize)))
+-			exec_cmd = 0;
+-		break;
+-
+-	default:
+-		info->ndcb1 = 0;
+-		info->ndcb2 = 0;
++		page_addr = addr >> mtd->writesize_shift;
+ 	}
++	DBG_NAND(printk("post page %x\n", page_addr));
+ 
++	exec_cmd = prepare_command_pool(nand, command, column, page_addr);
+ 	if (exec_cmd) {
+ 		pxa3xx_nand_start(info);
+ 		ret = pxa3xx_nand_polling(nand, CHIP_DELAY_TIMEOUT);
++		if (!ret) {
++			nand_error_dump(nand);
++			nand->errcode |= ERR_SENDCMD;
++		}
+ 		/* Stop State Machine for next command cycle */
+ 		pxa3xx_nand_stop(nand);
+-		if (!ret && !nand->errcode) {
+-			printf("IRQ timeout, command %x, ndcb1 %x, \
+-					\nndcb2 %x, state %x, cmd seqs %x\n", \
+-					command, info->ndcb1, info->ndcb2,  \
+-					nand->state, info->current_cmd_seqs);
+-
+-			printf("ndcr %x , ndsr %x\nndcb0 %x\ntiming0 %x, timing2 %x\nbb1 %x, bb2 %x\ndelay %x\n	ecc control %x\nrnb0 %x\n\n",
+-					nand_readl(nand, NDCR),
+-					nand_readl(nand, NDSR),
+-					nand_readl(nand, NDCB0),
+-					nand_readl(nand, NDTR0CS0),
+-					nand_readl(nand, NDTR1CS0),
+-					nand_readl(nand, NDBBR0),
+-					nand_readl(nand, NDBBR1),
+-					nand_readl(nand, NDREDEL),
+-					nand_readl(nand, NDECCCTRL),
+-					nand_readl(nand, NDBZCNT));
+-
+-			/* It is just a workaround way for aspen R0 silicon
+-			 * should be remove in the future.
+-			 */
+-			if (retry_times ++ < 3 && nand->command == NAND_CMD_PAGEPROG)
+-				goto RETRY;
+-			else
+-				nand->errcode |= ERR_SENDCMD;
+-		}
+ 	}
+-
+-	/* reset ECC */
+-	info->use_ecc = ECC_NONE;
+-	nand->state = 0;
+ }
+ 
+ static uint8_t pxa3xx_nand_read_byte(struct mtd_info *mtd)
+@@ -727,6 +938,11 @@ static int pxa3xx_nand_waitfunc(struct mtd_info *mtd, struct nand_chip *this)
+ 	struct pxa3xx_nand_info *info = mtd->priv;
+ 	struct pxa3xx_nand *nand = info->nand_data;
+ 
++	if (nand->errcode & ERR_TRUSTVIO) {
++		nand_error_dump(nand);
++		return NAND_STATUS_FAIL;
++	}
++
+ 	if (nand->errcode & (ERR_BBERR | ERR_SENDCMD))
+ 		return NAND_STATUS_FAIL;
+ 	else
+@@ -737,7 +953,6 @@ static int pxa3xx_nand_read_oob(struct mtd_info *mtd, struct nand_chip *chip,
+ 		int page, int sndcmd)
+ {
+ 	struct pxa3xx_nand_info *info = mtd->priv;
+-	struct pxa3xx_nand *nand = info->nand_data;
+ 	struct pxa3xx_nand_flash *flash_info = info->flash_info;
+ 	uint8_t *tmp;
+ 	int oob_size;
+@@ -745,12 +960,11 @@ static int pxa3xx_nand_read_oob(struct mtd_info *mtd, struct nand_chip *chip,
+ 		chip->cmdfunc(mtd, NAND_CMD_READOOB, 0, page);
+ 		sndcmd = 0;
+ 
+-		oob_size = info->data_size - PAGE_CHUNK_SIZE;
++		oob_size = info->oob_size;
+ 		/* It is a special case that meta data need to re-order
+ 		 * due to the page allocation in the large page (>2K)
+ 		 */
+-		if (flash_info->ecc_type == ECC_BCH && nand->use_ecc == ECC_NONE
+-				&& mtd->size > PAGE_CHUNK_SIZE) {
++		if (flash_info->page_size > PAGE_CHUNK_SIZE) {
+ 			tmp = chip->oob_poi;
+ 			memcpy(tmp, info->oob_buff, oob_size - 2);
+ 			tmp[oob_size - 1] = tmp[oob_size - 2] = 0xff;
+@@ -775,7 +989,7 @@ static int pxa3xx_nand_read_page_hwecc(struct mtd_info *mtd,
+ 	uint8_t *tmp;
+ 	int oob_size;
+ 
+-	oob_size = info->data_size - PAGE_CHUNK_SIZE;
++	oob_size = info->oob_size;
+ 	/* It is a special case that meta data need to re-order
+ 	 * due to the page allocation in the large page (>2K)
+ 	 */
+@@ -800,6 +1014,7 @@ static int pxa3xx_nand_read_page_hwecc(struct mtd_info *mtd,
+ 	}
+ 
+ 	if (nand->errcode & ERR_CORERR) {
++		DBG_NAND(printk("###correctable error detected\n"););
+ 		switch (nand->use_ecc) {
+ 		case ECC_BCH:
+ 			if (nand->bad_count > BCH_THRESHOLD)
+@@ -819,6 +1034,7 @@ static int pxa3xx_nand_read_page_hwecc(struct mtd_info *mtd,
+ 	else if (nand->errcode & ERR_DBERR) {
+ 		int buf_blank;
+ 
++		DBG_NAND(printk("###uncorrectable error!!!\n"));
+ 		buf_blank = is_buf_blank(buf, mtd->writesize);
+ 
+ 		if (!buf_blank)
+@@ -831,24 +1047,18 @@ static int pxa3xx_nand_read_page_hwecc(struct mtd_info *mtd,
+ static void pxa3xx_nand_write_page_hwecc(struct mtd_info *mtd,
+ 			struct nand_chip *chip, const uint8_t *buf)
+ {
+-	struct pxa3xx_nand_info *info = mtd->priv;
+-	const struct pxa3xx_nand_flash *flash_info = info->flash_info;
+-
+ 	chip->write_buf(mtd, buf, mtd->writesize);
+ 	chip->write_buf(mtd, chip->oob_poi, mtd->oobsize);
+-
+-	info->use_ecc = flash_info->ecc_type;
+ }
+ 
+ static int pxa3xx_nand_config_flash(struct pxa3xx_nand_info *info,
+-		const struct pxa3xx_nand_flash *f)
++		const struct pxa3xx_nand_flash *f, int show_timing)
+ {
+ 	/* enable all interrupts */
+ 	uint32_t ndcr = 0;
+ 	struct pxa3xx_nand *nand = info->nand_data;
+ 
+ 	/* calculate flash information */
+-	info->oob_size = (f->page_size >= 2048) ? 64 : 16;
+ 	info->oob_buff = info->data_buff + f->page_size;
+ 	info->read_id_bytes = (f->page_size >= 2048) ? 4 : 2;
+ 
+@@ -893,11 +1103,10 @@ static int pxa3xx_nand_config_flash(struct pxa3xx_nand_info *info,
+ 	}
+ 
+ 	ndcr |= NDCR_RD_ID_CNT(info->read_id_bytes);
+-	ndcr |= NDCR_SPARE_EN; /* enable spare by default */
+-
+ 	info->reg_ndcr = ndcr;
+ 
+-	pxa3xx_nand_set_timing(info, f->timing);
++	info->timing0 = info->timing1 = 0;
++	pxa3xx_nand_set_timing(info, f->timing, show_timing);
+ 	info->flash_info = f;
+ 	return 0;
+ }
+@@ -909,51 +1118,11 @@ static void pxa3xx_erase_cmd(struct mtd_info *mtd, int page)
+ 	chip->cmdfunc(mtd, NAND_CMD_ERASE1, -1, page);
+ }
+ 
+-static int pxa3xx_scan_bbt(struct mtd_info *mtd)
+-{
+-	return 0;
+-}
+-
+-static int pxa3xx_block_bad(struct mtd_info *mtd, loff_t ofs, int allowbbt)
+-{
+-	struct pxa3xx_bbm *bbm;
+-	struct reloc_table *table;
+-	struct mtd_oob_ops ops;
+-	uint32_t bad_mark;
+-	loff_t _ofs;
+-
+-	bbm	= mtd->bbm;
+-	table	= bbm->table;
+-
+-	if (bbm->current_slot <= PXA_BEGIN_SLOT
+-			|| table->total >= bbm->max_reloc_entry
+-			|| !bbm->table_init) {
+-
+-		_ofs = bbm->search(mtd, ofs);
+-		if (_ofs != ofs)
+-			return 0;
+-
+-		ops.ooboffs	= 0;
+-		ops.ooblen	= 2;
+-		ops.len		= 2;
+-		ops.datbuf	= NULL;
+-		ops.oobbuf	= (uint8_t *)&bad_mark;
+-		ops.mode	= MTD_OOB_PLACE;
+-
+-		mtd->read_oob(mtd, ofs, &ops);
+-		if ((bad_mark & 0xFF) != 0xFF)
+-			return 1;
+-	}
+-
+-	return 0;
+-}
+-
+ static void pxa3xx_nand_init_mtd(struct mtd_info *mtd)
+ {
+ 	struct pxa3xx_nand_info *info = mtd->priv;
+ 	struct nand_chip *this = &info->nand_chip;
+ 	const struct pxa3xx_nand_flash *f = info->flash_info;
+-	struct pxa3xx_bbm *bbm = mtd->bbm;
+ 
+ 	this->options = (f->flash_width == 16) ? NAND_BUSWIDTH_16: 0;
+ 
+@@ -1004,6 +1173,7 @@ static void pxa3xx_nand_init_mtd(struct mtd_info *mtd)
+ 	 */
+ 	this->options |= NAND_NO_AUTOINCR;
+ 	this->options |= NAND_NO_READRDY;
++	this->options |= BBT_RELOCATION_IFBAD;
+ 	if (f->page_size == 2048)
+ 		this->ecc.layout = &hw_largepage_ecclayout;
+ 	else
+@@ -1014,7 +1184,7 @@ static void pxa3xx_nand_init_mtd(struct mtd_info *mtd)
+ 
+ 	this->scan_bbt		= pxa3xx_scan_bbt;
+ 	this->block_bad		= pxa3xx_block_bad;
+-	this->block_markbad	= bbm->markbad;
++	this->block_markbad	= pxa3xx_block_markbad;
+ }
+ 
+ static int pxa3xx_nand_sensing(struct pxa3xx_nand_info *info, int cs)
+@@ -1022,25 +1192,9 @@ static int pxa3xx_nand_sensing(struct pxa3xx_nand_info *info, int cs)
+ 	struct pxa3xx_nand *nand = info->nand_data;;
+ 	const struct pxa3xx_nand_flash *f = &nand_common;
+ 	struct mtd_info *mtd = nand->mtd[cs];
+-	int i=0;
+-	nand->wait_mode = 1;
+-	pxa3xx_nand_config_flash(info, f);
++
++	pxa3xx_nand_config_flash(info, f, 0);
+ 	pxa3xx_nand_cmdfunc(mtd, NAND_CMD_RESET, 0, 0);
+-	nand->wait_mode = 0;
+-
+-#if CONFIG_CPU_PXA688
+-	while(nand->is_ready == 0){
+-		i++;
+-		udelay(10000);
+-		nand->wait_mode = 1;
+-		pxa3xx_nand_config_flash(info, f);
+-		pxa3xx_nand_cmdfunc(mtd, NAND_CMD_RESET, 0, 0);
+-		nand->wait_mode = 0;
+-		if(i==50)
+-			break;
+-	}
+-	return 1;
+-#endif
+ 
+ 	if (nand->is_ready)
+ 		return 1;
+@@ -1070,15 +1224,11 @@ static int pxa3xx_nand_detect_flash(struct pxa3xx_nand *nand)
+ 			continue;
+ 		}
+ 
+-		pxa3xx_nand_config_flash(info, f);
+ 		pxa3xx_nand_cmdfunc(mtd, NAND_CMD_READID, 0, 0);
+ 
+-		id = *((uint16_t *)(info->data_buff));
++		id = *((uint32_t *)(info->data_buff));
+ 
+-		if (id != 0)
+-			printf("Detect a flash id %x, cs %x\n",
+-					id, chip_select);
+-		else {
++		if (id == 0) {
+ 			kfree(mtd);
+ 			nand->mtd[chip_select] = NULL;
+ 			continue;
+@@ -1089,12 +1239,32 @@ static int pxa3xx_nand_detect_flash(struct pxa3xx_nand *nand)
+ 			f = builtin_flash_types[i];
+ 
+ 			/* find the chip in default list */
+-			if (f->chip_id == id) {
+-				pxa3xx_nand_config_flash(info, f);
++			if (f->chip_id == (id & f->chip_id_mask)) {
++				printf("detect chip id %x on cs %d, %s\n",
++						f->chip_id, chip_select, f->name);
++#ifdef CONFIG_CPU_PXA688
++				if(cpu_is_pxa688_z0()){
++					printf("MMP2 Z0 is using ECC_HAMMIN\n");
++					f->ecc_type = ECC_HAMMIN;
++				}
++#endif
++				pxa3xx_nand_config_flash(info, f, 1);
+ 				chip->cellinfo = info->data_buff[2];
+ 				mtd->writesize = f->page_size;
+ 				mtd->oobsize = mtd->writesize / 32;
+ 				mtd->erasesize = f->page_size * f->page_per_block;
++				if (is_power_of_2(mtd->erasesize))
++					mtd->erasesize_shift = ffs(mtd->erasesize) - 1;
++				else
++					mtd->erasesize_shift = 0;
++
++				if (is_power_of_2(mtd->writesize))
++					mtd->writesize_shift = ffs(mtd->writesize) - 1;
++				else
++					mtd->writesize_shift = 0;
++
++				mtd->erasesize_mask = (1 << mtd->erasesize_shift) - 1;
++				mtd->writesize_mask = (1 << mtd->writesize_shift) - 1;
+ 
+ 				mtd->name = f->name;
+ 				break;
+@@ -1104,7 +1274,8 @@ static int pxa3xx_nand_detect_flash(struct pxa3xx_nand *nand)
+ 		if (i == ARRAY_SIZE(builtin_flash_types)) {
+ 			kfree(mtd);
+ 			nand->mtd[chip_select] = NULL;
+-			printf("ERROR!! flash not defined!!!\n");
++			printf("ERROR!! flash on cs %d id %x not defined!!!\n",
++				       chip_select, id);
+ 			continue;
+ 		}
+ 	}
+@@ -1122,7 +1293,6 @@ static struct pxa3xx_nand *alloc_nand_resource(struct pxa3xx_nand_platform_data
+ {
+ 	struct pxa3xx_nand_info		 *info;
+ 	struct pxa3xx_nand 		 *nand;
+-	struct pxa3xx_bbm		 *bbm;
+ 	struct mtd_info 		 *mtd;
+ 	int i, chip_select;
+ 
+@@ -1146,12 +1316,6 @@ static struct pxa3xx_nand *alloc_nand_resource(struct pxa3xx_nand_platform_data
+ 		info->nand_data = nand;
+ 		mtd->priv = info;
+ 		nand->mtd[chip_select] = mtd;
+-
+-		mtd->bbm = alloc_pxa3xx_bbm();
+-		bbm = mtd->bbm;
+-		if (!bbm)
+-			bbm->uninit(mtd);
+-
+ 		info->data_buff = malloc(MAX_BUFF_SIZE);
+ 		if (info->data_buff == NULL) {
+ 			printf("failed to allocate data buff\n");
+@@ -1206,10 +1370,6 @@ struct pxa3xx_nand *pxa3xx_nand_probe(struct pxa3xx_nand_platform_data *pdata)
+ 			if (pxa3xx_nand_scan(mtd)) {
+ 				printf("failed to scan nand\n");
+ 			}
+-
+-			printf("reloc table on cs %x:\n", i);
+-			bbm->show(mtd);
+-			printf("\n");
+ 		}
+ 	}
+ 
+diff --git a/drivers/mtd/onenand/onenand_base.c b/drivers/mtd/onenand/onenand_base.c
+index 5f53cc4..2a4887d 100644
+--- a/drivers/mtd/onenand/onenand_base.c
++++ b/drivers/mtd/onenand/onenand_base.c
+@@ -25,7 +25,7 @@
+ #include <linux/mtd/mtd.h>
+ #include <linux/mtd/onenand.h>
+ #include <linux/mtd/partitions.h>
+-#include <asm/arch-pxa168/pxa3xx_bbm.h>
++#include <asm/arch/pxa3xx_bbm.h>
+ 
+ #include <asm/io.h>
+ 
+@@ -249,7 +249,7 @@ static int onenand_command(struct mtd_info *mtd, int cmd, loff_t addr, size_t le
+ 			&& cmd != ONENAND_CMD_LOCK_TIGHT
+ 			&& cmd != ONENAND_CMD_UNLOCK_ALL)
+ 
+-		if (bbm->table_init)
++		if (bbm && bbm->is_init)
+ 			addr = bbm->search(mtd, addr);
+ 
+ 
+@@ -1807,37 +1807,22 @@ int onenand_write_oob(struct mtd_info *mtd, loff_t to,
+ static int onenand_block_isbad_nolock(struct mtd_info *mtd, loff_t ofs, int allowbbt)
+ {
+ 	struct onenand_chip *this = mtd->priv;
+-	struct reloc_table *table;
+-	struct pxa3xx_bbm *bbm;
+ 	struct mtd_oob_ops ops;
+-	loff_t _ofs;
+ 	int ret, bad_mark;
+ 
+-	bbm	= mtd->bbm;
+-	table	= bbm->table;
++	ops.ooboffs	= 0;
++	ops.ooblen	= 2;
++	ops.len		= 2;
++	ops.datbuf	= NULL;
++	ops.oobbuf	= &bad_mark;
++	ops.mode	= MTD_OOB_PLACE;
+ 
+-	if (bbm->current_slot <= PXA_BEGIN_SLOT
+-			|| table->total >= bbm->max_reloc_entry
+-			|| !bbm->table_init) {
+-
+-		_ofs = bbm->search(mtd, ofs);
+-		if (_ofs != ofs)
+-			return 0;
+-
+-		ops.ooboffs	= 0;
+-		ops.ooblen	= 2;
+-		ops.len		= 2;
+-		ops.datbuf	= NULL;
+-		ops.oobbuf	= &bad_mark;
+-		ops.mode	= MTD_OOB_PLACE;
+-
+-		ret = onenand_read_oob_nolock(mtd, ofs, &ops);
+-		if (ret)
+-			return ret;
+-		else {
+-			if ((bad_mark & 0xFF) != 0xFF)
+-				return 1;
+-		}
++	ret = onenand_read_oob_nolock(mtd, ofs, &ops);
++	if (ret)
++		return ret;
++	else {
++		if ((bad_mark & 0xFF) != 0xFF)
++			return 1;
+ 	}
+ 
+ 	return 0;
+@@ -1895,7 +1880,7 @@ int onenand_erase(struct mtd_info *mtd, struct erase_info *instr)
+ 		cond_resched();
+ 
+ 		/* Check if we have a bad block, we do not erase bad blocks */
+-		if (onenand_block_isbad_nolock(mtd, addr, 0)) {
++		if (this->block_bad(mtd, addr, 0)) {
+ 			printk (KERN_WARNING "onenand_erase: attempt to erase a bad block at addr 0x%012llx\n", (unsigned long long) addr);
+ 			instr->state = MTD_ERASE_FAILED;
+ 			goto erase_exit;
+@@ -1927,6 +1912,12 @@ erase_exit:
+ 	/* Deselect and wake up anyone waiting on the device */
+ 	onenand_release_device(mtd);
+ 
++	if (ret && (this->options & ONENAND_RELOC_IFBAD)) {
++		this->block_markbad(mtd, addr);
++		instr->state = MTD_ERASE_DONE;
++		ret = 0;
++	}
++
+ 	/* Do call back function */
+ 	if (!ret)
+ 		mtd_erase_callback(instr);
+@@ -1960,6 +1951,7 @@ static void onenand_sync(struct mtd_info *mtd)
+  */
+ static int onenand_block_isbad(struct mtd_info *mtd, loff_t ofs)
+ {
++	struct onenand_chip *this = mtd->priv;
+ 	int ret;
+ 
+ 	/* Check for invalid offset */
+@@ -1967,7 +1959,7 @@ static int onenand_block_isbad(struct mtd_info *mtd, loff_t ofs)
+ 		return -EINVAL;
+ 
+ 	onenand_get_device(mtd, FL_READING);
+-	ret = onenand_block_isbad_nolock(mtd, ofs, 0);
++	ret = this->block_bad(mtd, ofs, 0);
+ 	onenand_release_device(mtd);
+ 	return ret;
+ }
+@@ -2709,6 +2701,18 @@ static int onenand_probe(struct mtd_info *mtd)
+ 	mtd->oobsize = mtd->writesize >> 5;
+ 	/* Pages per a block are always 64 in OneNAND */
+ 	mtd->erasesize = mtd->writesize << 6;
++	if (is_power_of_2(mtd->erasesize))
++		mtd->erasesize_shift = ffs(mtd->erasesize) - 1;
++	else
++		mtd->erasesize_shift = 0;
++
++	if (is_power_of_2(mtd->writesize))
++		mtd->writesize_shift = ffs(mtd->writesize) - 1;
++	else
++		mtd->writesize_shift = 0;
++
++	mtd->erasesize_mask = (1 << mtd->erasesize_shift) - 1;
++	mtd->writesize_mask = (1 << mtd->writesize_shift) - 1;
+ 
+ 	this->erase_shift = ffs(mtd->erasesize) - 1;
+ 	this->page_shift = ffs(mtd->writesize) - 1;
+@@ -2793,6 +2797,8 @@ int onenand_scan(struct mtd_info *mtd, int maxchips)
+ 
+ 	if (!this->block_markbad)
+ 		this->block_markbad = onenand_default_block_markbad;
++	if (!this->block_bad)
++		this->block_bad = onenand_block_isbad_nolock;
+ 	if (!this->scan_bbt)
+ 		this->scan_bbt = onenand_default_bbt;
+ 
+diff --git a/drivers/mtd/onenand/onenand_uboot.c b/drivers/mtd/onenand/onenand_uboot.c
+index 5767090..9c81eef 100644
+--- a/drivers/mtd/onenand/onenand_uboot.c
++++ b/drivers/mtd/onenand/onenand_uboot.c
+@@ -17,16 +17,11 @@
+ #include <linux/mtd/compat.h>
+ #include <linux/mtd/mtd.h>
+ #include <linux/mtd/onenand.h>
+-#include <asm/arch-pxa168/pxa3xx_bbm.h>
++#include <asm/arch/pxa3xx_bbm.h>
+ 
+ struct mtd_info onenand_mtd;
+ struct onenand_chip onenand_chip;
+ 
+-int onenand_no_bbt(struct mtd_info *mtd)
+-{
+-	return 0;
+-}
+-
+ void onenand_init(void)
+ {
+ 	struct pxa3xx_bbm *bbm;
+@@ -34,22 +29,16 @@ void onenand_init(void)
+ 	memset(&onenand_mtd, 0, sizeof(struct mtd_info));
+ 	memset(&onenand_chip, 0, sizeof(struct onenand_chip));
+ 
+-	bbm = alloc_pxa3xx_bbm();
+-	onenand_mtd.bbm = bbm;
+-
+ 	onenand_chip.base = (void *) CONFIG_SYS_ONENAND_BASE;
+-	onenand_chip.scan_bbt = onenand_no_bbt;
+-	onenand_chip.block_markbad = bbm->markbad;
++	onenand_chip.scan_bbt = pxa3xx_scan_bbt;
++	onenand_chip.block_bad = pxa3xx_block_bad;
++	onenand_chip.block_markbad = pxa3xx_block_markbad;
+ 	onenand_mtd.priv = &onenand_chip;
+ 
+ 	onenand_scan(&onenand_mtd, 1);
+ 
+ 	puts("OneNAND: ");
+ 	print_size(onenand_mtd.size, "\n");
+-	if (onenand_mtd.size > 0) {
+-		printf("reloc table on ONENAND:\n");
+-		bbm->show(&onenand_mtd);
+-	}
+ }
+ 
+ int onenand_dump(struct mtd_info *mtd, ulong off)
+diff --git a/drivers/mtd/pxa3xx_bbm.c b/drivers/mtd/pxa3xx_bbm.c
+index 7d877f4..d259827 100644
+--- a/drivers/mtd/pxa3xx_bbm.c
++++ b/drivers/mtd/pxa3xx_bbm.c
+@@ -1,77 +1,210 @@
+ /*
+- * linux/drivers/mtd/pxa3xx_bbm.c
+- *
+- * Bad Block Table support for PXA3xx.
+- * Copyright (C) 2007 Marvell International Ltd.
++ * Bad Block Management support for PXA3XX.
++ * Copyright (C) 2009 Marvell International Ltd.
++ *     Lei Wen <leiwen@marvell.com>
+  *
+  * This program is free software; you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License version 2 as
+  * published by the Free Software Foundation.
+  *
+  */
+-#include <malloc.h>
++
+ #include <linux/mtd/mtd.h>
+-#include <asm/arch-pxa168/pxa3xx_bbm.h>
++#include <linux/mtd/partitions.h>
+ #include <asm/errno.h>
++#include <asm/arch/pxa3xx_bbm.h>
++#include <malloc.h>
+ #include <common.h>
+ 
+-void dump_reloc_table(struct pxa3xx_bbm *bbm)
+-{
+-	int i;
++#define NEW_BBM_RELOC_PERCENTAGE	(2)
++#define MAX_SUPPRTED_PARTNUM		(3)
++static struct mtd_partition *pxa3xx_check_partition(struct mtd_info *mtd,
++		struct mtd_partition *part, int *num);
+ 
+-	if (bbm->table->total == 0)
+-		printk(KERN_INFO "The reloc table is empty now\n");
++static int erase_success;
++static int should_reloc = 1;
++static void pxa3xx_bbm_callback(struct erase_info *instr)
++{
++	if (instr->fail_addr == MTD_FAIL_ADDR_UNKNOWN)
++		erase_success = 1;
+ 	else
+-		for (i = 0; i < bbm->table->total; i++) {
+-			printk(KERN_INFO "block: %8d is relocated to block: %d\n",
+-					bbm->reloc[i].from, bbm->reloc[i].to);
+-		}
++		erase_success = 0;
+ }
+ 
+-static int pxa3xx_init_reloc_tb(struct mtd_info *mtd)
++static void dump_reloc_table(struct reloc_item *item, int entry_num)
+ {
+-	struct pxa3xx_bbm *bbm = mtd->bbm;
+-	int size = mtd->writesize + mtd->oobsize;
+-	int slots, pages;
++	int i;
+ 
+-	bbm->page_shift = ffs(mtd->writesize) - 1;
+-	bbm->erase_shift = ffs(mtd->erasesize) - 1;
++	if (entry_num == 0) {
++		printk(KERN_INFO "The reloc table is empty now\n");
++		return;
++	}
+ 
+-	pages = mtd->erasesize >> bbm->page_shift;
+-	bbm->reloc_begin = mtd_div_by_eb(mtd->size, mtd);
+-	slots = (bbm->reloc_begin * 2) / 100;
+-	slots = (slots < PXA_MAX_RELOC_ENTRY) ? slots : PXA_MAX_RELOC_ENTRY;
++	for (i = 0; i < entry_num; i++)
++		printk(KERN_INFO "block: %8d is relocated to block: %d\n",
++				item[i].from, item[i].to);
++}
+ 
+-	bbm->max_slots		= pages;
+-	bbm->max_reloc_entry	= slots;
+-	bbm->reloc_begin	-= bbm->max_reloc_entry;
+-	bbm->table_init		= 0;
++static void dump_fact_bads(struct pxa3xx_bbt *fbbt)
++{
++	uint32_t *fact_bad = (uint32_t *)&fbbt->fact_bad;
++	int i;
+ 
+-	bbm->data_buf = kzalloc(size, GFP_KERNEL);
+-	if (!bbm->data_buf) {
+-		return -ENOMEM;
++	if (fbbt->entry_num == 0) {
++		printk(KERN_INFO "There is no factory bad block!!\n");
++		return;
+ 	}
+ 
+-	bbm->table = (struct reloc_table *)bbm->data_buf;
+-	memset(bbm->table, 0x0, sizeof(struct reloc_table));
++	for (i = 0; i < fbbt->entry_num; i ++)
++		printk(KERN_INFO "block %d is bad.\n", fact_bad[i]);
++}
+ 
+-	bbm->reloc = (struct reloc_item *)((uint8_t *)bbm->data_buf +
+-			sizeof (struct reloc_item));
+-	memset(bbm->reloc, 0x0,
+-			sizeof(struct reloc_item) * bbm->max_reloc_entry);
++static void dump_part_info(struct mtd_info *mtd)
++{
++	struct pxa3xx_bbm *bbm = (struct pxa3xx_bbm *)mtd->bbm;
++	struct pxa3xx_new_bbm *new_bbm = (struct pxa3xx_new_bbm *)bbm->data_buf;
++	struct pxa3xx_part *part = new_bbm->part;
++	struct pxa3xx_partinfo *partinfo;
++	struct pxa3xx_bbt *rbbt;
++	struct reloc_item *item;
++	char tmp[9];
++	int i;
++	uint32_t swap_temp;
+ 
+-	return 0;
++	printk(KERN_INFO "\nThere are totally %d parts", part->part_num);
++	for (i = 0; i < part->part_num; i ++) {
++		printk(KERN_INFO "\n===The part %d info:===\n", i);
++		partinfo = &new_bbm->partinfo[i];
++		if (partinfo->type == PART_LOGI)
++			printk(KERN_INFO "This part is Logi\n");
++		else
++			printk(KERN_INFO "This part is Phys\n");
++		if (partinfo->usage && partinfo->usage != 0xffffffff) {
++			memcpy(tmp, &partinfo->usage, 4);
++			tmp[4] = '\0';
++			printk(KERN_INFO "Part name %s\n", tmp);
++		}
++		if (partinfo->identifier && partinfo->identifier != 0xffffffff) {
++			memcpy(tmp, &partinfo->identifier, 4);
++			tmp[4] = '\0';
++			printk(KERN_INFO "identifier %s\n", tmp);
++		}
++		printk(KERN_INFO "Attr %16x\n", partinfo->attrs);
++		printk(KERN_INFO "This part start from %llx to %llx\n",
++				partinfo->start_addr, partinfo->end_addr);
++		printk(KERN_INFO "Reserved pool start from %llx, size %llx\n",
++				partinfo->rp_start, partinfo->rp_size);
++		if (partinfo->rp_algo == RP_UPWD)
++			printk(KERN_INFO "Reserved pool grow upwards\n");
++		else
++			printk(KERN_INFO "Reserved pool grow downwards\n");
++
++		swap_temp = partinfo->rbbt_type;
++		swab32s(&swap_temp);
++		memcpy(tmp, &swap_temp, 4);
++		tmp[4] = '\0';
++		printk(KERN_INFO "\nRBBT type %s\n", tmp);
++		printk(KERN_INFO "RBBT start at %llx, its back at %llx\n",
++			partinfo->rbbt_start, partinfo->rbbt_start_back);
++		rbbt = &new_bbm->rbbt[i];
++		printk(KERN_INFO "RBBT could max reloc %d blocks\n",
++				new_bbm->max_reloc_entry[i]);
++		printk(KERN_INFO "Current slot is at 0x%llx\n",
++			new_bbm->rbbt_offset[i] << mtd->writesize_shift);
++		item = (struct reloc_item *)&rbbt->reloc;
++		dump_reloc_table(item, new_bbm->rbbt->entry_num);
++	}
+ }
+ 
+ static void pxa3xx_uninit_reloc_tb(struct mtd_info *mtd)
+ {
+-	struct pxa3xx_bbm *bbm = mtd->bbm;
++	struct pxa3xx_bbm *bbm = (struct pxa3xx_bbm *)mtd->bbm;
++	struct pxa3xx_legacy_bbm *legacy_bbm;
++	struct pxa3xx_new_bbm *new_bbm;
+ 
+ 	if (bbm) {
+-		kfree(bbm->data_buf);
++		switch (bbm->bbm_type) {
++		case BBM_LEGACY:
++			legacy_bbm = (struct pxa3xx_legacy_bbm *)bbm->data_buf;
++			kfree(legacy_bbm->table);
++			break;
++
++		case BBM_NEW:
++			new_bbm = (struct pxa3xx_new_bbm *)bbm->data_buf;
++			kfree(new_bbm->rbbt);
++			kfree(new_bbm->fbbt);
++			kfree(new_bbm->part);
++		default:
++			break;
++		}
++
++		if (bbm->data_buf)
++			kfree(bbm->data_buf);
+ 		kfree(bbm);
+-		bbm = NULL;
++		mtd->bbm = NULL;
++	}
++}
++
++/*
++ * Found the block belong to which partition
++ */
++static int find_part(struct mtd_info *mtd, uint64_t offset)
++{
++	struct pxa3xx_bbm *bbm = (struct pxa3xx_bbm *)mtd->bbm;
++	struct pxa3xx_new_bbm *new_bbm = (struct pxa3xx_new_bbm *)bbm->data_buf;
++	struct pxa3xx_part *part = new_bbm->part;
++	struct pxa3xx_partinfo *partinfo;
++	int i, found_part = -EINVAL;
++
++	for (i = 0; i < part->part_num; i ++) {
++		partinfo = &(new_bbm->partinfo[i]);
++		if (offset < partinfo->start_addr)
++			break;
++
++		if (offset < partinfo->end_addr) {
++			found_part = i;
++			break;
++		}
++	}
++
++	return found_part;
++}
++
++/*
++ * start_page and end_page should be in one block boundary
++ * direction: 1 for positive page grow order, 0 for the reversed order
++ * indicator should be meaningful bit order stand for BBT
++ */
++int page_search(struct mtd_info *mtd, int start_page, int end_page,
++	int direction, unsigned int indicator, void *buf, unsigned int mask)
++{
++	int found_page = -EINVAL, cur_page, ret;
++	unsigned int header;
++	size_t retlen;
++
++	cur_page = (direction == ORDER_POSITIVE) ? end_page : start_page;
++	while (start_page <= end_page) {
++		ret = mtd->read(mtd, cur_page << mtd->writesize_shift,
++				mtd->writesize, &retlen, buf);
++		header = *(unsigned int *)buf & mask;
++		if (!ret && header == indicator) {
++			found_page = cur_page;
++			break;
++		}
++
++		if (direction == ORDER_POSITIVE) {
++			cur_page --;
++			if (cur_page < start_page)
++				break;
++		}
++		else {
++			cur_page ++;
++			if (cur_page > end_page)
++				break;
++		}
+ 	}
++
++	return found_page;
+ }
+ 
+ /* add the relocation entry into the relocation table
+@@ -79,261 +212,1160 @@ static void pxa3xx_uninit_reloc_tb(struct mtd_info *mtd)
+  * If the relocated block is bad, an new entry will be added into the
+  * bottom of the relocation table.
+  */
+-int update_reloc_tb(struct mtd_info *mtd, int block)
++static int sync_pxa3xx_bbt(struct mtd_info *mtd, loff_t ofs)
+ {
+ 	struct pxa3xx_bbm *bbm = mtd->bbm;
+-	struct reloc_table *table = bbm->table;
+-	struct reloc_item *item = bbm->reloc;
++	struct pxa3xx_legacy_bbm *legacy_bbm = NULL;
++	struct pxa3xx_new_bbm *new_bbm;
++	struct pxa3xx_partinfo *partinfo;
++	struct pxa3xx_bbt *bbt = NULL;
++	struct reloc_item *item;
+ 	struct erase_info instr;
+-	int reloc_block, ret, entry_num = -1;
+-	char rel_dist[PXA_MAX_RELOC_ENTRY];
+-	int i;
++	int reloc_block, entry_num = -1;
++	char *rel_dist;
++	int i, block, _rel, max_reloc_entry, reloc_boundary, total, part;
+ 
+-	if (table->total > bbm->max_reloc_entry) {
+-		printk(KERN_WARNING "Relocation table exceed max num,");
+-		printk(KERN_WARNING "cannot relocate block 0x%x\n", block);
++	printk(KERN_INFO "ready to put %llx into the bbt\n", ofs);
++	if (bbm->bbm_type == BBM_LEGACY) {
++		legacy_bbm = (struct pxa3xx_legacy_bbm *)bbm->data_buf;
++		item = legacy_bbm->reloc;
++		reloc_boundary = mtd_div_by_eb(mtd->size, mtd)
++			- legacy_bbm->max_reloc_entry;
++		max_reloc_entry = legacy_bbm->max_reloc_entry;
++		total = legacy_bbm->table->total;
++	}
++	else {
++		new_bbm = (struct pxa3xx_new_bbm *)bbm->data_buf;
++		part = find_part(mtd, ofs);
++		if (part < 0)
++			return -EINVAL;
++		new_bbm->update_indicator |= 1 << part;
++		max_reloc_entry = new_bbm->max_reloc_entry[part];
++		bbt = &new_bbm->rbbt[part];
++		partinfo = &new_bbm->partinfo[part];
++		item = (struct reloc_item *)&bbt->reloc;
++		reloc_boundary = mtd_div_by_eb(partinfo->rp_start, mtd);
++		total = bbt->entry_num;
++	}
++
++	block = (int)(ofs >> mtd->erasesize_shift);
++	if (total >= max_reloc_entry) {
++		printk(KERN_WARNING "Relocation table currently have %d\n"
++			"Exceed max num %d, cannot relocate block %d!!\n",
++			total, max_reloc_entry, block);
+ 		return -ENOSPC;
+ 	}
+ 
++	if (block >= reloc_boundary)
++		return -EINVAL;
++
+ 	//identify whether the block has been relocated
+-	for(i = table->total - 1; i >= 0; i --) {
++	for(i = total - 1; i >= 0; i --) {
+ 		if(block == item[i].from)
+ 			entry_num = i;
+ 	}
+ 
+-	memset(rel_dist, 0, PXA_MAX_RELOC_ENTRY);
++	rel_dist = bbm->rel_dist;
++	if (!rel_dist) {
++		rel_dist = kzalloc(max_reloc_entry, GFP_KERNEL);
++		/* need to save this */
++		bbm->rel_dist = rel_dist;
++	}
++	else
++		memset(rel_dist, 0, max_reloc_entry);
+ 	//find the available block with the largest number in reservered area
+-	for (i = 0; i < table->total; i ++) {
+-		int _rel = (item[i].to != 65535) ? item[i].to : item[i].from;
+-
+-		rel_dist[_rel - bbm->reloc_begin] = 1;
++	for (i = 0; i < total; i ++) {
++		_rel = (item[i].to != 65535) ? item[i].to : item[i].from;
++		rel_dist[_rel - reloc_boundary] = 1;
+ 	}
+ 
+ 	while (1) {
+ 		/* Make sure that reloc_block is pointing to a valid block */
+-		for (reloc_block = bbm->max_reloc_entry - 1; reloc_block >= 0; reloc_block --) {
++		for (reloc_block = max_reloc_entry - 1;
++				reloc_block >= 0; reloc_block --) {
+ 			if (rel_dist[reloc_block] == 0) {
++				printk(KERN_INFO "get block %d from reserved area\n", reloc_block + reloc_boundary);
+ 				break;
+ 			}
+ 		}
+ 
+-		reloc_block = reloc_block + bbm->reloc_begin;
++		if (reloc_block < 0) {
++			if (entry_num >= 0) {
++				item[entry_num].from = item[entry_num].to;
++				item[entry_num].to = 65535;
++			}
++			printk(KERN_ERR "Reserved ared has no left blocks\n");
++			return -ENOSPC;
++		}
++
++		reloc_block = reloc_block + reloc_boundary;
+ 		memset(&instr, 0, sizeof(struct erase_info));
+ 		instr.mtd = mtd;
+-		instr.addr = (unsigned long long)reloc_block << bbm->erase_shift;
+-		instr.len = (1 << bbm->erase_shift);
++		instr.addr = (uint64_t)reloc_block << mtd->erasesize_shift;
++		instr.len = mtd->erasesize;
++		instr.callback = pxa3xx_bbm_callback;
+ 
+-		ret = mtd->erase(mtd, &instr);
+-		if (ret == 0)
++		should_reloc = 0;
++		mtd->erase(mtd, &instr);
++		should_reloc = 1;
++		if (erase_success) {
++			printk(KERN_INFO "The block is verified\n");
+ 			break;
++		}
+ 		else {
+ 			/* skip it if the reloc_block is also a 
+ 			 * bad block
+ 			 */
+ 			if (instr.fail_addr == instr.addr) {
+-				item[table->total].from = reloc_block;
++				item[total].from = reloc_block;
+ 
+-				item[table->total].to = 65535;
+-				table->total++;
+-				rel_dist[reloc_block - bbm->reloc_begin] = 1;;
++				item[total].to = 65535;
++				total ++;
++				rel_dist[reloc_block - reloc_boundary] = 1;;
+ 				continue;
+ 			} else
+ 				return -EINVAL;
+ 		}
+ 	}
+ 
+-	/* Create the relocated block information in the table */
+-	//when the block is relocated before, blob should modify the original entry to new
+-	//relocated block and the old relocated block point to 65535. If not the situation, 
+-	//create a new entry
++	/*
++	 * Create the relocated block information in the table
++	 * when the block is relocated before, blob should modify
++	 * the original entry to new relocated block and the old
++	 * relocated block point to 65535. If not the situation,
++	 * create a new entry
++	 */
+ 	if (entry_num != -1) {
+-		item[table->total].from = item[entry_num].to;
+-		item[table->total].to = 65535;
+-		table->total++;
++		item[total].from = item[entry_num].to;
++		item[total].to = 65535;
++		total ++;
+ 		item[entry_num].to = reloc_block;
+ 	} else {
+-		item[table->total].from = block;
+-		item[table->total].to = reloc_block;
+-		table->total++;
++		item[total].from = block;
++		item[total].to = reloc_block;
++		total ++;
+ 	}
+ 
++	if (bbm->bbm_type == BBM_LEGACY)
++		legacy_bbm->table->total = total;
++	else
++		bbt->entry_num = total;
++
+ 	return 0;
+ }
+ 
+ /* Write the relocation table back to device, if there's room. */
+-static int sync_reloc_tb(struct mtd_info *mtd, int *idx)
++int pxa3xx_update_bbt(struct mtd_info *mtd, loff_t offs)
+ {
+-	struct pxa3xx_bbm *bbm = mtd->bbm;
+-	uint8_t *tmp;
++	struct pxa3xx_bbm *bbm = (struct pxa3xx_bbm *)mtd->bbm;
++	struct pxa3xx_legacy_bbm *legacy_bbm;
++	struct pxa3xx_new_bbm *new_bbm;
+ 	size_t retlen;
+-	int len;
++	loff_t offset = 0;
++	void *buf;
++	int ret = 1, part = 0, pages, is_continue = 1;
++
++	while (is_continue) {
++		switch (bbm->bbm_type) {
++		case BBM_LEGACY:
++			if (!ret) {
++				printk(KERN_INFO "update legacy bbt"
++						" at %llx\n", offset);
++				return 0;
++			}
++
++			pages = mtd->erasesize >> mtd->writesize_shift;
++			legacy_bbm = (struct pxa3xx_legacy_bbm *)bbm->data_buf;
++			if (legacy_bbm->current_slot <= PXA_BEGIN_SLOT
++				|| legacy_bbm->current_slot > pages)
++				goto ERR_EXIT;
++
++			/* should write to the next slot */
++			legacy_bbm->current_slot --;
++			buf = legacy_bbm->table;
++			offset = legacy_bbm->current_slot
++				<< mtd->writesize_shift;
++			break;
++
++		case BBM_NEW:
++			new_bbm = (struct pxa3xx_new_bbm *)bbm->data_buf;
++			if (!ret) {
++				printk(KERN_INFO "update new bbm bbt"
++						" at %llx\n", offset);
++				new_bbm->update_indicator &= ~(1 << part);
++			}
++			for (; part < MAX_SUPPRTED_PARTNUM; part ++)
++				if (new_bbm->update_indicator & (1 << part))
++					break;
++
++			if (part >= MAX_SUPPRTED_PARTNUM)
++				return 0;
++
++			offset = (new_bbm->rbbt_offset[part] + 1)
++				<< mtd->writesize_shift;
++			if (!(unsigned int)(offset & mtd->erasesize_mask))
++				goto ERR_EXIT;
++
++			new_bbm->rbbt_offset[part] ++;
++			buf = new_bbm->rbbt;
++			break;
++
++		default:
++			return 0;
++		}
+ 
+-	if (*idx < PXA_BEGIN_SLOT) {
+-		printk(KERN_ERR "Can't write relocation table to device \
+-				any more.\n");
+-		return -1;
++		ret = mtd->write(mtd, offset, mtd->writesize, &retlen, buf);
+ 	}
+ 
+-	if (*idx >= bbm->max_slots) {
+-		printk(KERN_ERR "Wrong Slot is specified.\n");
+-		return -1;
++	return 0;
++
++ERR_EXIT:
++	printk(KERN_ERR "Can't write relocation table to device any more.\n");
++	return -EINVAL;
++}
++
++/* Find the relocated block of the bad one.
++ * If it's a good block, return 0. Otherwise, return a relocated one.
++ * idx points to the next relocation entry
++ * If the relocated block is bad, an new entry will be added into the
++ * bottom of the relocation table.
++ */
++static loff_t pxa3xx_search_reloc_tb(struct mtd_info *mtd, loff_t ofs)
++{
++	struct pxa3xx_bbm *bbm = (struct pxa3xx_bbm *)mtd->bbm;
++	struct pxa3xx_legacy_bbm *legacy_bbm;
++	struct pxa3xx_new_bbm *new_bbm;
++	struct reloc_item *item;
++	int i, block, max_allow_relocated, entry_num, part;
++
++	if (!bbm || (bbm->is_init == BBT_NOINIT))
++		return ofs;
++
++	block = ofs >> mtd->erasesize_shift;
++	switch (bbm->bbm_type) {
++	case BBM_LEGACY:
++		legacy_bbm = (struct pxa3xx_legacy_bbm *)bbm->data_buf;
++		if (legacy_bbm->current_slot < 0)
++			return ofs;
++
++		max_allow_relocated = mtd_div_by_eb(mtd->size, mtd)
++			- legacy_bbm->max_reloc_entry;
++		item = legacy_bbm->reloc;
++		entry_num = legacy_bbm->table->total;
++		break;
++
++	case BBM_NEW:
++		new_bbm = (struct pxa3xx_new_bbm *)bbm->data_buf;
++		part = find_part(mtd, ofs);
++		if (part < 0)
++			return ofs;
++		item = (struct reloc_item *)&new_bbm->rbbt[part].reloc;
++		entry_num = new_bbm->rbbt[part].entry_num;
++		max_allow_relocated =
++		mtd_div_by_eb(new_bbm->partinfo[part].end_addr, mtd);
++		break;
++
++	default:
++		return ofs;
+ 	}
+ 
+-	/* should write to the next slot*/
+-	(*idx) --;
++	if (block >= max_allow_relocated || entry_num == 0)
++		return ofs;
+ 
+-	len = 4;
+-	len += bbm->table->total << 2;
++	ofs -= block * mtd->erasesize;
++	for (i = entry_num - 1; i >= 0; i --) {
++		if (block == item[i].from) {
++			block = item[i].to;
++			break;
++		}
++	}
+ 
+-	tmp = (uint8_t *)bbm->data_buf;
+-	mtd->write(mtd, (*idx) << bbm->page_shift,
+-			1 << bbm->page_shift, &retlen, tmp);
++	ofs += block * mtd->erasesize;
+ 
+-	return 0;
++	return ofs;
+ }
+ 
+-static int pxa3xx_scan_reloc_tb(struct mtd_info *mtd)
++static int pxa3xx_init_bbm(struct mtd_info *mtd, int bbm_type)
+ {
+ 	struct pxa3xx_bbm *bbm = mtd->bbm;
++	struct pxa3xx_legacy_bbm *legacy_bbm;
++	struct pxa3xx_new_bbm *new_bbm;
++	int size, ret, entrys, max_relcs;
++
++	if (bbm_type != BBM_NEW && bbm_type != BBM_LEGACY)
++		return -EFAULT;
++
++	bbm = kzalloc(sizeof(struct pxa3xx_bbm), GFP_KERNEL);
++	if (!bbm)
++		return -ENOMEM;
++
++	bbm->search = pxa3xx_search_reloc_tb;
++	bbm->uninit = pxa3xx_uninit_reloc_tb;
++	bbm->check_partition = pxa3xx_check_partition;
++	mtd->bbm = bbm;
++	size = (bbm_type == BBM_NEW) ? sizeof(struct pxa3xx_new_bbm) :
++					sizeof(struct pxa3xx_legacy_bbm);
++	bbm->is_init = BBT_NOINIT;
++	bbm->no_sync = 0;
++	bbm->data_buf = kzalloc(size, GFP_KERNEL);
++	if (!bbm->data_buf) {
++		ret = -ENOMEM;
++		goto ERR_EXIT;
++	}
++
++	if (bbm_type == BBM_NEW) {
++		bbm->bbm_type = BBM_NEW;
++		new_bbm = (struct pxa3xx_new_bbm *)bbm->data_buf;
++		new_bbm->main_block = -1;
++		new_bbm->back_block = -1;
++		new_bbm->fbbt =	kzalloc(mtd->writesize, GFP_KERNEL);
++		new_bbm->part =	kzalloc(mtd->writesize, GFP_KERNEL);
++		new_bbm->rbbt =
++		   kzalloc(mtd->writesize * MAX_SUPPRTED_PARTNUM, GFP_KERNEL);
++		new_bbm->rbbt_offset =
++		   kzalloc(sizeof(loff_t) * MAX_SUPPRTED_PARTNUM, GFP_KERNEL);
++		new_bbm->max_reloc_entry =
++		   kzalloc(sizeof(int) * MAX_SUPPRTED_PARTNUM, GFP_KERNEL);
++		if (!new_bbm->rbbt
++				|| !new_bbm->rbbt_offset
++				|| !new_bbm->max_reloc_entry
++				|| !new_bbm->fbbt
++				|| !new_bbm->part) {
++			kfree(bbm->data_buf);
++			ret = -ENOMEM;
++			goto ERR_EXIT;
++		}
++
++		new_bbm->partinfo =
++			(struct pxa3xx_partinfo *)&new_bbm->part[1];
++		memset(new_bbm->fbbt, 0xff, mtd->writesize);
++		memset(new_bbm->part, 0xff, mtd->writesize);
++	}
++	else {
++		bbm->bbm_type = BBM_LEGACY;
++		legacy_bbm = (struct pxa3xx_legacy_bbm *)bbm->data_buf;
++		entrys = mtd_div_by_eb(mtd->size, mtd);
++		entrys = (entrys / 100) * 2;
++		max_relcs = (mtd->writesize - sizeof(struct reloc_table))
++			/ sizeof(struct reloc_item);
++
++		legacy_bbm->max_reloc_entry = (entrys < max_relcs) ?
++					entrys : max_relcs;
++		legacy_bbm = (struct pxa3xx_legacy_bbm *)bbm->data_buf;
++		legacy_bbm->table = kzalloc(mtd->writesize, GFP_KERNEL);
++		if (!legacy_bbm->table) {
++			kfree(bbm->data_buf);
++			ret = -ENOMEM;
++			goto ERR_EXIT;
++		}
++
++		memset(legacy_bbm->table, 0xff, mtd->writesize);
++		legacy_bbm->reloc = (struct reloc_item *)&legacy_bbm->table[1];
++		legacy_bbm->current_slot = -1;
++	}
++
++	return 0;
++
++ERR_EXIT:
++	kfree(bbm);
++	mtd->bbm = NULL;
++	return ret;
++}
++
++static int legacy_bbm_scan(struct mtd_info *mtd)
++{
++	struct pxa3xx_bbm *bbm = (struct pxa3xx_bbm *)mtd->bbm;
++	struct pxa3xx_legacy_bbm *legacy_bbm;
+ 	struct reloc_table *table;
+-	int page, valid = 0;
++
++	legacy_bbm = (struct pxa3xx_legacy_bbm *)bbm->data_buf;
++	table = legacy_bbm->table;
++	legacy_bbm->current_slot = page_search(mtd, PXA_BEGIN_SLOT,
++			(mtd->erasesize >> mtd->writesize_shift) - 1,
++			ORDER_REVERSE, PXA_RELOC_HEADER, table, BBM_HALF_MASK);
++
++	printk(KERN_INFO "Max capacity of BBM is %d blocks!!\n",
++			legacy_bbm->max_reloc_entry);
++	if (legacy_bbm->current_slot >= 0) {
++		printk(KERN_INFO "relocation table at page:%d\n",
++				legacy_bbm->current_slot);
++		dump_reloc_table(legacy_bbm->reloc, table->total);
++
++		return 0;
++	}
++
++	/* There should be a valid relocation table slot at least. */
++	printk(KERN_ERR "NO VALID reloc table can be recognized\n");
++	printk(KERN_ERR "CAUTION: It may cause unpredicated error\n");
++	printk(KERN_ERR "Please re-initialize the flash.\n");
++	kfree(bbm->data_buf);
++
++	return -EINVAL;
++}
++
++#define FOUND_FBBT 0x1
++#define FOUND_PART 0x2
++#define BBM_NOCOPY 0x1
++static int scan_fbbt_part(struct mtd_info *mtd, int block, void *buf, int flag)
++{
++	/*
++	 * NTIM header at least occupy by one page,
++	 * so search the FBBT or part from second page,
++	 * and this search should be ended at the fifth page
++	 */
++	struct pxa3xx_bbm *bbm = (struct pxa3xx_bbm *)mtd->bbm;
++	struct pxa3xx_new_bbm *new_bbm = (struct pxa3xx_new_bbm *)bbm->data_buf;
++	struct pxa3xx_part *part;
++	struct pxa3xx_partinfo *partinfo;
++	int page, ret, part_num, found = 0, i, max_reloc_entry, rp_num;
++	int start_page, end_page;
++	loff_t offset;
+ 	size_t retlen;
+-	int ret;
+ 
+-	if (!(bbm->table_init))
+-		pxa3xx_init_reloc_tb(mtd);
++	max_reloc_entry = (mtd->writesize - 40) / sizeof(struct reloc_item);
++	for (page = 1; page < 5; page ++) {
++		if (found == (FOUND_PART | FOUND_FBBT))
++			break;
++
++		offset = ((uint64_t)block << mtd->erasesize_shift)
++			+ (page << mtd->writesize_shift);
++		ret = mtd->read(mtd, offset, mtd->writesize, &retlen, buf);
+ 
+-	table = bbm->table;
++		/* found FBBT */
++		if (!ret && *(unsigned int *)buf == PXA_NEW_BBM_HEADER) {
++			if (flag == BBM_NOCOPY)
++				return 1;
+ 
+-	for (page = PXA_BEGIN_SLOT; page < bbm->max_slots; page ++) {
+-		memset(bbm->data_buf, 0,
+-				mtd->writesize + mtd->oobsize);
+-		ret = mtd->read(mtd, (page << bbm->page_shift),
+-				mtd->writesize, &retlen, bbm->data_buf);
++			found |= FOUND_FBBT;
++			memcpy(new_bbm->fbbt, buf, retlen);
++		}
+ 
+-		if (ret == 0) {
+-			if (table->header != PXA_RELOC_HEADER) {
++		/* found partition table */
++		if (!ret && *(unsigned int *)buf == PXA_PART_IDET_1) {
++			if (*((unsigned int *)buf + 1) != PXA_PART_IDET_2)
+ 				continue;
+-			} else {
+-				bbm->current_slot = page;	
+-				valid = 1;
++
++			if (flag == BBM_NOCOPY)
++				return 1;
++
++			found |= FOUND_PART;
++			memcpy(new_bbm->part, buf, retlen);
++			part = new_bbm->part;
++			part_num = part->part_num;
++
++			for (i = 0; i < part_num; i ++) {
++				partinfo = &new_bbm->partinfo[i];
++				start_page =
++					mtd_div_by_ws(partinfo->rbbt_start, mtd);
++				end_page = start_page - 1 +
++					(mtd->erasesize >> mtd->writesize_shift);
++				new_bbm->rbbt_offset[i] =
++					page_search(mtd, start_page, end_page,
++					ORDER_POSITIVE, PXA_NEW_BBM_HEADER,
++					&new_bbm->rbbt[i], BBM_FULL_MASK);
++				rp_num = mtd_div_by_eb(partinfo->rp_size, mtd);
++				new_bbm->max_reloc_entry[i] =
++					(max_reloc_entry < rp_num) ?
++					max_reloc_entry : rp_num;
++			}
++		}
++	}
++
++	return found == (FOUND_PART | FOUND_FBBT);
++}
++
++static int new_bbm_scan(struct mtd_info *mtd)
++{
++	struct pxa3xx_bbm *bbm = (struct pxa3xx_bbm *)mtd->bbm;
++	struct pxa3xx_new_bbm *new_bbm;
++	int block, ret, flag;
++	void *buf;
++
++	new_bbm = (struct pxa3xx_new_bbm *)bbm->data_buf;
++	buf = kzalloc(mtd->writesize + mtd->oobsize, GFP_KERNEL);
++	if (!buf)
++		return -ENOMEM;
++	flag = 0;
++	for (block = 0; block < 10; block ++) {
++		ret = scan_fbbt_part(mtd, block, buf, flag);
++		if (ret) {
++			flag = BBM_NOCOPY;
++			if (new_bbm->main_block == -1)
++				new_bbm->main_block = block;
++			else if (new_bbm->back_block == -1) {
++				new_bbm->back_block = block;
+ 				break;
+ 			}
+ 		}
+ 	}
++	kfree(buf);
+ 
+-	if (valid) {
+-		printk(KERN_INFO "relocation table at page:%d\n", bbm->current_slot);
+-		bbm->table_init = 1;
+-	} else {
+-		/* There should be a valid relocation table slot at least. */
+-		printk(KERN_ERR "NO VALID reloc table can be recognized\n");
+-		printk(KERN_ERR "CAUTION: It may cause unpredicated error\n");
+-		printk(KERN_ERR "Please re-initialize the flash.\n");
+-		memset((unsigned char *)bbm->table, 0,
+-				sizeof(struct reloc_table));
+-		bbm->table_init = 0;
++	if (new_bbm->main_block == -1 && new_bbm->back_block == -1) {
++		printk(KERN_ERR "New BBM initilization failed!!!!!!\n");
+ 		return -EINVAL;
+ 	}
+ 
++	printk(KERN_INFO "Found main block at %d, back at %d\n",
++			new_bbm->main_block, new_bbm->back_block);
++	new_bbm->update_indicator = 0;
++	printk(KERN_INFO "Factory marked bad blocks:\n");
++	dump_fact_bads(new_bbm->fbbt);
++	dump_part_info(mtd);
+ 	return 0;
+ }
+ 
+-static void show_bbm(struct mtd_info *mtd)
++int pxa3xx_scan_bbt(struct mtd_info *mtd)
+ {
+-	struct pxa3xx_bbm *bbm = mtd->bbm;
++	struct pxa3xx_bbm *bbm;
++	size_t retlen;
++	int ret, bbm_type;
++	void *buf;
++
++	if (!mtd->bbm) {
++		/*
++		 * Legacy BBM only use the block 0, while new BBM scheme use
++		 * the block 0 to block 9. So first read the last page in
++		 * block 0 to see if it is legacy BBM, or change the
++		 * scan strategy to new BBM scheme.
++		 */
++		buf = kzalloc(mtd->writesize, GFP_KERNEL);
++		if (!buf)
++			return -ENOMEM;
++
++		ret = mtd->read(mtd, mtd->erasesize - mtd->writesize , mtd->writesize,
++				&retlen, buf);
++
++		/* This flash chip is using legacy BBM */
++		if (!ret && *(unsigned short *)buf == PXA_RELOC_HEADER)
++			bbm_type = BBM_LEGACY;
++		else
++			bbm_type = BBM_NEW;
++
++		kfree(buf);
++		ret = pxa3xx_init_bbm(mtd, bbm_type);
++		if (ret)
++			return ret;
++		bbm = (struct pxa3xx_bbm *)mtd->bbm;
++	}
++	else {
++		bbm = (struct pxa3xx_bbm *)mtd->bbm;
++		bbm_type = bbm->bbm_type;
++	}
+ 
+-	if (pxa3xx_scan_reloc_tb(mtd) == 0) {
+-		dump_reloc_table(bbm);
++	if (bbm->is_init != BBT_NOINIT)
++		return 0;
++
++	if (bbm_type == BBM_LEGACY)
++		ret = legacy_bbm_scan(mtd);
++	else
++		ret = new_bbm_scan(mtd);
++
++	if (!ret)
++		bbm->is_init = BBT_INITED;
++	else {
++		printk(KERN_ERR "BBM NOT Initialized, "
++				"Please re-init the flash!!!\n\n");
++		bbm->is_init = BBT_NOINIT;
+ 	}
++
++	return ret;
+ }
+ 
+-/* Find the relocated block of the bad one.
+- * If it's a good block, return 0. Otherwise, return a relocated one.
+- * idx points to the next relocation entry
+- * If the relocated block is bad, an new entry will be added into the
+- * bottom of the relocation table.
+- */
+-static loff_t pxa3xx_search_reloc_tb(struct mtd_info *mtd, loff_t ofs)
++static int checkbad(struct mtd_info *mtd, loff_t ofs)
+ {
+-	struct pxa3xx_bbm *bbm = mtd->bbm;
+-	struct reloc_table *table = bbm->table;
+-	struct reloc_item *item = bbm->reloc;
+-	int i, max, block, max_allow_relocated;
++	struct mtd_oob_ops ops;
++	uint32_t bad_mark;
+ 
+-	block = ofs >> bbm->erase_shift;
+-	max_allow_relocated = mtd_div_by_eb(mtd->size, mtd)
+-				- bbm->max_reloc_entry;
++	ops.ooboffs	= 0;
++	ops.ooblen	= 2;
++	ops.len		= 2;
++	ops.datbuf	= NULL;
++	ops.oobbuf	= (uint8_t *)&bad_mark;
++	ops.mode	= (mtd_oob_mode_t)MTD_OOB_PLACE;
+ 
+-	if ((bbm->table_init == 0)
+-			|| (table->total == 0)
+-			|| (block >= max_allow_relocated))
++	mtd->read_oob(mtd, ofs, &ops);
++	if ((bad_mark & 0xFF) != 0xFF)
++		return 1;
++	else
++		return 0;
++}
+ 
+-		return ofs;
++static int boot_part_bad(struct mtd_info *mtd, loff_t ofs)
++{
++	struct pxa3xx_bbm *bbm = (struct pxa3xx_bbm *)mtd->bbm;
++	struct pxa3xx_new_bbm *new_bbm = (struct pxa3xx_new_bbm *)bbm->data_buf;
++	struct pxa3xx_bbt *fbbt = new_bbm->fbbt;
++	int block = ofs >> mtd->erasesize_shift, i;
++	uint32_t *fact_bad = (uint32_t *)&fbbt->fact_bad;
+ 
+-	max = table->total;
+-	ofs -= block * mtd->erasesize;
++	for (i = 0; i < fbbt->entry_num; i ++)
++		if (fact_bad[i] == block)
++			return 1;
+ 
+-	for (i = max-1; i >= 0; i--) {
+-		if (block == item[i].from) {
+-			block = item[i].to;
++	return 0;
++}
++
++int pxa3xx_block_bad(struct mtd_info *mtd, loff_t ofs, int allowbbt)
++{
++	struct pxa3xx_bbm *bbm;
++	struct pxa3xx_legacy_bbm *legacy_bbm;
++	struct pxa3xx_new_bbm *new_bbm;
++	struct reloc_table *table;
++	int part;
++
++	bbm = (struct pxa3xx_bbm *)mtd->bbm;
++	if (bbm && (bbm->is_init != BBT_NOINIT)) {
++		if (bbm->is_init == BBT_FORCE_NOINIT)
++			return 0;
++
++		bbm = (struct pxa3xx_bbm *)mtd->bbm;
++		switch (bbm->bbm_type) {
++		case BBM_LEGACY:
++			legacy_bbm = (struct pxa3xx_legacy_bbm *)bbm->data_buf;
++			table = legacy_bbm->table;
++			/*
++			 * If relocation table is not yet full, then any block
++			 * in the flash should be good
++			 */
++			if (legacy_bbm->current_slot >= PXA_BEGIN_SLOT
++				&& table->total <= legacy_bbm->max_reloc_entry)
++				return 0;
++			else
++				return 1;
++			break;
++
++		case BBM_NEW:
++			new_bbm = (struct pxa3xx_new_bbm *)bbm->data_buf;
++			part = find_part(mtd, ofs);
++			if (part >= 0) {
++				if (new_bbm->rbbt[part].entry_num
++					< new_bbm->max_reloc_entry[part])
++					return 0;
++				else
++					return 1;
++			}
++		default:
+ 			break;
+ 		}
+ 	}
+ 
+-	ofs += block * mtd->erasesize;
+-
+-	return ofs;
++	return 0;
+ }
+ 
+-static int pxa3xx_mark_reloc_tb(struct mtd_info *mtd, loff_t ofs)
++int pxa3xx_block_markbad(struct mtd_info *mtd, loff_t ofs)
+ {
+ 	struct pxa3xx_bbm *bbm = mtd->bbm;
+-	struct mtd_oob_ops ops;
+-	uint32_t bad_mark = 0xFFFFFF00;
+-	int ret = 0, block, _ofs;
++	int ret;
+ 
+-	_ofs = bbm->search(mtd, ofs);
+-	if (_ofs < 0 || _ofs > mtd->size)
++	if (!should_reloc)
+ 		return 0;
+ 
+-	ops.mode	= MTD_OOB_PLACE;
+-	ops.len		= mtd->oobsize;
+-	ops.ooblen	= 2;
+-	ops.ooboffs	= 0;
+-	ops.oobbuf	= (uint8_t *)&bad_mark;
+-	ops.datbuf	= NULL;
++	if (bbm) {
++		if (bbm->bbm_type != BBM_LEGACY && bbm->bbm_type != BBM_NEW) {
++			printk(KERN_WARNING "There is no way"
++					" to mark bad at %llx", ofs);
++			return 0;
++		}
+ 
+-	mtd->write_oob(mtd, ofs, &ops);
++		if (bbm->is_init == BBT_NOINIT) {
++			printk(KERN_WARNING "You should scan bbm first!!\n");
++			return 0;
++		}
+ 
+-	if (bbm->table_init) {
+-		block = ofs >> bbm->erase_shift;
+-		ret = update_reloc_tb(mtd, block);
+-		if (ret)
+-			return ret;
++		ret = sync_pxa3xx_bbt(mtd, ofs);
++		if (!ret && !bbm->no_sync)
++			ret = pxa3xx_update_bbt(mtd, 0);
++
++		return ret;
++	}
++	else {
++		printk(KERN_ERR "Unable to mark bad block at %llx\n", ofs);
++		return -EFAULT;
++	}
++}
++
++static int recover_legacy_bbm(struct mtd_info *mtd, int backup)
++{
++	struct pxa3xx_bbm *bbm = (struct pxa3xx_bbm *)mtd->bbm;
++	struct pxa3xx_legacy_bbm *legacy_bbm;
++	struct reloc_table *table;
++	struct erase_info instr = {
++		.callback	= NULL,
++	};
++	int backup_size, ret = 0;
++	loff_t ofs;
++	void *buf;
++	size_t retlen;
++
++	backup_size = mtd->writesize * PXA_BEGIN_SLOT;
++	bbm->is_init = BBT_FORCE_NOINIT;
++	legacy_bbm = (struct pxa3xx_legacy_bbm *)bbm->data_buf;
++	legacy_bbm->current_slot = mtd->erasesize >> mtd->writesize_shift;
++	table = legacy_bbm->table;
++	table->header = PXA_RELOC_HEADER;
++	table->total = 0;
++
++	if (backup) {
++		buf = kzalloc(backup_size, GFP_KERNEL);
++		if (!buf) {
++			printk(KERN_ERR "MEM alloc failed!!\n");
++			return -ENOMEM;
++		}
++		printk(KERN_INFO "Ready to read..");
++		mtd->read(mtd, 0, backup_size, &retlen, buf);
++	}
++
++	instr.addr = 0;
++	instr.len = mtd->erasesize;
++	instr.callback = pxa3xx_bbm_callback;
++	printk(KERN_INFO "erasing..");
++
++	should_reloc = 0;
++	mtd->erase(mtd, &instr);
++	should_reloc = 1;
++	if (!erase_success) {
++		printk(KERN_ERR "erase block 0 failed!!!\n");
++		return -EFAULT;
++	}
++
++	if (backup) {
++		printk(KERN_INFO "write back..");
++		mtd->write(mtd, 0, backup_size, &retlen, buf);
++		kfree(buf);
++	}
++
++	printk(KERN_INFO "collect bad info..");
++	for (ofs = mtd->erasesize; ofs < mtd->size; ofs += mtd->erasesize)
++		if (checkbad(mtd, ofs)) {
++			printk(KERN_INFO "\nmark %llx as bad in bbt\n", ofs);
++			sync_pxa3xx_bbt(mtd, ofs);
++		}
+ 
+-		sync_reloc_tb(mtd, &(bbm->current_slot));
++	if (!bbm->no_sync) {
++		printk(KERN_INFO "update bbt..");
++		ret = pxa3xx_update_bbt(mtd, 0);
+ 	}
++	printk(KERN_INFO "done\n");
++
++	return ret;
++}
++
++static int update_fbbt(struct pxa3xx_bbt *fbbt, int block)
++{
++	uint32_t *fact_bad = (uint32_t *)&fbbt->fact_bad;
++	int i;
++
++	for (i = 0; i < fbbt->entry_num; i ++)
++		if (fact_bad[i] == block)
++			return 0;
++
++	fact_bad[i] = block;
++	fbbt->entry_num ++;
++
++	return fbbt->entry_num;
++}
+ 
++/*
++ * recover_new_bbm only try to rebuild the fbbt and use the
++ * default partition table to build the pt
++ */
++static int recover_new_bbm(struct mtd_info *mtd, struct reloc_item * item,
++		int num, int reserve_last_page)
++{
++	struct pxa3xx_bbm *bbm = (struct pxa3xx_bbm *)mtd->bbm;
++	struct pxa3xx_new_bbm *new_bbm = (struct pxa3xx_new_bbm *)bbm->data_buf;
++	struct pxa3xx_bbt *fbbt = new_bbm->fbbt;
++	struct pxa3xx_part *part = new_bbm->part;
++	struct erase_info instr = {
++		.callback	= NULL,
++	};
++	int boot_block, block, total_block, reserved_block, ret;
++	int rbbt, rbbt_back, max_reloc_entry, len, failed = 0;
++	loff_t ofs;
++	size_t retlen;
++	u_char *backup_buf = NULL;
++
++	/*
++	 * This should be the most init state
++	 * should try to find two good blocks without the fbbt's help
++	 * then build up a new fbbt
++	 */
++	backup_buf = kmalloc(mtd->erasesize, GFP_KERNEL);
++	if (!backup_buf) {
++		printk(KERN_ERR "Fail to allocate recovery memory!!\n");
++		return -ENOMEM;
++	}
++	bbm->is_init = BBT_FORCE_NOINIT;
++	if (new_bbm->main_block == -1) {
++		memset(new_bbm->rbbt, 0xff, mtd->writesize);
++		new_bbm->rbbt->ident = PXA_NEW_BBM_HEADER;
++		new_bbm->rbbt->type = BBT_TYPE_RUNT;
++		if (item != NULL && num > 0) {
++			memcpy(&(new_bbm->rbbt->reloc), (void *)item,
++					sizeof(struct reloc_item) * num);
++			new_bbm->rbbt->entry_num = num;
++		}
++		else
++			new_bbm->rbbt->entry_num = 0;
++		max_reloc_entry = (mtd->writesize - sizeof(struct pxa3xx_bbt))
++				/ sizeof(struct reloc_item) + 1;
++
++		fbbt->ident = PXA_NEW_BBM_HEADER;
++		fbbt->type = BBT_TYPE_FACT;
++		fbbt->entry_num = 0;
++		instr.len = mtd->erasesize;
++		instr.callback = pxa3xx_bbm_callback;
++		printk(KERN_INFO "Rebuild new bbm as init state..\n");
++		for (boot_block = 0; boot_block < BOOT_PRAT_MAX; boot_block ++) {
++			if (failed) {
++				ofs = (uint64_t)(boot_block - 1) << mtd->erasesize_shift;
++				new_bbm->main_block = -1;
++				update_fbbt(fbbt, boot_block - 1);
++				failed = 0;
++			}
++			instr.addr = (uint64_t)boot_block << mtd->erasesize_shift;
++			ret = mtd->read(mtd, instr.addr, mtd->erasesize,
++					&retlen, backup_buf);
++			if (ret) {
++				printk(KERN_ERR "Cannot backup block %d!!\n", boot_block);
++				failed = 1;
++				continue;
++			}
++			if (!reserve_last_page)
++				memset(backup_buf + mtd->erasesize - mtd->writesize, 0xff,
++						mtd->writesize);
++
++			should_reloc = 0;
++			mtd->erase(mtd, &instr);
++			should_reloc = 1;
++			if (!erase_success) {
++				printk(KERN_ERR "erase %llx failed!!\n", instr.addr);
++				failed = 1;
++				continue;
++			}
++			else {
++				ret = mtd->write(mtd, instr.addr,
++					mtd->writesize * PXA_BEGIN_SLOT,
++						&retlen, backup_buf);
++				if (ret) {
++					printk(KERN_ERR "restore backup two page failed!!\n");
++					failed = 1;
++					continue;
++				}
++				new_bbm->main_block = boot_block;
++			}
++
++			printk(KERN_INFO "Get main block at %d\n", new_bbm->main_block);
++			part->identifier = (uint64_t)PXA_PART_IDET_2 << 32 | PXA_PART_IDET_1;
++
++			// calculate part range under defaut setting of only one part
++			// The first BOOT_PRAT_MAX block should be used as boot partition
++			// and next two block should be reversed as run time bbt
++			part->part_num = 1;
++			new_bbm->partinfo->type = PART_LOGI;
++			total_block = mtd_div_by_eb(mtd->size, mtd);
++			rbbt = rbbt_back = -1;
++			instr.callback = pxa3xx_bbm_callback;
++			instr.len = mtd->erasesize;
++			for (block = BOOT_PRAT_MAX; block < total_block; block ++) {
++				instr.addr = (uint64_t)block << mtd->erasesize_shift;
++				should_reloc = 0;
++				mtd->erase(mtd, &instr);
++				should_reloc = 1;
++				if (!erase_success) {
++					printk(KERN_ERR "Erase %llx failed!!\n", instr.addr);
++					sync_pxa3xx_bbt(mtd, instr.addr);
++					update_fbbt(fbbt, block);
++				}
++				else {
++					ofs = (uint64_t)block << mtd->erasesize_shift;
++					if (rbbt == -1) {
++						ret = mtd->write(mtd, ofs, mtd->writesize,
++								&retlen, (void *)new_bbm->rbbt);
++						if (ret)
++							continue;
++						rbbt = block;
++					}
++					else if (rbbt_back == -1) {
++						ret = mtd->write(mtd, ofs, mtd->writesize,
++								&retlen, (void *)new_bbm->rbbt);
++						if (ret)
++							continue;
++						rbbt_back = block ++;
++						break;
++					}
++				}
++			}
++
++			printk(KERN_INFO "\nGet RBBT at block %d, its back at %d\n",
++					rbbt, rbbt_back);
++			reserved_block = ((total_block - block) / 100)
++				* NEW_BBM_RELOC_PERCENTAGE;
++			new_bbm->partinfo->start_addr = (uint64_t)block << mtd->erasesize_shift;
++			new_bbm->partinfo->end_addr = ((uint64_t)(total_block - reserved_block)
++					<< mtd->erasesize_shift) - 1;
++			new_bbm->partinfo->rp_start = (uint64_t)(total_block - reserved_block)
++				<< mtd->erasesize_shift;
++			new_bbm->partinfo->rp_size = (uint64_t)reserved_block << mtd->erasesize_shift;
++			new_bbm->partinfo->rp_algo = RP_UPWD;
++			new_bbm->partinfo->rbbt_type = PXA_NEW_BBM_HEADER;
++			new_bbm->partinfo->rbbt_start = (uint64_t)rbbt
++				<< mtd->erasesize_shift;
++			new_bbm->partinfo->rbbt_start_back = (uint64_t)rbbt_back
++				<< mtd->erasesize_shift;
++
++			new_bbm->rbbt_offset[0] = mtd_div_by_ws(new_bbm->partinfo->rbbt_start, mtd);
++			new_bbm->max_reloc_entry[0] = (max_reloc_entry < reserved_block) ?
++				max_reloc_entry : reserved_block;
++
++			ofs = (PXA_BEGIN_SLOT << mtd->writesize_shift)
++				+ ((uint64_t)new_bbm->main_block << mtd->erasesize_shift);
++
++			printk(KERN_INFO "\nBegin to write main block..\n");
++			ret = mtd->write(mtd, ofs, mtd->writesize, &retlen, (void *)fbbt);
++			if (ret) {
++				printk(KERN_ERR "Write fbbt failed at %llx\n", ofs);
++				failed = 1;
++				continue;
++			}
++
++			ofs = ((PXA_BEGIN_SLOT + 1) << mtd->writesize_shift)
++				+ ((uint64_t)new_bbm->main_block << mtd->erasesize_shift);
++			ret = mtd->write(mtd, ofs, mtd->writesize, &retlen, (void *)part);
++			if (ret) {
++				printk(KERN_ERR "Write part failed at %llx\n", ofs);
++				failed = 1;
++				continue;
++			}
++
++			ofs = ((PXA_BEGIN_SLOT + 2) << mtd->writesize_shift)
++				+ ((uint64_t)new_bbm->main_block << mtd->erasesize_shift);
++			len = mtd->erasesize - (mtd->writesize * (PXA_BEGIN_SLOT + 2));
++			ret = mtd->write(mtd, ofs, len, &retlen, backup_buf
++					+ (mtd->writesize * (PXA_BEGIN_SLOT + 2)));
++			if (ret) {
++				printk(KERN_ERR "restore obm part failed!!\n");
++				failed = 1;
++			}
++			else
++				break;
++		}
++
++		if (boot_block >= BOOT_PRAT_MAX) {
++			new_bbm->main_block = -1;
++			printk(KERN_ERR "There is no good blocks in first %d"
++					" blocks!\n You should use another"
++					" flash now!!\n", BOOT_PRAT_MAX);
++			return -EFAULT;
++		}
++	}
++
++	/*
++	 * try to find a good block with fbbt's help
++	 * and back the main block to back block
++	 */
++	if (new_bbm->back_block == -1) {
++		ofs = (uint64_t)new_bbm->main_block << mtd->erasesize_shift;
++		ret = mtd->read(mtd, ofs, mtd->erasesize, &retlen, backup_buf);
++		if (ret) {
++			printk(KERN_ERR "Cannot load main boot block!!\n");
++			return -EFAULT;
++		}
++
++		instr.callback = pxa3xx_bbm_callback;
++		instr.len = mtd->erasesize;
++		instr.addr = 0;
++		for (block = 0; block < BOOT_PRAT_MAX; block ++,
++				instr.addr += mtd->erasesize) {
++			if (block == new_bbm->main_block
++					|| boot_part_bad(mtd, instr.addr))
++				continue;
++
++			ret = mtd->erase(mtd, &instr);
++			if (!ret) {
++				printk(KERN_INFO "Got backup block at block %d\n", block);
++				printk(KERN_INFO "\nBegin to write backup block..\n");
++				ret = mtd->write(mtd, instr.addr, mtd->erasesize,
++						&retlen, backup_buf);
++				if (ret) {
++					printk("Failed to backup to %llx\n", instr.addr);
++					continue;
++				}
++
++				new_bbm->back_block = block;
++				break;
++			}
++		}
++
++		if (new_bbm->back_block == -1)
++			printk(KERN_WARNING "Unable to recover backup boot block!!\n");
++	}
++
++	if (backup_buf)
++		kfree(backup_buf);
++
++	printk(KERN_INFO "done!!\n");
+ 	return 0;
+ }
+ 
+-struct pxa3xx_bbm* alloc_pxa3xx_bbm(void)
++/*
++ * bbm_type:
++ * BBM_NONE:	recover the bbm according to original setting
++ * BBM_LEGACY:	recover bbm as legacy bbm
++ * BBM_NEW:	recover bbm as new bbm
++ */
++int pxa3xx_bbm_recovery(struct mtd_info *mtd, int bbm_type, struct reloc_item *item,
++		int num, int reserve_last_page)
+ {
+-	/* FIXME: We don't want to add module_init entry
+-	 * here to avoid dependency issue.
++	struct pxa3xx_bbm *bbm = mtd->bbm;
++	int ret;
++
++	if (bbm && bbm->bbm_type != bbm_type) {
++		pxa3xx_uninit_reloc_tb(mtd);
++		bbm = mtd->bbm;
++	}
++
++	if (!bbm) {
++		ret = pxa3xx_init_bbm(mtd, bbm_type);
++		if (ret) {
++			printk(KERN_ERR "Init failed!!!\n");
++			return -EFAULT;
++		}
++	}
++
++	if (bbm_type == BBM_NONE)
++		bbm_type = bbm->bbm_type;
++
++	switch (bbm_type) {
++	case BBM_LEGACY:
++		printk(KERN_INFO "Ready to recover bbm as legacy!\n");
++		ret = recover_legacy_bbm(mtd, 1);
++		break;
++
++	case BBM_NEW:
++		printk(KERN_INFO "Ready to recover bbm as new!\n");
++		ret = recover_new_bbm(mtd, item, num, reserve_last_page);
++		break;
++
++	case BBM_NONE:
++	default:
++		printk(KERN_ERR "Cannot fulfill recovery bbm task!!!\n");
++		ret = -EFAULT;
++	}
++
++	return ret;
++}
++
++static char *bbm_name = "MRVL_BBM";
++static int do_check_part(struct mtd_info *mtd, struct mtd_partition *part_orig,
++		struct mtd_partition *part, int *num)
++{
++	struct pxa3xx_bbm *bbm = mtd->bbm;
++	struct pxa3xx_new_bbm *new_bbm;
++	struct pxa3xx_legacy_bbm *legacy_bbm;
++	struct pxa3xx_partinfo *partinfo;
++	uint64_t boundary_offset, orig_size;
++	int reloc_boundary, i, j, err, last_add, last_add_orig;
++
++	if (bbm->bbm_type == BBM_LEGACY) {
++		legacy_bbm = (struct pxa3xx_legacy_bbm *)bbm->data_buf;
++		reloc_boundary = mtd_div_by_eb(mtd->size, mtd)
++			- legacy_bbm->max_reloc_entry;
++		boundary_offset = (uint64_t)reloc_boundary << mtd->erasesize_shift;
++
++		if (boundary_offset < part[*num - 1].offset) {
++			printk(KERN_ERR "The last part overlay with the reserved area!!\n");
++			return -EFAULT;
++		}
++
++		memcpy(part, part_orig, *num * sizeof(struct mtd_partition));
++		if (part[*num - 1].size == MTDPART_SIZ_FULL ||
++				(boundary_offset > part[*num - 1].size
++				 + part[*num - 1].offset)) {
++
++			part[*num - 1].size = boundary_offset - part[*num - 1].offset;
++			part[*num].name = bbm_name;
++			part[*num].offset = boundary_offset;
++			part[*num].size = MTDPART_SIZ_FULL;
++			part[*num].mask_flags = MTD_WRITEABLE;
++			*num = *num + 1;
++		}
++		return 0;
++	}
++
++	/*
++	 * The following is for new BBM scheme
++	 * reserved pool should be included in one of defined partition,
++	 * or would cause chech fail
+ 	 */
+-	struct pxa3xx_bbm *bbm;
++	new_bbm = (struct pxa3xx_new_bbm *)bbm->data_buf;
++	last_add_orig = last_add = err = 0;
++	for (i = 0, j = 0; i < new_bbm->part->part_num && j < *num && !err; i ++) {
++		partinfo = &new_bbm->partinfo[i];
++		for (; j < *num; j ++) {
++			if (part_orig[j].size == MTDPART_SIZ_FULL)
++				orig_size = mtd->size - part_orig[j].offset;
++			else
++				orig_size = part_orig[j].size;
+ 
+-	bbm = kzalloc(sizeof(struct pxa3xx_bbm), GFP_KERNEL);
+-	if (!bbm)
+-		return NULL;
++			if ((orig_size + part_orig[j].offset)
++					< partinfo->rp_start)
++				continue;
++			if (part_orig[j].offset > partinfo->rp_start) {
++				err = 1;
++				break;
++			}
++			if ((orig_size + part_orig[j].offset)
++					!= (partinfo->rp_start + partinfo->rp_size)) {
++				err = 1;
++				break;
++			}
++			else {
++				memcpy(&part[last_add], &part_orig[last_add_orig],
++						(j - last_add + 1) * sizeof(struct mtd_partition));
++				last_add += (j - last_add_orig) + 1;
++				last_add_orig = j;
++				part[last_add - 1].size = partinfo->rp_start
++							- part[last_add -1].offset;
++				part[last_add].name = bbm_name;
++				part[last_add].offset = partinfo->rp_start;
++				part[last_add].size = partinfo->rp_size;
++				part[last_add].mask_flags = MTD_WRITEABLE;
++				last_add += 1;
++			}
++		}
++	}
++
++	if (!err)
++		*num += (last_add - last_add_orig - 1);
+ 
+-	bbm->uninit	= pxa3xx_uninit_reloc_tb;
+-	bbm->search	= pxa3xx_search_reloc_tb;
+-	bbm->markbad	= pxa3xx_mark_reloc_tb;
+-	bbm->scan_bbt	= pxa3xx_scan_reloc_tb;
+-	bbm->show	= show_bbm;
++	return err;
++}
++
++static struct mtd_partition *pxa3xx_check_partition(struct mtd_info *mtd,
++		struct mtd_partition *part, int *num)
++{
++	struct pxa3xx_bbm *bbm = mtd->bbm;
++	struct pxa3xx_new_bbm *new_bbm;
++	struct mtd_partition *new_part;
++	int part_num, alloc_size;
++
++	if (bbm->bbm_type == BBM_LEGACY)
++		part_num = 1;
++	else {
++		new_bbm = (struct pxa3xx_new_bbm *)bbm->data_buf;
++		part_num = new_bbm->part->part_num;
++	}
+ 
+-	return bbm;
++	alloc_size = (*num + part_num) * sizeof(struct mtd_partition);
++	new_part = kzalloc(alloc_size, GFP_KERNEL);
++	if (!new_part) {
++		printk(KERN_ERR "OUT of memory!!\n");
++		return NULL;
++	}
++
++	if (!do_check_part(mtd, part, new_part, num))
++		return new_part;
++	else
++		return NULL;
+ }
+diff --git a/drivers/serial/ns16550.c b/drivers/serial/ns16550.c
+index d5f704d..00a5274 100644
+--- a/drivers/serial/ns16550.c
++++ b/drivers/serial/ns16550.c
+@@ -24,10 +24,12 @@ void NS16550_init (NS16550_t com_port, int baud_divisor)
+ #ifdef CONFIG_OMAP
+ 	com_port->mdr1 = 0x7;	/* mode select reset TL16C750*/
+ #endif
++#ifndef CONFIG_PXAXXX
+ 	com_port->lcr = LCR_BKSE | LCRVAL;
+ 	com_port->dll = 0;
+ 	com_port->dlm = 0;
+ 	com_port->lcr = LCRVAL;
++#endif
+ 	com_port->mcr = MCRVAL;
+ 	com_port->fcr = FCRVAL;
+ 	com_port->lcr = LCR_BKSE | LCRVAL;
+diff --git a/include/asm-arm/arch-pxa688/common.h b/include/asm-arm/arch-pxa688/common.h
+index 9d4c1f1..fbbb095 100644
+--- a/include/asm-arm/arch-pxa688/common.h
++++ b/include/asm-arm/arch-pxa688/common.h
+@@ -377,7 +377,7 @@ unsigned long clk_get_rate(struct clk * clk);
+ 
+ #ifdef CONFIG_CPU_PXA688
+ #define __cpu_is_pxa688(id)	\
+-	({ unsigned int _id = ((id) >> 8) & 0xff; (_id == 0xb7 || _id == 0xc0); })
++	({ unsigned int _id = ((id) >> 8) & 0xff; (_id == 0xb7 || _id == 0xc0  || _id == 0x58); })
+ #else
+ #define __cpu_is_pxa688(id)	(0)
+ #endif
+@@ -421,6 +421,20 @@ unsigned long clk_get_rate(struct clk * clk);
+ 	 __cpu_is_pxa688(id);                        		\
+ 	 })
+ 
++#define cpu_is_pxa688_z0()                                 		\
++	({                                              		\
++	 unsigned int chip_id = __raw_readl(0xd4282c00);		\
++	 unsigned int id = read_cpuid(CPUID_ID); 			\
++	 __cpu_is_pxa688(id) && ((chip_id & 0x00ff0000) == 0x00f00000);	\
++	 })
++
++#define cpu_is_pxa688_z1()                                 		\
++	({                                              		\
++	 unsigned int chip_id = __raw_readl(0xd4282c00);		\
++	 unsigned int id = read_cpuid(CPUID_ID); 			\
++	 __cpu_is_pxa688(id) && ((chip_id & 0x00ff0000) == 0x00e00000);	\
++	 })
++
+ #define DMA_BIT_MASK(n) (((n) == 64) ? ~0ULL : ((1ULL<<(n))-1))
+ 
+ static inline void *dev_get_drvdata(const struct device *dev)
+diff --git a/include/asm-arm/arch-pxa688/nand_supported.h b/include/asm-arm/arch-pxa688/nand_supported.h
+index 467f6b8..b72da5b 100644
+--- a/include/asm-arm/arch-pxa688/nand_supported.h
++++ b/include/asm-arm/arch-pxa688/nand_supported.h
+@@ -34,11 +34,23 @@ static struct pxa3xx_nand_timing common_timing = {
+ 	.tWP	= 100,
+ 	.tRH	= 80,
+ 	.tRP	= 100,
+-	.tR	= 120000,
++	.tR	= 900000,
+ 	.tWHR	= 400,
+ 	.tAR	= 40,
+ };
+ 
++static struct pxa3xx_nand_timing samsung512MbX8_timing = {
++	.tCH	= 10,
++	.tCS	= 15,
++	.tWH	= 20,
++	.tWP	= 40,
++	.tRH	= 30,
++	.tRP	= 40,
++	.tR	= 15000,
++	.tWHR	= 110,
++	.tAR	= 10,
++};
++
+ static struct pxa3xx_nand_timing samsung512MbX16_timing = {
+ 	.tCH	= 10,
+ 	.tCS	= 0,
+@@ -63,27 +75,43 @@ static struct pxa3xx_nand_timing samsung2GbX8_timing = {
+ 	.tAR = 10,
+ };
+ 
++static struct pxa3xx_nand_timing samsung4GbX16_timing = {
++	.tCH = 10,
++	.tCS = 30,
++	.tWH = 20,
++	.tWP = 25,
++	.tRH = 110,
++	.tRP = 30,
++	.tR = 45000,
++	.tWHR = 100,
++	.tAR = 15,
++};
++
+ static struct pxa3xx_nand_timing samsung8GbX8_timing = {
++	.tADL = 160,
+ 	.tCH = 10,
+ 	.tCS = 35,
+ 	.tWH = 15,
+ 	.tWP = 25,
+ 	.tRH = 20,
+ 	.tRP = 25,
+-	.tR = 25000,
+-	.tWHR = 60,
++	.tR = 50000,
++	.tRHW = 20,
++	.tWHR = 80,
+ 	.tAR = 10,
+ };
+ 
+ static struct pxa3xx_nand_timing samsung32GbX8_timing = {
+-	.tCH = 5,
+-	.tCS = 20,
++	.tADL = 200,
++	.tCH = 10,
++	.tCS = 15,
+ 	.tWH = 10,
+ 	.tWP = 12,
+-	.tRH = 15,
+-	.tRP = 12,
+-	.tR = 25000,
+-	.tWHR = 60,
++	.tRH = 10,
++	.tRP = 8,
++	.tR = 60000,
++	.tRHW = 20,
++	.tWHR = 75,
+ 	.tAR = 10,
+ };
+ 
+@@ -99,6 +127,18 @@ static struct pxa3xx_nand_timing micron_timing = {
+ 	.tAR	= 10,
+ };
+ 
++static struct pxa3xx_nand_timing micron16GbX8_timing = {
++	.tCH	= 10,
++	.tCS	= 25,
++	.tWH	= 15,
++	.tWP	= 25,
++	.tRH	= 15,
++	.tRP	= 25,
++	.tR	= 25000,
++	.tWHR	= 60,
++	.tAR	= 10,
++};
++
+ static struct pxa3xx_nand_timing stm2GbX16_timing = {
+ 	.tCH = 10,
+ 	.tCS = 35,
+@@ -111,6 +151,18 @@ static struct pxa3xx_nand_timing stm2GbX16_timing = {
+ 	.tAR = 10,
+ };
+ 
++static struct pxa3xx_nand_timing hynix_timing = {
++	.tCH	= 10,
++	.tCS	= 35,
++	.tWH	= 15,
++	.tWP	= 25,
++	.tRH	= 15,
++	.tRP	= 25,
++	.tR	= 25000,
++	.tWHR	= 60,
++	.tAR	= 10,
++};
++
+ struct pxa3xx_nand_flash nand_common = {
+ 	.timing		= &common_timing,
+ 	.cmdset         = &largepage_cmdset,
+@@ -119,6 +171,22 @@ struct pxa3xx_nand_flash nand_common = {
+ 	.flash_width	= 8,
+ 	.dfc_width	= 8,
+ 	.ecc_type	= ECC_HAMMIN,
++	.ecc_strength   = 1,
++};
++
++static struct pxa3xx_nand_flash samsung512MbX8 = {
++	.timing		= &samsung512MbX8_timing,
++	.cmdset		= &smallpage_cmdset,
++	.name		= "Samsung 512Mibx8",
++	.page_per_block	= 32,
++	.page_size	= 512,
++	.flash_width	= 8,
++	.dfc_width	= 8,
++	.num_blocks	= 4096,
++	.chip_id	= 0x76ec,
++	.chip_id_mask	= 0xffff,
++	.ecc_type	= ECC_HAMMIN,
++	.ecc_strength   = 1,
+ };
+ 
+ static struct pxa3xx_nand_flash samsung512MbX16 = {
+@@ -131,7 +199,9 @@ static struct pxa3xx_nand_flash samsung512MbX16 = {
+ 	.dfc_width	= 16,
+ 	.num_blocks	= 4096,
+ 	.chip_id	= 0x46ec,
++	.chip_id_mask	= 0xffff,
+ 	.ecc_type	= ECC_HAMMIN,
++	.ecc_strength   = 1,
+ };
+ 
+ static struct pxa3xx_nand_flash samsung2GbX8 = {
+@@ -144,7 +214,24 @@ static struct pxa3xx_nand_flash samsung2GbX8 = {
+ 	.dfc_width	= 8,
+ 	.num_blocks	= 2048,
+ 	.chip_id	= 0xdaec,
++	.chip_id_mask	= 0xffff,
++	.ecc_type	= ECC_HAMMIN,
++	.ecc_strength   = 1,
++};
++
++static struct pxa3xx_nand_flash samsung4GbX16 = {
++	.timing		= &samsung4GbX16_timing,
++	.cmdset         = &largepage_cmdset,
++	.name		= "Samsung 4Gibx16",
++	.page_per_block	= 64,
++	.page_size	= 2048,
++	.flash_width	= 16,
++	.dfc_width	= 16,
++	.num_blocks	= 4096,
++	.chip_id	= 0xbcec,
++	.chip_id_mask	= 0xffff,
+ 	.ecc_type	= ECC_HAMMIN,
++	.ecc_strength   = 1,
+ };
+ 
+ static struct pxa3xx_nand_flash samsung8GbX8 = {
+@@ -157,11 +244,13 @@ static struct pxa3xx_nand_flash samsung8GbX8 = {
+ 	.dfc_width	= 8,
+ 	.num_blocks	= 4096,
+ 	.chip_id	= 0xd3ec,
++	.chip_id_mask	= 0xffff,
+ 	.ecc_type	= ECC_BCH,
++	.ecc_strength   = 1,
+ };
+ 
+ static struct pxa3xx_nand_flash samsung32GbX8 = {
+-	.timing		= &common_timing,
++	.timing		= &samsung32GbX8_timing,
+ 	.cmdset         = &largepage_cmdset,
+ 	.name		= "Samsung 32Gibx8",
+ 	.page_per_block	= 128,
+@@ -170,7 +259,9 @@ static struct pxa3xx_nand_flash samsung32GbX8 = {
+ 	.dfc_width	= 8,
+ 	.num_blocks	= 8192,
+ 	.chip_id	= 0xd7ec,
++	.chip_id_mask	= 0xffff,
+ 	.ecc_type	= ECC_BCH,
++	.ecc_strength   = 1,
+ };
+ 
+ static struct pxa3xx_nand_flash micron1GbX8 = {
+@@ -183,7 +274,9 @@ static struct pxa3xx_nand_flash micron1GbX8 = {
+ 	.dfc_width	= 8,
+ 	.num_blocks	= 1024,
+ 	.chip_id	= 0xa12c,
++	.chip_id_mask	= 0xffff,
+ 	.ecc_type	= ECC_HAMMIN,
++	.ecc_strength   = 1,
+ };
+ 
+ static struct pxa3xx_nand_flash micron1GbX16 = {
+@@ -196,7 +289,9 @@ static struct pxa3xx_nand_flash micron1GbX16 = {
+ 	.dfc_width	= 16,
+ 	.num_blocks	= 1024,
+ 	.chip_id	= 0xb12c,
++	.chip_id_mask	= 0xffff,
+ 	.ecc_type	= ECC_HAMMIN,
++	.ecc_strength   = 1,
+ };
+ 
+ static struct pxa3xx_nand_flash micron2GbX16 = {
+@@ -209,7 +304,9 @@ static struct pxa3xx_nand_flash micron2GbX16 = {
+ 	.dfc_width	= 16,
+ 	.num_blocks	= 2048,
+ 	.chip_id	= 0xbaec,
++	.chip_id_mask	= 0xffff,
+ 	.ecc_type	= ECC_HAMMIN,
++	.ecc_strength   = 1,
+ };
+ 
+ static struct pxa3xx_nand_flash micron2GbX16_ba2c = {
+@@ -222,7 +319,9 @@ static struct pxa3xx_nand_flash micron2GbX16_ba2c = {
+ 	.dfc_width	= 16,
+ 	.num_blocks	= 2048,
+ 	.chip_id	= 0xba2c,
++	.chip_id_mask	= 0xffff,
+ 	.ecc_type	= ECC_HAMMIN,
++	.ecc_strength   = 1,
+ };
+ 
+ static struct pxa3xx_nand_flash micron4GbX8 = {
+@@ -235,20 +334,9 @@ static struct pxa3xx_nand_flash micron4GbX8 = {
+ 	.dfc_width	= 8,
+ 	.num_blocks	= 4096,
+ 	.chip_id	= 0xdc2c,
++	.chip_id_mask	= 0xffff,
+ 	.ecc_type	= ECC_HAMMIN,
+-};
+-
+-static struct pxa3xx_nand_flash micron4GbX16 = {
+-	.timing		= &micron_timing,
+-	.cmdset         = &largepage_cmdset,
+-	.name		= "Micron 4Gibx16",
+-	.page_per_block	= 64,
+-	.page_size	= 2048,
+-	.flash_width	= 16,
+-	.dfc_width	= 16,
+-	.num_blocks	= 4096,
+-	.chip_id	= 0xcc2c,
+-	.ecc_type	= ECC_HAMMIN,
++	.ecc_strength   = 1,
+ };
+ 
+ static struct pxa3xx_nand_flash micron8GbX8 = {
+@@ -261,7 +349,24 @@ static struct pxa3xx_nand_flash micron8GbX8 = {
+ 	.dfc_width	= 8,
+ 	.num_blocks	= 2048,
+ 	.chip_id	= 0x382c,
+-	.ecc_type	= ECC_HAMMIN,
++	.chip_id_mask	= 0xffff,
++	.ecc_type	= ECC_BCH,
++	.ecc_strength   = 1,
++};
++
++static struct pxa3xx_nand_flash micron16GbX8 = {
++	.timing		= &micron16GbX8_timing,
++	.cmdset         = &largepage_cmdset,
++	.name		= "Micron 16Gibx8",
++	.page_per_block	= 128,
++	.page_size	= 4096,
++	.flash_width	= 8,
++	.dfc_width	= 8,
++	.num_blocks	= 4096,
++	.chip_id	= 0xd52c,
++	.chip_id_mask	= 0xffff,
++	.ecc_type	= ECC_BCH,
++	.ecc_strength   = 1,
+ };
+ 
+ static struct pxa3xx_nand_flash stm2GbX16 = {
+@@ -274,13 +379,32 @@ static struct pxa3xx_nand_flash stm2GbX16 = {
+ 	.dfc_width 	= 16,
+ 	.num_blocks 	= 2048,
+ 	.chip_id 	= 0xba20,
++	.chip_id_mask	= 0xffff,
++	.ecc_type	= ECC_HAMMIN,
++	.ecc_strength   = 1,
++};
++
++static struct pxa3xx_nand_flash hynix4GbX16 = {
++	.timing		= &hynix_timing,
++	.cmdset         = &largepage_cmdset,
++	.name		= "Hynix 4Gibx16",
++	.page_per_block	= 64,
++	.page_size	= 2048,
++	.flash_width	= 16,
++	.dfc_width	= 16,
++	.num_blocks	= 4096,
++	.chip_id	= 0xbcad,
++	.chip_id_mask	= 0xffff,
+ 	.ecc_type	= ECC_HAMMIN,
++	.ecc_strength   = 1,
+ };
+ 
+ static struct pxa3xx_nand_flash *builtin_flash_types[] = {
+ 	&nand_common,
++	&samsung512MbX8,
+ 	&samsung512MbX16,
+ 	&samsung2GbX8,
++	&samsung4GbX16,
+ 	&samsung8GbX8,
+ 	&samsung32GbX8,
+ 	&micron1GbX8,
+@@ -288,9 +412,10 @@ static struct pxa3xx_nand_flash *builtin_flash_types[] = {
+ 	&micron1GbX16,
+ 	&micron2GbX16,
+ 	&micron2GbX16_ba2c,
+-	&micron4GbX16,
++	&micron16GbX8,
+ 	&micron8GbX8,
+ 	&stm2GbX16,
++	&hynix4GbX16,
+ };
+ 
+ #endif
+diff --git a/include/asm-arm/arch-pxa688/pxa3xx_bbm.h b/include/asm-arm/arch-pxa688/pxa3xx_bbm.h
+index 3585073..1f88d9e 100644
+--- a/include/asm-arm/arch-pxa688/pxa3xx_bbm.h
++++ b/include/asm-arm/arch-pxa688/pxa3xx_bbm.h
+@@ -2,9 +2,39 @@
+ #define	__PXA3XX_BBT_H__
+ 
+ #define PXA_RELOC_HEADER	0x524e
+-#define	PXA_MAX_RELOC_ENTRY	100
+ #define PXA_BEGIN_SLOT		2
+ 
++/* New BBM scheme */
++#define BOOT_PRAT_MAX		10
++#define PXA_NEW_BBM_HEADER	0x4D424254
++#define PXA_PART_IDET_1		0x4D52564C
++#define PXA_PART_IDET_2		0x204D5054
++#define BBM_FULL_MASK		0xffffffff
++#define BBM_HALF_MASK		0x0000ffff
++#define BBT_TYPE_FACT		0x46616374
++#define BBT_TYPE_RUNT		0x52756E74
++#define PART_PHYS		0x50687973
++#define PART_LOGI		0x4C6F6769
++#define RP_UPWD			0x55505744
++#define RP_DNWD			0x444E5755
++
++enum bbm_type {
++	BBM_NONE = 0,
++	BBM_LEGACY,
++	BBM_NEW,
++};
++
++enum bbm_order {
++	ORDER_REVERSE = 0,
++	ORDER_POSITIVE,
++};
++
++enum bbt_state {
++	BBT_NOINIT = 0,
++	BBT_INITED,
++	BBT_FORCE_NOINIT,
++};
++
+ struct reloc_item {
+ 	unsigned short from;
+ 	unsigned short to;
+@@ -15,35 +45,86 @@ struct reloc_table {
+ 	unsigned short total;
+ };
+ 
+-struct pxa3xx_bbm {
+-	/* NOTES: this field impact the partition table. Please make sure
+-	 * that this value align with partitions definition.
+-	 */
+-	int			reloc_begin;
+-	int			max_reloc_entry;
+-	int			max_slots;
+-	int			current_slot;
++struct pxa3xx_bbt {
++	uint32_t ident;
++	uint32_t ver;
++	uint32_t type;
++	uint32_t reserved_1;
++	uint32_t reserved_2;
++	uint32_t entry_num;
++	uint32_t bbt_loc;
++	uint32_t reserved_3;
++	uint32_t reserved_4;
++	uint32_t reserved_5;
++	union {
++		struct reloc_item *reloc;
++		uint32_t *fact_bad;
++	};
++};
+ 
+-	void			*data_buf;
++struct pxa3xx_partinfo {
++	uint32_t	type;			// Logi or Phys
++	uint32_t	usage;			// Partition name
++	uint32_t	identifier;		// for distinguish same name
++	uint32_t	attrs;			// r/w and permisson control
++	uint64_t	start_addr;		// addr of LSB of start block
++	uint64_t	end_addr;		// addr of MSB of end block
++	uint64_t	rp_start;
++	uint64_t	rp_size;
++	uint32_t	rp_algo;
++	uint32_t	rbbt_type;
++	uint64_t	rbbt_start;
++	uint64_t	rbbt_start_back;
++	uint64_t	reserved;
++};
+ 
+-	/* These two fields should be in (one)nand_chip.
+-	 * Add here to handle onenand_chip and nand_chip
+-	 * at the same time.
+-	 */
+-	int			page_shift;
+-	int			erase_shift;
++struct pxa3xx_part {
++	uint64_t		identifier;
++	uint32_t		version;
++	uint32_t		part_num;
++	uint64_t		reserved;
++};
++
++struct pxa3xx_legacy_bbm {
++	int			current_slot;
++	int			max_reloc_entry;
+ 
+-	unsigned int		table_init;
+ 	struct reloc_table	*table;
+ 	struct reloc_item	*reloc;
++};
++
++struct pxa3xx_new_bbm {
++	int			main_block;
++	int			back_block;
++	int			update_indicator;
+ 
+-	void	(*uninit)(struct mtd_info *mtd);
++	struct pxa3xx_part	*part;
++	struct pxa3xx_bbt	*fbbt;
++	struct pxa3xx_bbt	*rbbt;
++	struct pxa3xx_partinfo	*partinfo;
++	loff_t			*rbbt_offset;
++	int			*max_reloc_entry;
++};
++
++struct pxa3xx_bbm {
++	int	bbm_type;
++	int	is_init;
++	int	no_sync;
++	void	*data_buf;
++	char	*rel_dist;
++
++	void    (*uninit)(struct mtd_info *mtd);
+ 	loff_t	(*search)(struct mtd_info *mtd,	loff_t ofs);
+-	int	(*markbad)(struct mtd_info *mtd, loff_t ofs);
+-	int	(*scan_bbt)(struct mtd_info *mtd);
+-	void	(*show)(struct mtd_info *mtd);
++	struct mtd_partition * (*check_partition)
++		(struct mtd_info *mtd, struct mtd_partition *part, int *num);
+ };
+ 
+-struct pxa3xx_bbm* alloc_pxa3xx_bbm(void);
++int pxa3xx_scan_bbt(struct mtd_info *mtd);
++int pxa3xx_block_bad(struct mtd_info *mtd, loff_t ofs, int allowbbt);
++int pxa3xx_update_bbt(struct mtd_info *mtd, loff_t offs);
++int pxa3xx_block_markbad(struct mtd_info *mtd, loff_t ofs);
++int pxa3xx_bbm_recovery(struct mtd_info *mtd, int bbm_type, struct reloc_item *item,
++		int num, int reserve_last_page);
++int page_search(struct mtd_info *mtd, int start_page, int end_page,
++	int direction, unsigned int indicator, void *buf, unsigned int mask);
+ #endif
+-
+diff --git a/include/asm-arm/arch-pxa688/pxa3xx_nand.h b/include/asm-arm/arch-pxa688/pxa3xx_nand.h
+index c728450..4e9e353 100644
+--- a/include/asm-arm/arch-pxa688/pxa3xx_nand.h
++++ b/include/asm-arm/arch-pxa688/pxa3xx_nand.h
+@@ -4,10 +4,11 @@
+ #include <linux/mtd/mtd.h>
+ 
+ #define NUM_CHIP_SELECT		(2)
+-#define CMD_POLL_SIZE		(5)
++#define CMD_POOL_SIZE		(5)
+ #define NAND_DEF_CLOCK		(100 * 1000000)
+ 
+ struct pxa3xx_nand_timing {
++	unsigned int		tADL; /* Adress to Write Data delay */
+ 	unsigned int		tCH;  /* Enable signal hold time */
+ 	unsigned int		tCS;  /* Enable signal setup time */
+ 	unsigned int		tWH;  /* ND_nWE high duration */
+@@ -15,6 +16,7 @@ struct pxa3xx_nand_timing {
+ 	unsigned int		tRH;  /* ND_nRE high duration */
+ 	unsigned int		tRP;  /* ND_nRE pulse width */
+ 	unsigned int		tR;   /* ND_nWE high to ND_nRE low for read */
++	unsigned int		tRHW; /* delay for next command issue */
+ 	unsigned int		tWHR; /* ND_nWE high to ND_nRE low for status read */
+ 	unsigned int		tAR;  /* ND_ALE low to ND_nRE low delay */
+ };
+@@ -43,7 +45,14 @@ struct pxa3xx_nand_flash {
+ 	uint32_t 		dfc_width;	/* Width of flash controller(DWIDTH_C) */
+ 	uint32_t 		num_blocks;	/* Number of physical blocks in Flash */
+ 	uint32_t 		chip_id;
+-	uint32_t		ecc_type;	/* 0 for Hamming, 1 for BCH */
++	uint32_t		chip_id_mask;
++	uint32_t		ecc_type;	/* 1 for Hamming, 2 for BCH */
++	/*
++	 * how many times you want to apply ecc in one page,
++	 * Note if you give this value more than 1, the page
++	 * would be divided into several chunks to execute
++	 */
++	uint32_t                ecc_strength;
+ };
+ 
+ struct pxa3xx_nand_info {
+@@ -60,15 +69,16 @@ struct pxa3xx_nand_info {
+ 	uint16_t		chip_select;
+ 	uint16_t		data_column;
+ 	uint16_t		oob_column;
++	uint16_t		need_additional_addressing;
+ 
+ 	/* command poll */
+ 	uint32_t		current_cmd_seqs;
+ 	uint32_t		total_cmds;
+-	uint32_t		need_addressing;
+ 	uint32_t		need_wait_ready;
+-	uint32_t		ndcb0[CMD_POLL_SIZE];
++	uint32_t		ndcb0[CMD_POOL_SIZE];
+ 	uint32_t		ndcb1;
+ 	uint32_t		ndcb2;
++	uint32_t		ndcb3[CMD_POOL_SIZE];
+ 
+ 	uint32_t		reg_ndcr;
+ 	uint32_t		timing0;
+@@ -182,21 +192,25 @@ struct pxa3xx_nand_platform_data {
+ #define NDCR_INT_MASK		(0xFFF)
+ 
+ /* Data Controller Timing Paramter x Register For CSx */
++#define NDTR0_tADL(c)		(min_t(uint32_t, (c), 31) << 27)
+ #define NDTR0_SELCNTR		(0x1 << 26)
+ #define NDTR0_RD_CNT_DEL_MASK	(0xF << 22)
+ #define NDTR0_RD_CNT_DEL(x)	(((x) << 22) & NDTR0_RD_CNT_DEL_MASK)
+-#define NDTR0_tCH(c)		(min((c), 7) << 19)
+-#define NDTR0_tCS(c)		(min((c), 7) << 16)
+-#define NDTR0_tWH(c)		(min((c), 7) << 11)
+-#define NDTR0_tWP(c)		(min((c), 7) << 8)
++#define NDTR0_tCH(c)		(min_t(uint32_t, (c), 7) << 19)
++#define NDTR0_tCS(c)		(min_t(uint32_t, (c), 7) << 16)
++#define NDTR0_tWH(c)		(min_t(uint32_t, (c), 7) << 11)
++#define NDTR0_tWP(c)		(min_t(uint32_t, (c), 7) << 8)
++#define NDTR0_sel_NRE_EDGE	(0x1 << 7)
+ #define NDTR0_ETRP		(0x1 << 6)
+-#define NDTR0_tRH(c)		(min((c), 7) << 3)
+-#define NDTR0_tRP(c)		(min((c), 7) << 0)
++#define NDTR0_tRH(c)		(min_t(uint32_t, (c), 7) << 3)
++#define NDTR0_tRP(c)		(min_t(uint32_t, (c), 7) << 0)
+ 
+-#define NDTR1_tR(c)		(min((c), 65535) << 16)
++#define NDTR1_tR(c)		(min_t(uint32_t, (c), 65535) << 16)
+ #define NDTR1_WAIT_MODE		(0x1 << 15)
+-#define NDTR1_tWHR(c)		(min((c), 15) << 4)
+-#define NDTR1_tAR(c)		(min((c), 15) << 0)
++#define NDTR1_PRESCALE		(0x1 << 14)
++#define NDTR1_tRHW(c)		(min_t(uint32_t, (c), 3) << 8)
++#define NDTR1_tWHR(c)		(min_t(uint32_t, (c), 15) << 4)
++#define NDTR1_tAR(c)		(min_t(uint32_t, (c), 15) << 0)
+ 
+ /* NDSR Register */
+ #define NDSR_ERR_CNT_MASK	(0x1F << 16)
+@@ -330,12 +344,12 @@ enum {
+ };
+ 
+ enum {
+-	STATE_CMD_HANDLE,
+-	STATE_CMD_WAIT_DONE,
+-	STATE_DATA_PROCESSING,
+-	STATE_DATA_DONE,
+-	STATE_CMD_DONE,
+-	STATE_READY,
++	STATE_CMD_WAIT_DONE	= 1,
++	STATE_DATA_PROCESSING	= (1 << 1),
++	STATE_DATA_DONE		= (1 << 2),
++	STATE_PAGE_DONE		= (1 << 3),
++	STATE_CMD_DONE		= (1 << 4),
++	STATE_READY		= (1 << 5),
+ };
+ 
+ struct pxa3xx_nand *pxa3xx_nand_probe(struct pxa3xx_nand_platform_data *pdata);
+diff --git a/include/configs/mmp2_flint.h b/include/configs/mmp2_flint.h
+index 584f4c9..db9a4a7 100644
+--- a/include/configs/mmp2_flint.h
++++ b/include/configs/mmp2_flint.h
+@@ -84,8 +84,10 @@
+ 
+ #define CONFIG_SHOW_BOOT_PROGRESS
+ 
++#define CONFIG_CMD_PING
+ #define CONFIG_CMD_NET
+ #define CONFIG_NET_MULTI
++#define CONFIG_LOOP_WRITE_MTD
+ #define MV_ETH_DEVS 			1
+ 
+ #define CONFIG_IPADDR      		192.168.1.101
+diff --git a/include/configs/mmp2_jasper.h b/include/configs/mmp2_jasper.h
+old mode 100755
+new mode 100644
+index 305aaa5..4385cc1
+--- a/include/configs/mmp2_jasper.h
++++ b/include/configs/mmp2_jasper.h
+@@ -43,10 +43,6 @@
+ #define CONFIG_SYS_BOARD_NAME		"ARM1176JZF based"
+ #define CONFIG_SYS_VENDOR_NAME     	"MARVELL"
+ 
+-#define CONFIG_MMP2_400_OP
+-#undef CONFIG_MMP2_600_OP
+-#undef CONFIG_MMP2_624_OP
+-
+ #ifdef CONFIG_PJ4_NON_SECURE_MODE
+ #define CONFIG_SYS_UBOOT_BASE		0x1100000	
+ #define CONFIG_SYS_MEMTEST_START      	0x00300000
+@@ -88,8 +84,10 @@
+ 
+ #define CONFIG_SHOW_BOOT_PROGRESS
+ 
++#define CONFIG_CMD_PING
+ #define CONFIG_CMD_NET
+ #define CONFIG_NET_MULTI
++#define CONFIG_LOOP_WRITE_MTD
+ #define MV_ETH_DEVS 			1
+ 
+ #define CONFIG_IPADDR      		192.168.1.101
+diff --git a/include/linux/mtd/mtd.h b/include/linux/mtd/mtd.h
+index 15c553e..e05ed7c 100644
+--- a/include/linux/mtd/mtd.h
++++ b/include/linux/mtd/mtd.h
+@@ -115,6 +115,15 @@ struct mtd_info {
+ 	u_int32_t oobsize;   /* Amount of OOB data per block (e.g. 16) */
+ 	u_int32_t oobavail;  /* Available OOB bytes per block */
+ 
++	/*
++	 * If erasesize is a power of 2 then the shift is stored in
++	 * erasesize_shift otherwise erasesize_shift is zero. Ditto writesize.
++	 */
++	unsigned int erasesize_shift;
++	unsigned int writesize_shift;
++	/* Masks based on erasesize_shift and writesize_shift */
++	unsigned int erasesize_mask;
++	unsigned int writesize_mask;
+ 	/* Kernel-only stuff starts here. */
+ 	const char *name;
+ 	int index;
+@@ -283,6 +292,10 @@ static inline void mtd_erase_callback(struct erase_info *instr)
+ }
+ #endif
+ 
++static inline int is_power_of_2(unsigned long n)
++{
++	return (n != 0 && ((n & (n - 1)) == 0));
++}
+ /*
+  * Debugging macro and defines
+  */
+diff --git a/include/linux/mtd/nand.h b/include/linux/mtd/nand.h
+index df00f86..e7ff8bf 100644
+--- a/include/linux/mtd/nand.h
++++ b/include/linux/mtd/nand.h
+@@ -178,6 +178,8 @@ typedef enum {
+ #define NAND_NO_READRDY		0x00000100
+ /* Chip does not allow subpage writes */
+ #define NAND_NO_SUBPAGE_WRITE	0x00000200
++/* If use marvell bbm scheme, mtd should report no error to the up level */
++#define BBT_RELOCATION_IFBAD	0x00000400
+ 
+ 
+ /* Options valid for Samsung large page devices */
+diff --git a/include/linux/mtd/onenand.h b/include/linux/mtd/onenand.h
+index 6ef4824..3fe7991 100644
+--- a/include/linux/mtd/onenand.h
++++ b/include/linux/mtd/onenand.h
+@@ -116,6 +116,7 @@ struct onenand_chip {
+ 	unsigned short (*read_word)(void __iomem *addr);
+ 	void (*write_word)(unsigned short value, void __iomem *addr);
+ 	void (*mmcontrol)(struct mtd_info *mtd, int sync_read);
++	int (*block_bad)(struct mtd_info *mtd, loff_t ofs, int allowbbt);
+ 	int (*block_markbad)(struct mtd_info *mtd, loff_t ofs);
+ 	int (*scan_bbt)(struct mtd_info *mtd);
+ 
+@@ -172,6 +173,7 @@ struct onenand_chip {
+ #define ONENAND_HAS_2PLANE		(0x0004)
+ #define ONENAND_PAGEBUF_ALLOC		(0x1000)
+ #define ONENAND_OOBBUF_ALLOC		(0x2000)
++#define ONENAND_RELOC_IFBAD		(0x4000)
+ 
+ /*
+  * OneNAND Flash Manufacturer ID Codes
+diff --git a/include/ubi_uboot.h b/include/ubi_uboot.h
+index b415219..c81d54e 100644
+--- a/include/ubi_uboot.h
++++ b/include/ubi_uboot.h
+@@ -54,10 +54,6 @@ do {									\
+ #define put_device(...)
+ #define ubi_sysfs_init(...)		0
+ #define ubi_sysfs_close(...)		do { } while (0)
+-static inline int is_power_of_2(unsigned long n)
+-{
+-	return (n != 0 && ((n & (n - 1)) == 0));
+-}
+ 
+ /* FIXME */
+ #define MKDEV(...)			0
+-- 
+1.6.0.4
+

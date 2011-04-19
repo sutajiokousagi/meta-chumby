@@ -1,0 +1,26 @@
+From e9e622036c9a8099e73412fe405addae1f3c27fa Mon Sep 17 00:00:00 2001
+From: Bin Yang <bin.yang@marvell.com>
+Date: Fri, 6 Mar 2009 16:16:34 +0800
+Subject: [PATCH] pxa910: fix the TTC_DKB mach id to sync with linux-2.6.28
+
+Signed-off-by: Bin Yang <bin.yang@marvell.com>
+---
+ board/pxa/ttc_dkb/ttc_dkb.c |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/board/pxa/ttc_dkb/ttc_dkb.c b/board/pxa/ttc_dkb/ttc_dkb.c
+index 51916e9..f60b595 100644
+--- a/board/pxa/ttc_dkb/ttc_dkb.c
++++ b/board/pxa/ttc_dkb/ttc_dkb.c
+@@ -221,7 +221,7 @@ int board_init (void)
+     gd->bd->bi_dram[0].size  = PHYS_SDRAM_1_SIZE;
+ 
+     /* arch number of TavorEVB Board */
+-    gd->bd->bi_arch_number = 1827;  // MACH_TYPE_TAVOREVB
++    gd->bd->bi_arch_number = 2045;  // MACH_TYPE_TTC_DKB
+     
+     /* adress of boot parameters */
+     gd->bd->bi_boot_params = 0x00000100;
+-- 
+1.6.0.4
+

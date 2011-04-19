@@ -1,0 +1,1479 @@
+From df63fd7627ed5d6578bfa8dd92be498f7be65cf0 Mon Sep 17 00:00:00 2001
+From: Lei Wen <leiwen@marvell.com>
+Date: Mon, 27 Apr 2009 09:37:10 +0800
+Subject: [PATCH] pxa168: bad block management rearch
+
+Signed-off-by: Lei Wen <leiwen@marvell.com>
+---
+ board/pxa/common/Makefile                 |    1 +
+ board/pxa/common/bbt.c                    |  140 ++++++++
+ board/pxa/common/nand.c                   |   64 +++-
+ drivers/mtd/nand/pxa3xx_nand.c            |   81 +++--
+ drivers/mtd/pxa3xx_bbm.c                  |  555 ++++++++++++-----------------
+ include/asm-arm/arch-pxa168/common.h      |   70 +----
+ include/asm-arm/arch-pxa168/pxa3xx_bbm.h  |   49 +++
+ include/asm-arm/arch-pxa168/pxa3xx_nand.h |    2 +
+ include/linux/mtd/mtd.h                   |    1 +
+ include/linux/mtd/pxa3xx_bbm.h            |   53 ---
+ 10 files changed, 546 insertions(+), 470 deletions(-)
+ create mode 100644 board/pxa/common/bbt.c
+ create mode 100644 include/asm-arm/arch-pxa168/pxa3xx_bbm.h
+ delete mode 100644 include/linux/mtd/pxa3xx_bbm.h
+
+diff --git a/board/pxa/common/Makefile b/board/pxa/common/Makefile
+index 35c3bf3..6eaf352 100644
+--- a/board/pxa/common/Makefile
++++ b/board/pxa/common/Makefile
+@@ -34,6 +34,7 @@ COBJS-y				+= boot.o
+ COBJS-y				+= freq.o
+ COBJS-${CONFIG_CMD_CPUID}	+= cpuid.o
+ COBJS-${CONFIG_CMD_NAND}	+= nand.o
++COBJS-$(CONFIG_BBM)		+= bbt.o
+ COBJS-${CONFIG_CMD_NET}		+= tftp.o
+ COBJS-${CONFIG_USB_ETH}		+= usbeth/ether-mvu2o.o
+ COBJS-${CONFIG_USB_ETH}		+= usbeth/mv_u2o_ctl.o
+diff --git a/board/pxa/common/bbt.c b/board/pxa/common/bbt.c
+new file mode 100644
+index 0000000..9017f06
+--- /dev/null
++++ b/board/pxa/common/bbt.c
+@@ -0,0 +1,140 @@
++#include <command.h>
++#include <linux/mtd/onenand.h>
++#include <nand.h>
++#include <asm/arch-pxa168/common.h>
++#include <asm/arch-pxa168/pxa3xx_bbm.h>
++#undef	 __KERNEL__
++#include <asm/arch-pxa168/pxa3xx_nand.h>
++#include <malloc.h>
++
++extern struct mtd_info onenand_mtd;
++extern struct onenand_chip onenand_chip;
++
++int do_bbt (cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
++{
++	struct pxa3xx_bbm *bbm;
++	struct mtd_info *mtd;
++	struct reloc_table *table;
++	struct reloc_item *item;
++	struct erase_info instr = {
++		.callback	= NULL,
++	};
++	int ntim_s, reloc_s, pages, ofs, block;
++	int is_nand = 0, ret, maxsize;
++	size_t retlen;
++	ulong addr;
++	void *buf;
++
++	switch (argc) {
++	case 0:
++	case 1:
++	case 2:
++	default:
++		printf ("Usage:\n%s\n", cmdtp->usage);
++		return 1;
++	case 3:
++	case 4:
++		if (strcmp(argv[2], "nand") == 0) {
++
++			is_nand = 1;
++			mtd = &nand_info[nand_curr_device];
++			if (nand_curr_device < 0) {
++				printf ("There is no nand device on current CS\n");
++				return 0;
++			}
++		}
++		else if (strcmp(argv[2], "onenand") == 0) {
++			if (onenand_mtd.size == 0) {
++				printf ("There is no onenand device\n");
++				return 0;
++			}
++
++			mtd = &onenand_mtd;
++		}
++		else {
++			printf ("Usage:\n%s\n", cmdtp->usage);
++			return 1;
++		}
++
++		bbm = mtd->bbm;
++
++		if (strcmp (argv[1], "show") == 0)
++			bbm->show(mtd);
++		else if (strcmp(argv[1], "init") == 0) {
++			buf = malloc(mtd->erasesize);
++			if (!buf) {
++				printf("Malloc fail, exit\n");
++				return 0;
++			}
++			instr.addr = 0;
++			instr.len = mtd->erasesize;
++
++			if (is_nand)
++				printf("NAND relocation table init... ");
++			else
++				printf("ONENAND relocation table init... ");
++
++			printf("waiting... ");
++			mtd->read(mtd, 0, mtd->erasesize, &retlen, buf);
++			ret = mtd->erase(mtd, &instr);
++			if (ret) {
++				printf("erase block 0 failed\n");
++				return 0;
++			}
++
++			item	= bbm->reloc;
++			table	= bbm->table;
++			pages	= bbm->max_slots;
++			ntim_s	= mtd->writesize * PXA_BEGIN_SLOT;
++			reloc_s	= mtd->writesize * (pages - 1);
++			maxsize = mtd->size - (bbm->max_reloc_entry << bbm->erase_shift);
++
++			memset(bbm->data_buf, 0xff, mtd->writesize);
++			bbm->current_slot = bbm->max_slots - 1;
++			table->header	  = PXA_RELOC_HEADER;
++			table->total	  = 0;
++			bbm->table_init	  = 0;
++			
++			for (ofs = 0; ofs < maxsize; ofs += mtd->erasesize)
++				if (bbm->isbad_bbt(mtd, ofs, 0))
++					update_reloc_tb(mtd, ofs >> bbm->erase_shift);
++
++			bbm->table_init	  = 1;
++			memset(buf + ntim_s, 0xff, mtd->erasesize - ntim_s);
++			memcpy(buf + reloc_s, bbm->data_buf, mtd->writesize);
++			
++			mtd->write(mtd, 0, mtd->erasesize, &retlen, buf);
++			printf("init done!!!\n\n");
++
++			free(buf);
++		}
++		else if (strcmp(argv[1], "mark") == 0) {
++			addr = (ulong)simple_strtoul(argv[3], NULL, 16);
++			block = addr >> bbm->erase_shift;
++
++			ret = bbm->markbad(mtd, addr);
++			if (ret == 0) {
++				printf("block %d successfully marked as bad\n",
++						block);
++				return 0;
++			} else {
++				printf("block %d NOT marked as bad! ERROR %d\n",
++						block, ret);
++			}
++		}
++		else {
++			printf ("Usage:\n%s\n", cmdtp->usage);
++			return 1;
++		}
++}
++
++	return 1;
++}
++
++U_BOOT_CMD(
++	bbt,	4,	1,	do_bbt,
++	"bbt\t- Bad Block Management\n",
++	"show  [nand | onenand]\t- show nand/onenand relocation table\n"
++	"bbt init  [nand | onenand]\t- init relocation table\n"
++	"bbt mark  [nand | onenand] addr\t- mark bad block\n"
++);
+diff --git a/board/pxa/common/nand.c b/board/pxa/common/nand.c
+index 32471fe..9dda7ec 100644
+--- a/board/pxa/common/nand.c
++++ b/board/pxa/common/nand.c
+@@ -1,6 +1,5 @@
+ #include <nand.h>
+ #include <linux/types.h>
+-#include <linux/mtd/pxa3xx_bbm.h>
+ #include <linux/mtd/mtd.h>
+ #include <linux/mtd/nand.h>
+ #include <asm/arch/common.h>
+@@ -8,13 +7,61 @@
+ #include <asm/errno.h>
+ 
+ #undef	__KERNEL__
+-#include <asm/arch/pxa3xx_nand.h>
+-#include <asm/arch/nand_supported.h>
++#include <asm/arch-pxa168/pxa3xx_bbm.h>
++#include <asm/arch-pxa168/pxa3xx_nand.h>
++#include <asm/arch-pxa168/nand_supported.h>
+ #include <../drivers/mtd/nand/pxa3xx_nand.c>
+ 
+ static int nand_chip_num;
+ int nand_curr_device = -1;
+ nand_info_t nand_info[CONFIG_SYS_MAX_NAND_DEVICE];
++static u64 pxa3xx_nand_dma_mask = DMA_BIT_MASK(32);
++static struct resource pxa168_resources_nand[] = {
++	[0] = {
++		.start  = 0xD4283000,
++		.end    = 0xD4283200,
++		.flags  = IORESOURCE_MEM,
++	},
++	[1] = {
++		.start  = IRQ_PXA168_NAND,
++		.end    = IRQ_PXA168_NAND,
++		.flags  = IORESOURCE_IRQ,
++	},
++	[2] = {
++		/* DRCMR for Data DMA */
++		.start  = 97,
++		.end    = 97,
++		.flags  = IORESOURCE_DMA,
++	},
++	[3] = {
++		/* DRCMR for Command DMA */
++		.start  = 99,
++		.end    = 99,
++		.flags  = IORESOURCE_DMA,
++	},
++};
++
++static struct mtd_partition	pxa_mass_partition[] = {
++	[0] = {
++		.name		= "MassStorage",
++		.offset		= 0x0,
++		.mask_flags	= MTD_WRITEABLE,
++	},
++};
++
++static struct pxa3xx_nand_platform_data pxa_nandinfo;
++
++static struct platform_device pxa168_device_nand = {
++	.name           = "pxa3xx-nand",
++	.id             = -1,
++	.dev            = {
++		.dma_mask = &pxa3xx_nand_dma_mask,
++		.coherent_dma_mask = DMA_BIT_MASK(32),
++	},
++	.num_resources  = ARRAY_SIZE(pxa168_resources_nand),
++	.resource = pxa168_resources_nand,
++};
++
+ 
+ static int nand_polling(struct pxa3xx_nand* nand, unsigned long timeout)
+ {
+@@ -43,7 +90,6 @@ wait_for_completion_timeout(struct completion *x, unsigned long timeout)
+ 
+ void nand_init()
+ {
+-	struct mtd_info *mtd_info;
+ 	struct pxa3xx_nand *nand;
+ 	int chip;
+ 
+@@ -56,10 +102,14 @@ void nand_init()
+ 
+ 	nand = platform_get_drvdata(&pxa168_device_nand);
+ 	for (chip = 0; chip < CONFIG_SYS_MAX_NAND_DEVICE; chip ++) {
+-		if (nand->mtd[chip])
++		if (nand->mtd[chip]) {
+ 			memcpy(&(nand_info[chip]), nand->mtd[chip], sizeof(struct mtd_info));
+ 
+-		if (nand_curr_device < 0)
+-			nand_curr_device = chip;
++			if (nand_curr_device < 0)
++				nand_curr_device = chip;
++		}
+ 	}
++
++	if (nand_curr_device < 0)
++		printf("No NAND dev is found !!!\n\n");
+ }
+diff --git a/drivers/mtd/nand/pxa3xx_nand.c b/drivers/mtd/nand/pxa3xx_nand.c
+index 742aabb..399e062 100644
+--- a/drivers/mtd/nand/pxa3xx_nand.c
++++ b/drivers/mtd/nand/pxa3xx_nand.c
+@@ -24,6 +24,7 @@
+ #include <mach/dma.h>
+ #include <mach/pxa3xx_nand.h>
+ #include <mach/nand_supported.h>
++#include <mach/pxa3xx_bbm.h>
+ #endif
+ 
+ /* convert nano-seconds to nand flash controller clock cycles */
+@@ -240,6 +241,7 @@ static void handle_data_pio(struct pxa3xx_nand *nand)
+ 			__raw_readsl(mmio_base + NDDB,				\
+ 					info->data_buff	+ info->data_column,	\
+ 					info->data_size >> 2);
++
+ 	}
+ 
+ 	info->data_column += PAGE_CHUNK_SIZE;
+@@ -268,7 +270,7 @@ static irqreturn_t pxa3xx_nand_irq(int irq, void *devid)
+ 	struct mtd_info *mtd;
+ 	unsigned int status;
+ 	int chip_select, cmd_done, ready, page_done, badblock_detect;
+-	int cmd_seqs, ndcb1, ndcb2, ndcr;
++	int cmd_seqs, ndcb1, ndcb2;
+ 
+ 	chip_select 	= nand->chip_select;
+ 	ready		= (chip_select) ? NDSR_RDY : NDSR_FLASH_RDY;
+@@ -334,6 +336,7 @@ static irqreturn_t pxa3xx_nand_irq(int irq, void *devid)
+ 	}
+ 
+ 	if (status & badblock_detect) {
++		nand->errcode = ERR_BBERR;
+ 	}
+ 
+ 	if (status & page_done) {
+@@ -406,6 +409,7 @@ static int prepare_command_poll(struct pxa3xx_nand *nand, int command,
+ 	nand->use_dma		= 0;
+ 	nand->is_write		= 0;
+ 	nand->is_ready		= 1;
++	nand->errcode		= ERR_NONE;
+ 
+ 	addr_cycle = NDCB0_ADDR_CYC(info->row_addr_cycles  	    \
+ 			+ info->col_addr_cycles);
+@@ -581,7 +585,9 @@ static void pxa3xx_nand_cmdfunc(struct mtd_info *mtd, unsigned command,
+ 	struct pxa3xx_nand_info *info = mtd->priv;
+ 	struct pxa3xx_nand *nand = info->nand_data;
+ 	const struct pxa3xx_nand_flash *flash_info = info->flash_info;
++	struct pxa3xx_bbm *pxa3xx_bbm = mtd->bbm;
+ 	int ret, exec_cmd;
++	loff_t addr;
+ 
+ 	/* reset timing */
+ 	if (nand->chip_select != info->chip_select) {
+@@ -600,6 +606,14 @@ static void pxa3xx_nand_cmdfunc(struct mtd_info *mtd, unsigned command,
+ 	info->data_column = 0;
+ 	info->oob_column = 0;
+ 
++	addr = page_addr << pxa3xx_bbm->page_shift;
++	if (command == NAND_CMD_READOOB || command == NAND_CMD_READ0 || command == NAND_CMD_SEQIN
++			|| command == NAND_CMD_ERASE1) {
++
++		addr = pxa3xx_bbm->search(mtd, addr);
++		page_addr = addr >> pxa3xx_bbm->page_shift;
++	}
++
+ 	exec_cmd = prepare_command_poll(nand, command, column, page_addr);
+ 
+ 	switch (command) {
+@@ -652,9 +666,9 @@ static void pxa3xx_nand_cmdfunc(struct mtd_info *mtd, unsigned command,
+ 				&nand->cmd_complete, 	    \
+ 				CHIP_DELAY_TIMEOUT);
+ 
+-		if (!ret) {
++		if (!ret && !nand->errcode) {
+ 			printk(KERN_ERR "IRQ timeout, command %x, ndcb1 %x, \
+-				       	ndcb2 %x, state %x, cmd seqs %x\n", \
++					\nndcb2 %x, state %x, cmd seqs %x\n", \
+ 					command, info->ndcb1, info->ndcb2,  \
+ 					nand->state, info->current_cmd_seqs);
+ 
+@@ -732,9 +746,16 @@ static void pxa3xx_nand_select_chip(struct mtd_info *mtd, int chip)
+ 	return;
+ }
+ 
++/* Error handling expose to MTD level */
+ static int pxa3xx_nand_waitfunc(struct mtd_info *mtd, struct nand_chip *this)
+ {
+-	return 0;
++	struct pxa3xx_nand_info *info = mtd->priv;
++	struct pxa3xx_nand *nand = info->nand_data;
++
++	if (nand->errcode == ERR_BBERR)
++		return NAND_STATUS_FAIL;
++	else
++		return 0;
+ }
+ 
+ static void pxa3xx_nand_ecc_hwctl(struct mtd_info *mtd, int mode)
+@@ -823,18 +844,7 @@ static void pxa3xx_erase_cmd(struct mtd_info *mtd, int page)
+ 	chip->cmdfunc(mtd, NAND_CMD_ERASE1, -1, page);
+ }
+ 
+-static int pxa3xx_nand_block_markbad(struct mtd_info *mtd, loff_t ofs)
+-{
+-	return 0;
+-}
+-
+-static int pxa3xx_nand_block_bad(struct mtd_info *mtd, loff_t ofs,
+-		int getchip)
+-{
+-	return 0;
+-}
+-
+-static int pxa3xx_nand_scan_bbt(struct mtd_info *mtd)
++static int pxa3xx_scan_bbt(struct mtd_info *mtd, loff_t ofs, int getchip)
+ {
+ 	return 0;
+ }
+@@ -844,6 +854,7 @@ static void pxa3xx_nand_init_mtd(struct mtd_info *mtd)
+ 	struct pxa3xx_nand_info *info = mtd->priv;
+ 	struct nand_chip *this = &info->nand_chip;
+ 	const struct pxa3xx_nand_flash *f = info->flash_info;
++	struct pxa3xx_bbm *bbm = mtd->bbm;
+ 
+ 	this->options = (f->flash_width == 16) ? NAND_BUSWIDTH_16: 0;
+ 
+@@ -860,10 +871,6 @@ static void pxa3xx_nand_init_mtd(struct mtd_info *mtd)
+ 	this->errstat		= NULL;
+ 	this->write_page	= NULL;
+ 
+-	this->scan_bbt		= pxa3xx_nand_scan_bbt;
+-	this->block_bad		= pxa3xx_nand_block_bad;
+-	this->block_markbad	= pxa3xx_nand_block_markbad;
+-
+ 	this->ecc.mode		= NAND_ECC_HW;
+ 	this->ecc.hwctl		= pxa3xx_nand_ecc_hwctl;
+ 	this->ecc.calculate	= pxa3xx_nand_ecc_calculate;
+@@ -891,6 +898,9 @@ static void pxa3xx_nand_init_mtd(struct mtd_info *mtd)
+ 
+ 	/* Get chip options, preserve non chip based options */
+ 	this->options &= ~NAND_CHIPOPTIONS_MSK;
++	this->controller        = &this->hwcontrol;
++	spin_lock_init(&this->controller->lock);
++	init_waitqueue_head(&this->controller->wq);
+ 
+ 	/*
+ 	 * Set chip as a default. Board drivers can override it, 
+@@ -905,6 +915,10 @@ static void pxa3xx_nand_init_mtd(struct mtd_info *mtd)
+ 
+ 	this->numchips = 1;
+ 	this->chip_delay = 25;
++
++	this->scan_bbt		= pxa3xx_scan_bbt;
++	this->block_bad		= bbm->isbad_bbt;
++	this->block_markbad	= bbm->markbad;
+ }
+ 
+ static int pxa3xx_nand_detect_flash(struct pxa3xx_nand *nand)
+@@ -927,10 +941,10 @@ static int pxa3xx_nand_detect_flash(struct pxa3xx_nand *nand)
+ 
+ 		id = *((uint16_t *)(info->data_buff));
+ 
+-		printk(KERN_INFO "Detect a flash id %x, cs %x\n", id, 	\
+-				chip_select);
+-
+-		if (id == 0) {
++		if (id != 0)
++			printk(KERN_INFO "Detect a flash id %x, cs %x\n",
++					id, chip_select);
++		else {
+ 			kfree(mtd);
+ 			nand->mtd[chip_select] = NULL;
+ 			continue;
+@@ -983,6 +997,7 @@ static int pxa3xx_nand_init_buff(struct platform_device *pdev)
+ {
+ 	struct pxa3xx_nand_info *info;
+ 	struct pxa3xx_nand *nand;
++	struct pxa3xx_bbm *bbm;
+ 	struct mtd_info *mtd;
+ 	int chip_select, ret = 0;
+ 	int data_desc_offset = MAX_BUFF_SIZE - sizeof(struct pxa_dma_desc);
+@@ -1006,6 +1021,11 @@ static int pxa3xx_nand_init_buff(struct platform_device *pdev)
+ 		mtd->priv = info;
+ 		nand->mtd[chip_select] = mtd;
+ 
++		mtd->bbm = alloc_pxa3xx_bbm();
++		bbm = mtd->bbm;
++		if (!bbm)
++			bbm->uninit(mtd);
++
+ 		if (nand->use_dma == 0) {
+ 
+ 			info->data_buff = kmalloc(MAX_BUFF_SIZE, GFP_KERNEL);
+@@ -1044,8 +1064,9 @@ static int pxa3xx_nand_scan(struct mtd_info *mtd)
+ static int pxa3xx_nand_probe(struct platform_device *pdev)
+ {
+ 	struct pxa3xx_nand_platform_data *pdata;
+-	struct pxa3xx_nand_info 	 *info;
++	struct pxa3xx_nand_info		 *info;
+ 	struct pxa3xx_nand 		 *nand;
++	struct pxa3xx_bbm		 *bbm;
+ 	struct mtd_info 		 *mtd;
+ 	struct resource 		 *r;
+ 	int data_desc_offset = MAX_BUFF_SIZE - sizeof(struct pxa_dma_desc);
+@@ -1153,12 +1174,18 @@ static int pxa3xx_nand_probe(struct platform_device *pdev)
+ 
+ 	for (i = 0; i < NUM_CHIP_SELECT; i ++) {
+ 		mtd = nand->mtd[i];
++
+ 		if (mtd) {
++			bbm = mtd->bbm;
+ 			pxa3xx_nand_init_mtd(mtd);
+ 			if (pxa3xx_nand_scan(mtd)) {
+ 				dev_err(&pdev->dev, "failed to scan nand\n");
+ 			}
+ 
++			printk("reloc table on cs %x:\n", i);
++			bbm->show(mtd);
++			printk("\n");
++
+ 			add_mtd_partitions(mtd, pdata->parts,    \
+ 					pdata->nr_parts);
+ 		}
+@@ -1207,6 +1234,7 @@ static int pxa3xx_nand_remove(struct platform_device *pdev)
+ 	struct pxa3xx_nand *nand = platform_get_drvdata(pdev);
+ 	struct mtd_info *mtd = nand->mtd[nand->chip_select];
+ 	struct pxa3xx_nand_info *info = mtd->priv;
++	struct pxa3xx_bbm *pxa3xx_bbm = mtd->bbm;
+ 	int i;
+ 
+ 	pxa3xx_nand_stop(nand);
+@@ -1224,6 +1252,9 @@ static int pxa3xx_nand_remove(struct platform_device *pdev)
+ 		del_mtd_partitions(nand->mtd[i]);
+ 		kfree(nand->mtd[i]);
+ 	}
++
++	pxa3xx_bbm->uninit(mtd);
++
+ 	return 0;
+ }
+ 
+diff --git a/drivers/mtd/pxa3xx_bbm.c b/drivers/mtd/pxa3xx_bbm.c
+index 99ad929..558cd10 100644
+--- a/drivers/mtd/pxa3xx_bbm.c
++++ b/drivers/mtd/pxa3xx_bbm.c
+@@ -10,129 +10,67 @@
+  *
+  */
+ 
+-/* XXX U-BOOT XXX */
+-#if 0
+-#include <linux/slab.h>
+ #include <linux/mtd/mtd.h>
+-#include <linux/mtd/onenand.h>
+-#include <linux/mtd/compatmac.h>
+-#include <linux/mtd/pxa3xx_bbm.h>
+-
+-#include <asm/arch/hardware.h>
+-#endif
+-#include <asm/arch/common.h>
+-#include <linux/mtd/pxa3xx_bbm.h>
+-#include <linux/mtd/mtd.h>
+-
+-/* MOBM V2 is used on MhnP B0/B1/B2, MhnPL B1 and MhnL A0
+- * MOBM V3 is used on MhnLV A0
+- */
+-enum {
+-	MHN_OBM_NULL,
+-	MHN_OBM_V2,
+-	MHN_OBM_V3,
+-	MHN_OBM_INVAL,
+-};
+-
+-#define NAND_RELOC_HEADER	0x524e
+-#define	PXA930_MAX_RELOC_ENTRY	20
+-#define	PXA930_NEW_MAX_RELOC_ENTRY	40
+-#define	PXA3xx_MAX_RELOC_ENTRY	127
+-
+-#define	YFW_DBG
+-
+-#ifdef	YFW_DBG
+-#define yfw_dbg(format, arg...) printk(KERN_ERR __FILE__ ": " format "\n" , ## arg)
++#include <asm/arch-pxa168/pxa3xx_bbm.h>
++#include <asm/errno.h>
++#include <common.h>
+ 
+ void dump_reloc_table(struct pxa3xx_bbm *bbm)
+ {
+ 	int i;
+ 
+-	for (i = 0; i < bbm->table->total; i++) {
+-		if(65535 == bbm->reloc[i].to)
+-			continue;
+-		printk("block: %d is relocated to block: %d\n",
+-				bbm->reloc[i].from, bbm->reloc[i].to);
+-	}
++	if (bbm->table->total == 0)
++		printk("The relocation is empty now\n");
++	else
++		for (i = 0; i < bbm->table->total; i++) {
++			printk("block: %8d is relocated to block: %d\n",
++					bbm->reloc[i].from, bbm->reloc[i].to);
++		}
+ }
+-#else
+-#define	yfw_dbg(format, arg...) do {} while (0)
+-void dump_reloc_table(struct pxa3xx_bbm *bbm) {}
+-#endif
+-
+-static int max_bbt_slots = 24;
+ 
+-void dump_buf(unsigned char *buf, int len)
++static int pxa3xx_init_reloc_tb(struct mtd_info *mtd)
+ {
+-	int i;
++	struct pxa3xx_bbm *bbm = mtd->bbm;
++	int size = mtd->writesize + mtd->oobsize;
++	int slots, pages;
+ 
+-	for (i = 0; i < len; i++) {
+-		printk(" %02x", buf[i]);
+-		if (0 == ((i + 1) % 16))
+-			printk("\n");
+-	}
+-	printk("\n");
+-}
++	bbm->page_shift = ffs(mtd->writesize) - 1;
++	bbm->erase_shift = ffs(mtd->erasesize) - 1;
+ 
+-/*
+- * The relocation table management is different between MOBM V2 and V3.
+- *
+- * MOBM V2 is applied on chips taped out before MhnLV A0.
+- * MOBM V3 is applied on chips taped out after MhnLV A0. It's also applied
+- * on MhnLV A0.
+- */
+-static int calc_obm_ver(void)
+-{
+-	unsigned int	cpuid;
++	pages = mtd->erasesize >> bbm->page_shift;
++	slots = mtd->size >> bbm->erase_shift;
++	slots = (slots * 2) / 100;
++	slots = (slots < PXA_MAX_RELOC_ENTRY) ? slots : PXA_MAX_RELOC_ENTRY;
+ 
+-	cpuid = read_cpuid(CPUID_ID);
++	bbm->max_slots		= pages;
++	bbm->max_reloc_entry	= slots;
++	bbm->table_init		= 0;
+ 
+-	/* TavorP65e series */
+-	if (cpu_is_pxa935() || cpu_is_pxa910()) {
+-		return MHN_OBM_V3;
+-	}
+-
+-	/* It's not xscale chip. */
+-	if ((cpuid & 0xFFFF0000) != 0x69050000)
+-		return MHN_OBM_INVAL;
+-	/* It's MhnP Ax */
+-	if ((cpuid & 0x0000FFF0) == 0x00006420)
+-		return MHN_OBM_V2;
+-	/* It's MhnP Bx */
+-	if ((cpuid & 0x0000FFF0) == 0x00006820) {
+-		if ((cpuid & 0x0F) <= 6)
+-			return MHN_OBM_V2;
+-		else
+-			return MHN_OBM_V3;
+-	}
+-	/* It's MhnL Ax */
+-	if ((cpuid & 0x0000FFF0) == 0x00006880) {
+-		if ((cpuid & 0x0F) == 0)
+-			return MHN_OBM_V2;
+-		else
+-			return MHN_OBM_V3;
++	bbm->data_buf = kzalloc(size, GFP_KERNEL);
++	if (!bbm->data_buf) {
++		return -ENOMEM;
+ 	}
+-	/* It's MhnLV Ax */
+-	if ((cpuid & 0x0000FFF0) == 0x00006890)
+-		return MHN_OBM_V3;
+ 
+-	/* It's Tavor P A0 */
+-	if ((cpuid & 0x0000FFFF) == 0x00006834)
+-		return MHN_OBM_V2;
++	bbm->table = (struct reloc_table *)bbm->data_buf;
++	memset(bbm->table, 0x0, sizeof(struct reloc_table));
+ 
+-	/* It's Tavor P B0*/
+-	if ((cpuid & 0x0000FFFF) == 0x00006835)
+-		return MHN_OBM_V3;
++	bbm->reloc = (struct reloc_item *)((uint8_t *)bbm->data_buf +
++			sizeof (struct reloc_item));
++	memset(bbm->reloc, 0x0,
++			sizeof(struct reloc_item) * bbm->max_reloc_entry);
+ 
+-	/* It's Tavor P B1*/
+-	if ((cpuid & 0x0000FFFF) == 0x00006837)
+-		return MHN_OBM_V3;
++	return 0;
++}
+ 
+-	/* It's Tavor P B2*/
+-	if ((cpuid & 0x0000FFFF) == 0x00006838)
+-		return MHN_OBM_V3;
++static void pxa3xx_uninit_reloc_tb(struct mtd_info *mtd)
++{
++	struct pxa3xx_bbm *bbm = mtd->bbm;
+ 
+-	return MHN_OBM_INVAL;
++	if (bbm) {
++		kfree(bbm->data_buf);
++		kfree(bbm);
++		bbm = NULL;
++	}
+ }
+ 
+ /* add the relocation entry into the relocation table
+@@ -140,256 +78,182 @@ static int calc_obm_ver(void)
+  * If the relocated block is bad, an new entry will be added into the
+  * bottom of the relocation table.
+  */
+-static int update_reloc_tb(struct mtd_info *mtd, struct pxa3xx_bbm *bbm, int block)
++int update_reloc_tb(struct mtd_info *mtd, int block)
+ {
++	struct pxa3xx_bbm *bbm = mtd->bbm;
+ 	struct reloc_table *table = bbm->table;
+ 	struct reloc_item *item = bbm->reloc;
+ 	struct erase_info instr;
+-	int obm, reloc_block, ret, entry_num = -1;
+-	char rel_dist[PXA3xx_MAX_RELOC_ENTRY];
++	int reloc_block, ret, entry_num = -1;
++	char rel_dist[PXA_MAX_RELOC_ENTRY];
+ 	int i;
+ 
+-	obm = calc_obm_ver();
+-	if (obm == MHN_OBM_V3) {
+-		if (bbm->table_init == 0) {
+-			printk(KERN_ERR "Error: the initial relocation \
+-					table can't be read\n");
+-			memset(table, 0, sizeof(struct reloc_table));
+-			table->header = NAND_RELOC_HEADER;
+-			bbm->table_init = 1;
+-		}
++	if (table->total > bbm->max_reloc_entry) {
++		printk("Relocation table exceed max num,");
++		printk("cannot relocate block 0x%x\n", block);
++		return -ENOSPC;
++	}
+ 
+-		if (table->total > bbm->max_reloc_entry) {
+-			printk("Relocation table exceed max num,");
+-			printk("cannot relocate block 0x%x\n", block);
+-			return -ENOSPC;
+-		}
+-		
+-		//identify whether the block has been relocated
+-		for(i = table->total - 1; i >= 0; i --) {
+-			if(block == item[i].from)
+-				entry_num = i;
+-		}
++	//identify whether the block has been relocated
++	for(i = table->total - 1; i >= 0; i --) {
++		if(block == item[i].from)
++			entry_num = i;
++	}
+ 
+-		memset(rel_dist, 0, PXA3xx_MAX_RELOC_ENTRY);
+-		//find the available block with the largest number in reservered area
+-		for (i = 0; i < table->total; i ++) {
+-			int _rel = (item[i].to != 65535) ? item[i].to : item[i].from;
++	memset(rel_dist, 0, PXA_MAX_RELOC_ENTRY);
++	//find the available block with the largest number in reservered area
++	for (i = 0; i < table->total; i ++) {
++		int _rel = (item[i].to != 65535) ? item[i].to : item[i].from;
+ 
+-			rel_dist[(_rel - (mtd->size  >> bbm->erase_shift) + bbm->max_reloc_entry)] = 1;
+-		}
++		rel_dist[(_rel - (mtd->size  >> bbm->erase_shift) + bbm->max_reloc_entry)] = 1;
++	}
+ 
+-		while (1) {
+-			/* Make sure that reloc_block is pointing to a valid block */
+-			for (reloc_block = bbm->max_reloc_entry - 1; reloc_block >= 0; reloc_block --) {
+-				if (rel_dist[reloc_block] == 0) {
+-					break;
+-				}
++	while (1) {
++		/* Make sure that reloc_block is pointing to a valid block */
++		for (reloc_block = bbm->max_reloc_entry - 1; reloc_block >= 0; reloc_block --) {
++			if (rel_dist[reloc_block] == 0) {
++				break;
+ 			}
++		}
+ 
+-			reloc_block = reloc_block + (mtd->size  >> bbm->erase_shift) - bbm->max_reloc_entry;
++		reloc_block = reloc_block + (mtd->size  >> bbm->erase_shift) - bbm->max_reloc_entry;
+ 
+-			if (reloc_block < ((mtd->size  >> bbm->erase_shift) - bbm->max_reloc_entry)) {
+-				if (entry_num >= 0) {
+-					item[entry_num].from = item[entry_num].to;
+-					item[entry_num].to = 65535;
+-				}
+-				return -ENOSPC;
++		if (reloc_block < ((mtd->size  >> bbm->erase_shift) - bbm->max_reloc_entry)) {
++			if (entry_num >= 0) {
++				item[entry_num].from = item[entry_num].to;
++				item[entry_num].to = 65535;
+ 			}
++			return -ENOSPC;
++		}
+ 
+-			memset(&instr, 0, sizeof(struct erase_info));
+-			instr.mtd = mtd;
+-			instr.addr = reloc_block << bbm->erase_shift;
+-			instr.len = (1 << bbm->erase_shift);
++		memset(&instr, 0, sizeof(struct erase_info));
++		instr.mtd = mtd;
++		instr.addr = reloc_block << bbm->erase_shift;
++		instr.len = (1 << bbm->erase_shift);
+ 
+-			ret = mtd->erase(mtd, &instr);
+-			if (ret == 0)
+-				break;
+-			else {
+-				printk("status:0x%x found at erasing reloc block %d\n", reloc_block);
+-				/* skip it if the reloc_block is also a 
+-				 * bad block
+-				 */
+-				if (instr.fail_addr == instr.addr) {
+-					item[table->total].from = reloc_block;
+-
+-					item[table->total].to = 65535;
+-					table->total++;
+-					rel_dist[(reloc_block - ((mtd->size  >> bbm->erase_shift) + bbm->max_reloc_entry))] = 1;;
+-					continue;
+-				} else
+-					return -EINVAL;
+-			}
++		ret = mtd->erase(mtd, &instr);
++		if (ret == 0)
++			break;
++		else {
++			/* skip it if the reloc_block is also a 
++			 * bad block
++			 */
++			if (instr.fail_addr == instr.addr) {
++				item[table->total].from = reloc_block;
++
++				item[table->total].to = 65535;
++				table->total++;
++				rel_dist[(reloc_block - ((mtd->size  >> bbm->erase_shift) + bbm->max_reloc_entry))] = 1;;
++				continue;
++			} else
++				return -EINVAL;
+ 		}
++	}
+ 
+-		/* Create the relocated block information in the table */
+-		//when the block is relocated before, blob should modify the original entry to new
+-		//relocated block and the old relocated block point to 65535. If not the situation, 
+-		//create a new entry
+-		if (entry_num != -1) {
+-			item[table->total].from = item[entry_num].to;
+-			item[table->total].to = 65535;
+-			table->total++;
+-			item[entry_num].to = reloc_block;
+-		} else {
+-			item[table->total].from = block;
+-			item[table->total].to = reloc_block;
+-			table->total++;
+-		}
++	/* Create the relocated block information in the table */
++	//when the block is relocated before, blob should modify the original entry to new
++	//relocated block and the old relocated block point to 65535. If not the situation, 
++	//create a new entry
++	if (entry_num != -1) {
++		item[table->total].from = item[entry_num].to;
++		item[table->total].to = 65535;
++		table->total++;
++		item[entry_num].to = reloc_block;
+ 	} else {
+-		return -ENOSPC;
++		item[table->total].from = block;
++		item[table->total].to = reloc_block;
++		table->total++;
+ 	}
+-	
++
+ 	return 0;
+ }
+ 
+ /* Write the relocation table back to device, if there's room. */
+-static int sync_reloc_tb(struct mtd_info *mtd, struct pxa3xx_bbm *bbm, int *idx)
++static int sync_reloc_tb(struct mtd_info *mtd, int *idx)
+ {
+-	int obm, start_page, len, retlen;
++	struct pxa3xx_bbm *bbm = mtd->bbm;
+ 	uint8_t *tmp;
++	size_t retlen;
++	int len;
+ 
+-
+-	if (*idx >= max_bbt_slots) {
++	if (*idx < PXA_BEGIN_SLOT) {
+ 		printk(KERN_ERR "Can't write relocation table to device \
+ 				any more.\n");
+ 		return -1;
+ 	}
+ 
+-	if (*idx < 0) {
++	if (*idx >= bbm->max_slots) {
+ 		printk(KERN_ERR "Wrong Slot is specified.\n");
+ 		return -1;
+ 	}
+ 
++	/* should write to the next slot*/
++	(*idx) --;
++
+ 	len = 4;
+ 	len += bbm->table->total << 2;
+-	obm = calc_obm_ver();
+-	if (obm == MHN_OBM_V3) {
+-		/* write to device */
+-		/* the write page should be after the current slot */
+-		/* the num 2 is specified for we sync reloc_tb only after xdb */
+-		start_page = (1 << (bbm->erase_shift - bbm->page_shift)) - 2;
+-		start_page = start_page - *idx;
+-
+-		printk(KERN_DEBUG "DUMP relocation table before write. \
+-				page:0x%x\n", start_page);
+-
+-		tmp = (uint8_t *)bbm->data_buf;
+-		mtd->write(mtd, start_page << bbm->page_shift,
+-				1 << bbm->page_shift, &retlen, tmp);
+-		/* write to idx */
+-		(*idx)++;
+-	}
++
++	tmp = (uint8_t *)bbm->data_buf;
++	mtd->write(mtd, (*idx) << bbm->page_shift,
++			1 << bbm->page_shift, &retlen, tmp);
++
+ 	return 0;
+ }
+ 
+-static int pxa3xx_scan_reloc_tb(struct mtd_info *mtd, struct pxa3xx_bbm *bbm)
++static int pxa3xx_scan_reloc_tb(struct mtd_info *mtd)
+ {
+-	struct reloc_table *table = bbm->table;
+-	int page, maxslot, obm, valid = 0;
+-	int retlen, ret;
++	struct pxa3xx_bbm *bbm = mtd->bbm;
++	struct reloc_table *table;
++	int page, valid = 0;
++	size_t retlen;
++	int ret;
++
++	if (!(bbm->table_init))
++		pxa3xx_init_reloc_tb(mtd);
+ 
+-	obm = calc_obm_ver();
++	table = bbm->table;
+ 
+-	if (obm == MHN_OBM_V2) {
+-		/* On MOBM V2, the relocation table resides in the last page
+-		 * of the first block.
+-		 */
+-		page = (1 << (bbm->erase_shift - bbm->page_shift)) - 1;
+-		memset(bbm->data_buf, 0, mtd->writesize + mtd->oobsize);
+-		ret = mtd->read(mtd, page << bbm->page_shift, mtd->writesize,
+-				&retlen, bbm->data_buf);
++	for (page = PXA_BEGIN_SLOT; page < bbm->max_slots; page ++) {
++		memset(bbm->data_buf, 0,
++				mtd->writesize + mtd->oobsize);
++		ret = mtd->read(mtd, (page << bbm->page_shift),
++				mtd->writesize, &retlen, bbm->data_buf);
+ 
+ 		if (ret == 0) {
+-			if (table->header == NAND_RELOC_HEADER)
++			if (table->header != PXA_RELOC_HEADER) {
++				continue;
++			} else {
++				bbm->current_slot = page;	
+ 				valid = 1;
+-		}
+-	} else if (obm == MHN_OBM_V3) {
+-		/* On MOBM V3, there're several relocation tables in the first
+-		 * block.
+-		 * When new bad blocks are found, a new relocation table will
+-		 * be generated and written back to the first block. But the
+-		 * original relocation table won't be erased. Even if the new
+-		 * relocation table is written wrong, system can still find an
+-		 * old one.
+-		 * One page contains one slot.
+-		 */
+-		maxslot = 1 << (bbm->erase_shift - bbm->page_shift);
+-		page = maxslot - max_bbt_slots;
+-		for (; page < maxslot; page++) {
+-			memset(bbm->data_buf, 0,
+-					mtd->writesize + mtd->oobsize);
+-			ret = mtd->read(mtd, (page << bbm->page_shift),
+-					mtd->writesize, &retlen, bbm->data_buf);
+-
+-			if (ret == 0) {
+-				if (table->header != NAND_RELOC_HEADER) {
+-					continue;
+-				} else {
+-					bbm->current_slot = maxslot - page - 1;	
+-					valid = 1;
+-					break;
+-				}
++				break;
+ 			}
+ 		}
+-	} else {
+-		printk(KERN_ERR "The version of MOBM isn't supported\n");
+ 	}
+ 
+ 	if (valid) {
+-		printk("relocation table at page:%d\n", page);
++		printk("relocation table at page:%d\n", bbm->current_slot);
+ 		bbm->table_init = 1;
+-		dump_reloc_table(bbm);
+ 	} else {
+ 		/* There should be a valid relocation table slot at least. */
+-		printk(KERN_ERR "NO VALID relocation table can be \
+-				recognized\n");
++		printk(KERN_ERR "NO VALID reloc table can be recognized\n");
+ 		printk(KERN_ERR "CAUTION: It may cause unpredicated error\n");
+-		printk(KERN_ERR "Please re-initialize the NAND flash.\n");
++		printk(KERN_ERR "Please re-initialize the flash.\n");
+ 		memset((unsigned char *)bbm->table, 0,
+ 				sizeof(struct reloc_table));
+ 		bbm->table_init = 0;
+ 		return -EINVAL;
+ 	}
++
+ 	return 0;
+ }
+ 
+-static int pxa3xx_init_reloc_tb(struct mtd_info *mtd, struct pxa3xx_bbm *bbm)
++static void show_bbm(struct mtd_info *mtd)
+ {
+-	int size = mtd->writesize + mtd->oobsize;
+-
+-	if (cpu_is_pxa930() || cpu_is_pxa935() || cpu_is_pxa910()) {
+-		if (mtd->size <= 128 << 20) {
+-			/* if mtd size = 128MB, we use 20 relocation table */
+-			bbm->max_reloc_entry = PXA930_MAX_RELOC_ENTRY;
+-		} else {
+-			/* if mtd size = 256MB, we use 40 relocation table */
+-			bbm->max_reloc_entry = PXA930_NEW_MAX_RELOC_ENTRY;
+-		}
+-	} else
+-		bbm->max_reloc_entry = PXA3xx_MAX_RELOC_ENTRY;
+-
+-	bbm->table_init = 0;
++	struct pxa3xx_bbm *bbm = mtd->bbm;
+ 
+-	bbm->data_buf = kzalloc(size, GFP_KERNEL);
+-	if (!bbm->data_buf) {
+-		return -ENOMEM;
++	if (pxa3xx_scan_reloc_tb(mtd) == 0) {
++		dump_reloc_table(bbm);
+ 	}
+-	bbm->table = (struct reloc_table *)bbm->data_buf;
+-	memset(bbm->table, 0x0, sizeof(struct reloc_table));
+-
+-	bbm->reloc = (struct reloc_item *)((uint8_t *)bbm->data_buf +
+-			sizeof (struct reloc_item));
+-	memset(bbm->reloc, 0x0,
+-			sizeof(struct reloc_item) * bbm->max_reloc_entry);
+-
+-	return pxa3xx_scan_reloc_tb(mtd, bbm);
+-}
+-
+-static int pxa3xx_uninit_reloc_tb(struct mtd_info *mtd, struct pxa3xx_bbm *bbm)
+-{
+-	kfree(bbm->data_buf);
+-	return 0;
+ }
+ 
+ /* Find the relocated block of the bad one.
+@@ -398,43 +262,102 @@ static int pxa3xx_uninit_reloc_tb(struct mtd_info *mtd, struct pxa3xx_bbm *bbm)
+  * If the relocated block is bad, an new entry will be added into the
+  * bottom of the relocation table.
+  */
+-static int pxa3xx_search_reloc_tb(struct mtd_info *mtd, struct pxa3xx_bbm *bbm, unsigned int block)
++static loff_t pxa3xx_search_reloc_tb(struct mtd_info *mtd, loff_t ofs)
+ {
++	struct pxa3xx_bbm *bbm = mtd->bbm;
+ 	struct reloc_table *table = bbm->table;
+ 	struct reloc_item *item = bbm->reloc;
+-	int i, max, reloc_block;
++	int i, max, block, max_allow_relocated;
+ 
+-	if ((block <= 0) ||
+-			(block > ((mtd->size >> bbm->erase_shift) - bbm->max_reloc_entry)) ||
+-			(bbm->table_init == 0) || (table->total == 0))
+-		return block;
++	block = ofs >> bbm->erase_shift;
++	max_allow_relocated = (mtd->size  >> bbm->erase_shift)
++				- bbm->max_reloc_entry;
+ 
+-	if (table->total > bbm->max_reloc_entry)
+-		table->total = bbm->max_reloc_entry;
++	if ((bbm->table_init == 0)
++			|| (table->total == 0)
++			|| (block >= max_allow_relocated))
++
++		return ofs;
+ 
+-	/* If can't find reloc tb entry for block, return block */
+-	reloc_block = block;
+ 	max = table->total;
++	ofs -= block * mtd->erasesize;
++
+ 	for (i = max-1; i >= 0; i--) {
+ 		if (block == item[i].from) {
+-			reloc_block = item[i].to;
++			block = item[i].to;
+ 			break;
+ 		}
+ 	}
+ 
+-	return reloc_block;
++	ofs += block * mtd->erasesize;
++
++	return ofs;
+ }
+ 
+-static int pxa3xx_mark_reloc_tb(struct mtd_info *mtd, struct pxa3xx_bbm *bbm, unsigned int block)
++static int pxa3xx_mark_reloc_tb(struct mtd_info *mtd, loff_t ofs)
+ {
+-	int ret = 0;
++	struct pxa3xx_bbm *bbm = mtd->bbm;
++	struct mtd_oob_ops ops;
++	uint8_t buf[2] = {0, 0};
++	int ret = 0, block, _ofs;
++
++	_ofs = bbm->search(mtd, ofs);
++	if (_ofs < 0 || _ofs > mtd->size)
++		return 0;
++
++	ops.mode	= MTD_OOB_RAW;
++	ops.len		= mtd->oobsize;
++	ops.ooblen	= 2;
++	ops.ooboffs	= 0;
++	ops.oobbuf	= buf;
++	ops.datbuf	= NULL;
++
++	mtd->write_oob(mtd, ofs, &ops);
++
++	if (bbm->table_init) {
++		block = ofs >> bbm->erase_shift;
++		ret = update_reloc_tb(mtd, block);
++		if (ret)
++			return ret;
++
++		sync_reloc_tb(mtd, &(bbm->current_slot));
++	}
++
++	return 0;
++}
+ 
+-	ret = update_reloc_tb(mtd, bbm, block);
+-	if (ret)
+-		return ret;
++static int pxa3xx_block_bad(struct mtd_info *mtd, loff_t ofs, int allowbbt)
++{
++	struct pxa3xx_bbm *bbm;
++	struct reloc_table *table;
++	struct mtd_oob_ops ops;
++	uint8_t bad_mark[2];
++	loff_t _ofs;
++
++	bbm	= mtd->bbm;
++	table	= bbm->table;
++
++	if (bbm->current_slot <= PXA_BEGIN_SLOT
++			|| table->total >= bbm->max_reloc_entry
++			|| !bbm->table_init) {
++
++		_ofs = pxa3xx_search_reloc_tb(mtd, ofs);
++		if (_ofs != ofs)
++			return 0;
++
++		ops.ooboffs	= 0;
++		ops.ooblen	= 2;
++		ops.len		= 2;
++		ops.datbuf	= NULL;
++		ops.oobbuf	= bad_mark;
++		ops.mode	= MTD_OOB_RAW;
++
++		mtd->read_oob(mtd, ofs, &ops);
++		if (bad_mark[0] != 0xFF || bad_mark[1] != 0xFF)
++			return 1;
++	}
+ 
+-	ret = sync_reloc_tb(mtd, bbm, &(bbm->current_slot));
+-	return ret;
++	return 0;
+ }
+ 
+ struct pxa3xx_bbm* alloc_pxa3xx_bbm(void)
+@@ -448,21 +371,13 @@ struct pxa3xx_bbm* alloc_pxa3xx_bbm(void)
+ 	if (!bbm)
+ 		return NULL;
+ 
+-	bbm->init = pxa3xx_init_reloc_tb;
+-	bbm->uninit = pxa3xx_uninit_reloc_tb;
+-	bbm->search = pxa3xx_search_reloc_tb;
+-	bbm->markbad = pxa3xx_mark_reloc_tb;
++	bbm->uninit	= pxa3xx_uninit_reloc_tb;
++	bbm->search	= pxa3xx_search_reloc_tb;
++	bbm->isbad_bbt	= pxa3xx_block_bad;
++	bbm->markbad	= pxa3xx_mark_reloc_tb;
++	bbm->scan_bbt	= pxa3xx_scan_reloc_tb;
++	bbm->show	= show_bbm;
+ 
+ 	return bbm;
+ }
+ EXPORT_SYMBOL(alloc_pxa3xx_bbm);
+-
+-void free_pxa3xx_bbm(struct pxa3xx_bbm *bbm)
+-{
+-	if (bbm) {
+-		kfree(bbm);
+-		bbm = NULL;
+-	}
+-}
+-EXPORT_SYMBOL(free_pxa3xx_bbm);
+-
+diff --git a/include/asm-arm/arch-pxa168/common.h b/include/asm-arm/arch-pxa168/common.h
+index 07d9730..73203b5 100644
+--- a/include/asm-arm/arch-pxa168/common.h
++++ b/include/asm-arm/arch-pxa168/common.h
+@@ -3,10 +3,11 @@
+ 
+ #include <common.h>
+ #include <asm/io.h>
++#include <linux/types.h>
+ #include <linux/err.h>
+ #include <linux/mtd/compat.h>
+ #include <linux/mtd/nand.h>
+-
++#include <linux/mtd/partitions.h>
+ 
+ #define __initdata
+ #define __exit
+@@ -15,6 +16,7 @@
+ #define module_init(...)
+ #define module_param(...)
+ #define module_exit(...)
++#define EXPORT_SYMBOL(...)
+ #define MODULE_DESCRIPTION(...)
+ #define MODULE_AUTHOR(...)
+ #define MODULE_LICENSE(...)
+@@ -46,8 +48,8 @@
+ #define BU_U32            unsigned int
+ #define BU_REG_WRITE(x,y) ((*(volatile BU_U32 *)(x)) = y )
+ 
+-typedef int onenand_state_t;
+ typedef int wait_queue_head_t; 
++typedef int onenand_state_t;
+ typedef int irqreturn_t;
+ typedef irqreturn_t (*irq_handler_t)(int, void *);
+ typedef u32 resource_size_t;
+@@ -79,6 +81,7 @@ static inline int __decalare_return(void)
+ #define init_waitqueue_head(...)
+ #define THIS_MODULE		0
+ #define wait_for_completion(...)
++#define add_mtd_partitions(...)	0
+ 
+ #define platform_get_irq(...)	0
+ #define request_mem_region(x,y,z)	(container_of(x, struct resource, start))
+@@ -301,15 +304,6 @@ struct timespec {
+ 	long    tv_nsec;        /* nanoseconds */
+ };
+ 
+-struct mtd_partition {
+-	char *name;                     /* identifier string */
+-	u_int32_t size;                 /* partition size */
+-	u_int32_t offset;               /* offset within the master MTD space */
+-	u_int32_t mask_flags;           /* master MTD flags to mask out for this partition */
+-	struct nand_ecclayout *ecclayout;       /* out of band layout for this partition (NAND only)*/
+-	struct mtd_info **mtdp;         /* pointer to store the MTD object */
+-};
+-
+ void complete(struct completion *completion);
+ unsigned long wait_for_completion_timeout(struct completion *x, unsigned long timeout);
+ inline unsigned long msecs_to_jiffies(int time);
+@@ -411,61 +405,7 @@ unsigned long clk_get_rate(struct clk * clk);
+ 	 __cpu_is_pxa910_168(id);                        		\
+ 	 })
+ 
+-static int add_mtd_partitions(struct mtd_info *master,
+-		const struct mtd_partition *parts,
+-		int nbparts)
+-{
+-	return 0;
+-}
+-
+-static struct mtd_partition	pxa_mass_partition[] = {
+-	[0] = {
+-		.name		= "MassStorage",
+-		.offset		= 0x0,
+-		.mask_flags	= MTD_WRITEABLE,
+-	},
+-};
+-
+-static struct resource pxa168_resources_nand[] = {
+-	[0] = {
+-		.start  = 0xD4283000,
+-		.end    = 0xD4283200,
+-		.flags  = IORESOURCE_MEM,
+-	},
+-	[1] = {
+-		.start  = IRQ_PXA168_NAND,
+-		.end    = IRQ_PXA168_NAND,
+-		.flags  = IORESOURCE_IRQ,
+-	},
+-	[2] = {
+-		/* DRCMR for Data DMA */
+-		.start  = 97,
+-		.end    = 97,
+-		.flags  = IORESOURCE_DMA,
+-	},
+-	[3] = {
+-		/* DRCMR for Command DMA */
+-		.start  = 99,
+-		.end    = 99,
+-		.flags  = IORESOURCE_DMA,
+-	},
+-};
+-
+ #define DMA_BIT_MASK(n) (((n) == 64) ? ~0ULL : ((1ULL<<(n))-1))
+-static u64 pxa3xx_nand_dma_mask = DMA_BIT_MASK(32);
+-
+-static struct pxa3xx_nand_platform_data pxa_nandinfo;
+-
+-static struct platform_device pxa168_device_nand = {
+-	.name           = "pxa3xx-nand",
+-	.id             = -1,
+-	.dev            = {
+-		.dma_mask = &pxa3xx_nand_dma_mask,
+-		.coherent_dma_mask = DMA_BIT_MASK(32),
+-	},
+-	.num_resources  = ARRAY_SIZE(pxa168_resources_nand),
+-	.resource = pxa168_resources_nand,
+-};
+ 
+ static inline void *dev_get_drvdata(const struct device *dev)
+ {
+diff --git a/include/asm-arm/arch-pxa168/pxa3xx_bbm.h b/include/asm-arm/arch-pxa168/pxa3xx_bbm.h
+new file mode 100644
+index 0000000..223a7a6
+--- /dev/null
++++ b/include/asm-arm/arch-pxa168/pxa3xx_bbm.h
+@@ -0,0 +1,49 @@
++#ifndef	__PXA3XX_BBT_H__
++#define	__PXA3XX_BBT_H__
++
++#define PXA_RELOC_HEADER	0x524e
++#define	PXA_MAX_RELOC_ENTRY	100
++#define PXA_BEGIN_SLOT		2
++
++struct reloc_item {
++	unsigned short from;
++	unsigned short to;
++};
++
++struct reloc_table {
++	unsigned short header;
++	unsigned short total;
++};
++
++struct pxa3xx_bbm {
++	/* NOTES: this field impact the partition table. Please make sure
++	 * that this value align with partitions definition.
++	 */
++	int			max_reloc_entry;
++	int			max_slots;
++	int			current_slot;
++
++	void			*data_buf;
++
++	/* These two fields should be in (one)nand_chip.
++	 * Add here to handle onenand_chip and nand_chip
++	 * at the same time.
++	 */
++	int			page_shift;
++	int			erase_shift;
++
++	unsigned int		table_init;
++	struct reloc_table	*table;
++	struct reloc_item	*reloc;
++
++	void	(*uninit)(struct mtd_info *mtd);
++	loff_t	(*search)(struct mtd_info *mtd,	loff_t ofs);
++	int	(*isbad_bbt)(struct mtd_info *mtd, loff_t ofs, int allowbbt);
++	int	(*markbad)(struct mtd_info *mtd, loff_t ofs);
++	int	(*scan_bbt)(struct mtd_info *mtd);
++	void	(*show)(struct mtd_info *mtd);
++};
++
++struct pxa3xx_bbm* alloc_pxa3xx_bbm(void);
++#endif
++
+diff --git a/include/asm-arm/arch-pxa168/pxa3xx_nand.h b/include/asm-arm/arch-pxa168/pxa3xx_nand.h
+index c10a4f5..3a86a9b 100644
+--- a/include/asm-arm/arch-pxa168/pxa3xx_nand.h
++++ b/include/asm-arm/arch-pxa168/pxa3xx_nand.h
+@@ -85,6 +85,8 @@ struct pxa3xx_nand_info {
+ 	/* use HW ECC ? */
+ 	/* 0:off, 1:Hammin ECC  2: BCH ECC */
+ 	uint16_t		use_ecc;
++
++	struct pxa3xx_bbm 	*pxa3xx_bbm;
+ };
+ 
+ struct pxa3xx_nand {
+diff --git a/include/linux/mtd/mtd.h b/include/linux/mtd/mtd.h
+index 354e3a0..4896f7d 100644
+--- a/include/linux/mtd/mtd.h
++++ b/include/linux/mtd/mtd.h
+@@ -224,6 +224,7 @@ struct mtd_info {
+ 	int subpage_sft;
+ 
+ 	void *priv;
++	void *bbm;
+ 
+ 	struct module *owner;
+ 	int usecount;
+diff --git a/include/linux/mtd/pxa3xx_bbm.h b/include/linux/mtd/pxa3xx_bbm.h
+deleted file mode 100644
+index f9d8513..0000000
+--- a/include/linux/mtd/pxa3xx_bbm.h
++++ /dev/null
+@@ -1,53 +0,0 @@
+-#ifndef	__PXA3XX_BBT_H__
+-#define	__PXA3XX_BBT_H__
+-
+-enum flash_type {
+-	FLASH_NAND,
+-	FLASH_ONENAND,
+-};
+-
+-struct reloc_item {
+-	unsigned short from;
+-	unsigned short to;
+-};
+-
+-struct reloc_table {
+-	unsigned short header;
+-	unsigned short total;
+-};
+-
+-struct pxa3xx_bbm {
+-	int			flash_type;
+-
+-	u32			current_slot;
+-
+-	/* NOTES: this field impact the partition table. Please make sure
+-	 * that this value align with partitions definition.
+-	 */
+-	u32			max_reloc_entry;
+-
+-	void			*data_buf;
+-
+-	/* These two fields should be in (one)nand_chip.
+-	 * Add here to handle onenand_chip and nand_chip
+-	 * at the same time.
+-	 */
+-	int			page_shift;
+-	int			erase_shift;
+-
+-	unsigned int		table_init;
+-	struct reloc_table	*table;
+-	struct reloc_item	*reloc;
+-
+-	int	(*init)(struct mtd_info *mtd, struct pxa3xx_bbm *bbm);
+-	int	(*uninit)(struct mtd_info *mtd, struct pxa3xx_bbm *bbm);
+-	int	(*search)(struct mtd_info *mtd, struct pxa3xx_bbm *bbm,
+-			unsigned int block);
+-	int	(*markbad)(struct mtd_info *mtd, struct pxa3xx_bbm *bbm,
+-			unsigned int block);
+-};
+-
+-struct pxa3xx_bbm* alloc_pxa3xx_bbm(void);
+-void free_pxa3xx_bbm(struct pxa3xx_bbm *);
+-#endif
+-
+-- 
+1.6.0.4
+

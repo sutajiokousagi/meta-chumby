@@ -1,0 +1,557 @@
+From 6f82cc9129f96effb42311d4c4fefe8e58e43572 Mon Sep 17 00:00:00 2001
+From: Jiangang Jing <jgjing@marvell.com>
+Date: Wed, 23 Dec 2009 14:53:22 +0800
+Subject: [PATCH] pxa688: enable flint autoboot
+
+Signed-off-by: Jiangang Jing <jgjing@marvell.com>
+Signed-off-by: Ning Jiang <ning.jiang@marvell.com>
+---
+ board/pxa/common/Makefile       |    1 -
+ board/pxa/common/freq_ll.S      |  116 +++++++++++++++++++++++
+ board/pxa/common/mmp2_freq_ll.S |  130 --------------------------
+ board/pxa/flint/flint.c         |  195 +++++++++++++++++++++++++++++++--------
+ include/configs/mmp2_flint.h    |    2 +-
+ 5 files changed, 275 insertions(+), 169 deletions(-)
+ delete mode 100644 board/pxa/common/mmp2_freq_ll.S
+
+diff --git a/board/pxa/common/Makefile b/board/pxa/common/Makefile
+index 896804b..ea2605c 100644
+--- a/board/pxa/common/Makefile
++++ b/board/pxa/common/Makefile
+@@ -31,7 +31,6 @@ LIB	= $(obj)lib$(VENDOR).a
+ 
+ SOBJS-y				+= freq_ll.o
+ SOBJS-y				+= hibernate.o
+-SOBJS-y				+= mmp2_freq_ll.o
+ 
+ COBJS-y				+= common.o
+ COBJS-y				+= boot.o
+diff --git a/board/pxa/common/freq_ll.S b/board/pxa/common/freq_ll.S
+index e808b32..0be414c 100644
+--- a/board/pxa/common/freq_ll.S
++++ b/board/pxa/common/freq_ll.S
+@@ -149,6 +149,8 @@ freq_sram_start:
+ 	@ ddr re-calibration after frequency change
+ 	@
+ 
++#if (defined(CONFIG_MMP2_JASPER))
++
+ 	@ CONFIG_DECODE_ADDR
+ 	ldr	r7, =0xD0004D56
+ 	str	r7, [r4, #0x000]
+@@ -291,6 +293,119 @@ freq_sram_start:
+ 	str	r7, [r4, #0x410]
+ 	ldr	r7, =0x03020003
+ 	str	r7, [r4, #0x410]
++#endif
++
++#if (defined(CONFIG_MMP2_FLINT))
++
++	@ CONFIG_DECODE_ADDR
++	ldr     r7, =0xD0004D56
++	str	r7, [r4, #0x0]
++
++	@ MMAP
++	ldr	r7, =0x000b0001
++	str	r7, [r4, #0x100]
++	ldr	r7, =0x080B0001
++	str	r7, [r4, #0x110]
++
++	@ CONFIG_TYPE
++	ldr	r7, =0x00006320
++	str	r7, [r4, #0x20]
++	ldr	r7, =0x00006320
++	str	r7, [r4, #0x30]
++
++	@ TIMING
++	ldr	r7, =0x4cd800c5
++	str	r7, [r4, #0x50]
++	ldr	r7, =0x84660342
++	str	r7, [r4, #0x60]
++	ldr	r7, =0x2000381B
++	str	r7, [r4, #0x190]
++	ldr	r7, =0x3023009D
++	str	r7, [r4, #0x1C0]
++	ldr	r7, =0x00110142
++	str	r7, [r4, #0x650]
++	ldr	r7, =0x02424190
++	str	r7, [r4, #0x660]
++
++	@ CTRL
++	ldr	r7, =0xc0000000
++	str	r7, [r4, #0xf0]
++	ldr	r7, =0x20c08115
++	str	r7, [r4, #0x1a0]
++	ldr	r7, =0x0
++	str	r7, [r4, #0x760]
++	ldr	r7, =0x0
++	str	r7, [r4, #0x770]
++
++	@ __PHY Deskew PLL config and PHY initialization
++	ldr	r7, =0x00000000
++	str	r7, [r4, #0x210]
++	ldr	r7, =0x80000000
++	str	r7, [r4, #0x240]
++
++	@ DLL reset, Need this after any DCLK freq change
++	ldr	r8, =0x20000000
++	ldr	r7, [r4, #0x240]
++	orr	r7, r7, r8
++	str	r7, [r4, #0x240]
++	ldr	r8, =0xdFFFFFFF
++	ldr	r7, [r4, #0x240]
++	and	r7, r7, r8
++	str	r7, [r4, #0x240]
++
++	@ Pad drive strength auto calibration
++	ldr	r8, =0x00110000
++	ldr	r7, [r4, #0x200]
++	orr	r7, r7, r8
++	str	r7, [r4, #0x200]
++	ldr	r7, [r4, #0x240]
++	ldr	r8, =0xFFFEFFFF
++	ldr	r7, [r4, #0x200]
++	and	r7, r7, r8
++	str	r7, [r4, #0x200]
++
++	ldr	r7, =0x20004433
++	str	r7, [r4, #0x140]
++	ldr	r7, =0x177C2779
++	str	r7, [r4, #0x1D0]
++	ldr	r7, =0x0aa00770
++	str	r7, [r4, #0x1e0]
++	ldr	r7, =0xc0000077
++	str	r7, [r4, #0x1f0]
++
++	ldr	r7, =0x20000108
++	str	r7, [r4, #0x230]
++	ldr	r7, =0x00000100
++	str	r7, [r4, #0xE10]
++	ldr	r7, =0x00000100
++	str	r7, [r4, #0xE20]
++	ldr	r7, =0x00000100
++	str	r7, [r4, #0xE30]
++
++	ldr	r7, =0x205c7d00
++	str	r7, [r4, #0xE10]
++	ldr	r7, =0x205c7d00
++	str	r7, [r4, #0xE20]
++	ldr	r7, =0x205c7d00
++	str	r7, [r4, #0xE30]
++
++	@ initialize LPDDR2
++	ldr	r7, =0x03000001
++	str	r7, [r4, #0x120]
++	ldr	r7, [r4, #0x1B0]
++	ldr	r7, =0x0302003f
++	str	r7, [r4, #0x410]
++	ldr	r7, =0x01001000
++	str	r7, [r4, #0x120]
++	ldr	r7, =0x02001000
++	str	r7, [r4, #0x120]
++	ldr	r7, =0x03020001
++	str	r7, [r4, #0x410]
++	ldr	r7, =0x03020002
++	str	r7, [r4, #0x410]
++	ldr	r7, =0x03020003
++	str	r7, [r4, #0x410]
++#endif
+ 
+ 	@dummy reads for PHY DQ byte read DLLs to update
+ 	mov	r8, #131
+@@ -301,6 +416,7 @@ freq_sram_start:
+ 	bne	1b
+ 
+ 	ldr	r7, [r4, #0x240]
++
+ #else
+ 	@ frequency change sequence
+ 	ldr	r7, =0x2000088e
+diff --git a/board/pxa/common/mmp2_freq_ll.S b/board/pxa/common/mmp2_freq_ll.S
+deleted file mode 100644
+index 22e84c8..0000000
+--- a/board/pxa/common/mmp2_freq_ll.S
++++ /dev/null
+@@ -1,130 +0,0 @@
+-/*
+- * Low-level frequency change code
+- *
+- * Copyright (C) 2009, Marvell Semicondutor.
+- *
+- * This software program is licensed subject to the GNU General Public License
+- * (GPL).Version 2,June 1991, available at http://www.fsf.org/copyleft/gpl.html
+- */
+-
+-	.global mmp2_freq_init_sram, mmp2_freq_chg_seq
+-
+-@******************************************************************************
+-@
+-@ freq_init_sram
+-@
+-@ Copy frequency change code into ISRAM
+-@
+-@ Inputs:
+-@	r0 = Start address of relocated program
+-@
+-@ Outputs:
+-@	None
+-@
+-
+-mmp2_freq_init_sram:
+-	stmfd	sp!, {r0 - r12, lr}
+-	ldr	r3, =mmp2_freq_sram_start
+-	ldr	r4, =mmp2_freq_sram_end
+-	add	r4, r4, #0x20
+-
+-rel_ram:
+-	ldmia	r3!, {r5 - r12}
+-	stmia	r0!, {r5 - r12}
+-	cmp	r3, r4
+-	ble	rel_ram
+-
+-	ldmfd	sp!, {r0 - r12, pc}
+-
+-@******************************************************************************
+-@
+-@ freq_chg_seq
+-@
+-@ frequency change sequence
+-@
+-@ Inputs:
+-@	r0 = Start address of relocated program
+-@	r1 = Start address of relocated stack
+-@	r2 = operating points
+-@
+-@ Outputs:
+-@	None
+-@
+-
+-#define PMUM_FCCR_OFF	0x0008
+-#define PMUA_CC_AP_OFF	0x0004
+-
+-mmp2_freq_chg_seq:
+-
+-	@ save registers on stack
+-	stmfd	sp!, {r3 - r12, lr}
+-
+-	mov	r12, r0			@ save start address of program in r12
+-	mov	r11, r1			@ save start address of stack in r11
+-	mov	r10, sp			@ save sp in r10
+-	mov	sp, r11			@ set up new stack address
+-	stmfd	sp!, {lr}		@ store the return address
+-
+-	ldr	r4, =0xd0000000		@ DMEM base address
+-	ldr	r5, =0xd4050000		@ PMUM base address
+-	ldr	r6, =0xd4282800		@ PMUA base address
+-
+-	mov	pc, r0
+-
+-mmp2_freq_sram_start:
+-	b	1f
+-	.align  5
+-1:
+-	@ frequency change sequence
+-	ldr	r7, =0xffffffff
+-	str	r7, [r5, #0x24]
+-
+-	ldr	r7, =0x086003e2
+-	str	r7, [r5, #0x414]
+-
+-	ldr	r7, =0x00FFFE00
+-	str	r7, [r5, #0x34]
+-
+-	ldr	r7, =0x00223A00
+-	str	r7, [r5, #0x34]
+-
+-	ldr	r7, =0x00223B00
+-	str	r7, [r5, #0x34]
+-
+-	ldr	r7, =0x286003e2
+-	str	r7, [r5, #0x414]
+-
+-	ldr	r7, =0x00061808
+-	str	r7, [r6, #0x88]
+-
+-	ldr	r7, =0x08FD0248
+-	str	r7, [r6, #0x0]
+-
+-	ldr	r7, =0x48FD0248
+-	str	r7, [r6, #0x4]
+-
+-	ldr	r7, =0x08FD0248
+-	str	r7, [r6, #0x0]
+-
+-	ldr	r7, =0x28FD0248
+-	str	r7, [r6, #0x4]
+-
+-	ldr	r7, =0x08FD0248
+-	str	r7, [r6, #0x0]
+-
+-	ldr	r7, =0x41000000
+-	str	r7, [r5, #PMUM_FCCR_OFF]
+-
+-	ldr	r7, =0x18FD0248
+-	str	r7, [r6, #0x4]
+-
+-
+-	@ ddr caliberation
+-
+-	ldmfd	sp!, {lr}
+-	mov	sp, r10				@ restore stack address
+-
+-        ldmfd   sp!, {r3 - r12, pc}
+-
+-mmp2_freq_sram_end:
+-	nop
+diff --git a/board/pxa/flint/flint.c b/board/pxa/flint/flint.c
+index b586bf2..9408fe6 100644
+--- a/board/pxa/flint/flint.c
++++ b/board/pxa/flint/flint.c
+@@ -24,10 +24,9 @@
+ #include <asm/arch/mfp-pxa688.h>
+ 
+ static mfp_cfg_t flint_pin_config[] __initdata = {
+-	/* UART2 */
+-	GPIO47_UART2_RXD,
+-	GPIO48_UART2_TXD,
+-
++	/* UART3 */
++	GPIO51_UART3_RXD,
++	GPIO52_UART3_TXD,
+ 	/* SMC */
+ 	GPIO151_SMC_SCLK,		
+ 	GPIO145_SMC_nCS0,			
+@@ -122,46 +121,169 @@ unsigned long initdram (int board_type)
+ {
+     return (PHYS_SDRAM_SIZE_DEC*1024*1024);
+ }
+-
+-int board_init (void)
++void pll2_config()
+ {
+-    DECLARE_GLOBAL_DATA_PTR;
+-    volatile unsigned int reg;
++/*pj_pm_setup_pll2(500)  500MHz
++ * Fix the pll2refdiv to 1(+2), to get 8.66MHz ref clk
++ * Stable val recomended between 8-12MHz. To get the reqd
++ * freq val, just program the fbdiv
++ * freq takes effect during a fc req
++ */
++	volatile unsigned int gc_temp;
++	unsigned int fbdiv;
++
++	gc_temp = *(volatile unsigned int *)0xD4050414;
++	fbdiv=113;
++
++	/* make sure pll2 is in reset */
++	gc_temp = gc_temp & (~(1<<29));
++	*(volatile unsigned int *)0xD4050414 = gc_temp;
+ 
+-    /* TODO: Should only enable the bits that make sense at this point */
+-    /* Turn on clock gating (PMUM_CGR_SP) */
+-    /**(volatile unsigned int *)0xd4050024 = 0x0818e33c;*/
+-    /* Turn on clock gating (PMUM_CGR_PJ) */
+-    *(volatile unsigned int *)0xd4051024 = 0x0818e33c;
++	/* Enable the pll2 and program the divider values */
++	gc_temp = *(volatile unsigned int *)0xD4050034;
++	gc_temp = gc_temp & (~(1<<8));
++	*(volatile unsigned int *)0xD4050034 = gc_temp;
+ 
+-    /* AIB clock */
+-    *(volatile unsigned int *)0xD4015064 = 0x7;
+-    *(volatile unsigned int *)0xD4015064 = 0x3;
+-	
+-    /* Below is for IRE */
+-    *(volatile unsigned int *)0xd4282848 = 0x00000008;
+-    *(volatile unsigned int *)0xd4282848 = 0x00000009;
++	gc_temp = gc_temp & (~((0x1ff<<10)|(0x1f<<19)));
++	gc_temp = gc_temp | (4<<19);
++	gc_temp = gc_temp | (113<<10);
++	*(volatile unsigned int *)0xD4050034 = gc_temp | (1<<9);
++	*(volatile unsigned int *)0xD4050034 = gc_temp | (1<<8) | (1<<9);
+ 
+-    /* UART2 clk */
+-    *(volatile unsigned int *)0xD4015030 = 0x3 | (1<<4); /*26MHz clock*/
++	/* pll2 out of reset */
++	gc_temp = *(volatile unsigned int *)0xD4050414;
++	gc_temp = gc_temp | (1<<29);
++	*(volatile unsigned int *)0xD4050414 = gc_temp;
+ 
+-    /* TWSI1 clk*/
+-    *(volatile unsigned int *)0xD4015004 = 0x3; 
+-    dummy_delay(99999);
++}
++void clock_config()
++{
++	volatile unsigned int reg;
++	*(volatile unsigned int *)0xD4051024 = 0xffffffff;
++	*(volatile unsigned int *)0xD42828dc = 0x1FFFF;
++	*(volatile unsigned int *)0xD4015064 = 0x7;
++	*(volatile unsigned int *)0xD4015064 = 0x3;
++	pll2_config();
++	/* Uart APB clock */
++	*(volatile unsigned int *)0xd4015034=0x3|(1<<4);
++	*(volatile unsigned int *)0xd4282848 = 0x00000008;
++	*(volatile unsigned int *)0xd4282848 = 0x00000009;
++	reg = *(volatile unsigned int *)0xD401E160;
++	reg |= 1<<14;
++	*(volatile unsigned int *)0xD401E160 = reg;
++	BU_REG_WRITE(0xd4015000, 0x83 );
+ 
+-    /* no clock gated*/
+-    //*(volatile unsigned int *)0xd405000c=0x80E50FFF;
++	/* Uart3 PinMux */
++	*(volatile unsigned int *)0xd401e120=0x5001;
++	*(volatile unsigned int *)0xd401e124=0x5001;
++	/* APB RTC clock */
++	*(volatile unsigned int *)0xd4015000=0x3;
++	/* APB timer clock */
++	*(volatile unsigned int *)0xd4015024=0x5;
++	*(volatile unsigned int *)0xd4015024=0x33;
++
++	reg = *(volatile unsigned int *)0xd4282c08;
++        reg |= (1<<6) | (1<<9) | (1<<14) | (1<<19) | (1<<13);
++	reg &= ~(1<<23);
++        *(volatile unsigned int *)0xd4282c08 = reg;
++	*(volatile unsigned int *)0xd4015038=0x03;
++}
+ 
+-    /* audio bus clock*/
+-    //*(volatile unsigned int *)0xd42820c=0x1710;
+-    //*(volatile unsigned int *)0xd42820c=0x1712;
++void usb_init()
++{
++	*(volatile unsigned int *)0xd4282110=0;
++	*(volatile unsigned int *)0xd4283894=0x11000008; /*DFI chip select*/
+ 
+-    /* vmeta clock*/
+-    //*(volatile unsigned int *)0xd4282a4=0x718;
+-    //*(volatile unsigned int *)0xd4282a4=0x71B;
++	*(volatile unsigned int *)0xd4282100=0x0;
++	*(volatile unsigned int *)0xd428285c=0x8;
++	*(volatile unsigned int *)0xd428285c=0x9;
+ 
+-    /* enable GPIO clock */
+-    *(volatile unsigned int *)0xd4015038=0x03;
++	*(volatile unsigned int *)0xd42828f8=0x18;
++        *(volatile unsigned int *)0xd42828f8=0x1b;
++	*(volatile unsigned int *)0xd42828fc=0x18;
++        *(volatile unsigned int *)0xd42828fc=0x1b;
++
++	*(volatile unsigned int *)0xd4282900=0x18; /*USB3 clock control*/
++	*(volatile unsigned int *)0xd4282900=0x1b;
++}
++void audio_init()
++{
++	*(volatile unsigned int *)0xd428290c=0x600;
++	*(volatile unsigned int *)0xd428290c=0x610;
++	*(volatile unsigned int *)0xd428290c=0x710;
++	*(volatile unsigned int *)0xd428290c=0x712;
++
++	*(volatile unsigned int *)0xd4050040=0xd0080040;
++	*(volatile unsigned int *)0xd4050044=0xd0040040;
++	*(volatile unsigned int *)0xd42a0c3c=0x10800;
++	*(volatile unsigned int *)0xd42a0c34=0x211921;
++}
++void vmeta_clock_config()
++{
++	/* Clk Reset for vemta.Clk Reset for vemta.*/
++	volatile unsigned int reg;
++	reg = *(volatile unsigned int *)0xd42828a4;
++	reg = reg | (3<<9);
++	reg = reg & (~(1<<9));
++
++	reg = *(volatile unsigned int *)0xd42828a4;
++	*(volatile unsigned int *)0xd42828a4 = reg;
++	reg = *(volatile unsigned int *)0xd42828a4;
++
++
++	reg = reg | (1<<3);
++	*(volatile unsigned int *)0xd42828a4 = reg;
++	reg = *(volatile unsigned int *)0xd42828a4;
++
++	reg = reg | (1<<0);
++	*(volatile unsigned int *)0xd42828a4 = reg;
++	reg = *(volatile unsigned int *)0xd42828a4;
++
++	reg = reg | (1<<4);
++	*(volatile unsigned int *)0xd42828a4 = reg;
++	reg = *(volatile unsigned int *)0xd42828a4;
++
++	reg = reg | (1<<1);
++	*(volatile unsigned int *)0xd42828a4 = reg;
++	reg = *(volatile unsigned int *)0xd42828a4;
++
++	reg = reg | (1<<5);
++	*(volatile unsigned int *)0xd42828a4 = reg;
++	reg = *(volatile unsigned int *)0xd42828a4;
++
++	reg = reg | (1<<2);
++	*(volatile unsigned int *)0xd42828a4 = reg;
++	reg = *(volatile unsigned int *)0xd42828a4;
++
++	reg = reg | (1<<8);
++	*(volatile unsigned int *)0xd42828a4 = reg;
++	reg = *(volatile unsigned int *)0xd42828a4;
++
++	reg = reg & (~(1<<9));
++	reg = reg & (~(1<<6));
++	*(volatile unsigned int *)0xd42828a4 = reg;
++	reg = *(volatile unsigned int *)0xd42828a4;
++
++	*(volatile unsigned int *)0xd428284c = (1<<3);
++	*(volatile unsigned int *)0xd428284c = (1<<3) | 1;
++	*(volatile unsigned int *)0xd428284c = (1<<3) | 1 | (1<<4);
++	*(volatile unsigned int *)0xd428284c = (1<<3) | 1 | (1<<4) | (1<<1);
++}
++
++void freq_init_sram(u32 sram_code_addr);
++void freq_chg_seq(u32 sram_code_addr, u32 sram_stack_addr, u32 op);
++
++int board_init (void)
++{
++	DECLARE_GLOBAL_DATA_PTR;
++	volatile unsigned int reg;
++	clock_config();
++	freq_init_sram(0xd1000000);
++	freq_chg_seq(0xd1000000, 0xd1008000, 1);
++	usb_init();
++	dummy_delay(99999);
++	audio_init();
++	vmeta_clock_config();
+ 
+     __asm__ __volatile__ ("                     \n\
+          @ Enable MMX                           \n\
+@@ -194,7 +316,7 @@ int board_init (void)
+ #ifdef CONFIG_PJ4_NON_SECURE_MODE
+     gd->bd->bi_boot_params = 0x00200100;
+ #else
+-    gd->bd->bi_boot_params = 0x00000100;
++    gd->bd->bi_boot_params = 0x00200100;
+ #endif
+     gd->baudrate = CONFIG_BAUDRATE;
+ 
+@@ -210,7 +332,6 @@ int board_init (void)
+ 	BU_REG_WRITE(0xd4015074, 0x3 );
+ 	BU_REG_WRITE(0xd4282864, 0x9 );
+ 	BU_REG_WRITE(0xd4282860, 0xbf);
+-
+ 	/*configure for MFP*/
+ 	pxa3xx_init_mfp();
+     pxa3xx_mfp_init_addr(pxa688_mfp_addr_map);
+diff --git a/include/configs/mmp2_flint.h b/include/configs/mmp2_flint.h
+index 34cabb2..584f4c9 100644
+--- a/include/configs/mmp2_flint.h
++++ b/include/configs/mmp2_flint.h
+@@ -80,7 +80,7 @@
+ #define CONFIG_SYS_NS16550_CLK        	26000000
+ #define CONFIG_BAUDRATE        		38400
+ #define CONFIG_SYS_BAUDRATE_TABLE     	{ 9600, 19200, 38400, 57600, 115200 }
+-#define CONFIG_SYS_NS16550_COM1       	0xD4017000 /* configure for PXA910*/
++#define CONFIG_SYS_NS16550_COM1       	0xD4018000 /* configure for PXA910*/
+ 
+ #define CONFIG_SHOW_BOOT_PROGRESS
+ 
+-- 
+1.6.0.4
+

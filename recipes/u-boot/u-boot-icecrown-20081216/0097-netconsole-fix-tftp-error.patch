@@ -1,0 +1,63 @@
+From e2ceae33b43691bca6c9b540a0e4446f9343f743 Mon Sep 17 00:00:00 2001
+From: Lei Wen <leiwen@marvell.com>
+Date: Tue, 30 Jun 2009 14:46:11 +0800
+Subject: [PATCH] netconsole: fix tftp error
+
+When not connected with USB at boot, the USB would not
+initilized. So TFTP should initilize the connection again,
+if it want to use the usb over ethernet.
+
+Signed-off-by: Lei Wen <leiwen@marvell.com>
+Signed-off-by: Bin Yang <bin.yang@marvell.com>
+---
+ board/pxa/common/tftp.c               |   14 ++++++++++++++
+ board/pxa/common/usbeth/ether-mvu2o.c |    2 +-
+ 2 files changed, 15 insertions(+), 1 deletions(-)
+
+diff --git a/board/pxa/common/tftp.c b/board/pxa/common/tftp.c
+index 5cc803d..5f955c2 100644
+--- a/board/pxa/common/tftp.c
++++ b/board/pxa/common/tftp.c
+@@ -82,12 +82,26 @@ U_BOOT_CMD(
+ 	"[hostIPaddr] [clientIP addr]\n"
+ );
+ 
++extern int check_usb_connection(void);
+ int do_tftp (cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
+ {
+ 	char *s;
+ 	char *end;
++	int ret;
+ 	ulong addr;
+ 
++	/* check usb connection each time with tftp, if using the
++	 * USB over ethernet way
++	 */
++	if ((s = getenv("ethact")) != NULL
++			&& strcmp(s, "u2o-eth") == 0) {
++		ret = check_usb_connection();
++		if (ret) {
++			printf("Error, USB not connected!!\n\n");
++			return 1;
++		}
++	}
++
+ 	/* pre-set load_addr */
+ 	if ((s = getenv("loadaddr")) != NULL) {
+ 		load_addr = simple_strtoul(s, NULL, 16);
+diff --git a/board/pxa/common/usbeth/ether-mvu2o.c b/board/pxa/common/usbeth/ether-mvu2o.c
+index 17c1a22..241aa96 100644
+--- a/board/pxa/common/usbeth/ether-mvu2o.c
++++ b/board/pxa/common/usbeth/ether-mvu2o.c
+@@ -196,7 +196,7 @@ void ep2_begin(void)
+ 	}
+ }
+ 
+-static inline int check_usb_connection(void)
++int check_usb_connection(void)
+ {
+ 	unsigned int cnt = 0;
+ 	unsigned long long start;
+-- 
+1.6.0.4
+

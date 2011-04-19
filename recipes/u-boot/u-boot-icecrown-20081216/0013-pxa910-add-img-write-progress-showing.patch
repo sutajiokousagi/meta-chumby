@@ -1,0 +1,79 @@
+From 972af39d2e3eea7f7aad72dbc3ae53f02ab30350 Mon Sep 17 00:00:00 2001
+From: Wen Lei <leiwen@marvell.com>
+Date: Fri, 27 Feb 2009 10:29:30 +0800
+Subject: [PATCH] pxa910: add img write progress showing
+
+---
+ common/cmd_onenand.c               |    1 +
+ drivers/mtd/nand/nand_util.c       |   13 +++++++++++++
+ drivers/mtd/onenand/onenand_base.c |   14 ++++++++++++++
+ 3 files changed, 28 insertions(+), 0 deletions(-)
+
+diff --git a/common/cmd_onenand.c b/common/cmd_onenand.c
+index 406ddad..62a9fe6 100644
+--- a/common/cmd_onenand.c
++++ b/common/cmd_onenand.c
+@@ -131,6 +131,7 @@ int do_onenand(cmd_tbl_t * cmdtp, int flag, int argc, char *argv[])
+ 				.mode	= MTD_OOB_PLACE,
+ 			};
+ 
++			onenand_mtd.owner = "UBOOT";
+ 			if (strncmp(argv[1], "write.yaffs", 11) == 0) {
+ 				onenand_write_oob(&onenand_mtd, ofs, &ops);
+ 			}
+diff --git a/drivers/mtd/nand/nand_util.c b/drivers/mtd/nand/nand_util.c
+index c2b571c..e4beeca 100644
+--- a/drivers/mtd/nand/nand_util.c
++++ b/drivers/mtd/nand/nand_util.c
+@@ -582,8 +582,21 @@ int nand_write_skip_bad(nand_info_t *nand, size_t offset, size_t *length,
+ 		left_to_write -= write_size;
+ 		offset        += write_size;
+ 		p_buffer      += write_size;
++
++		{
++			int n = *length - left_to_write;
++
++			n = n / (*length / 100);
++			printf("\rWriting data at 0x%x "
++					"-- %3d%% complete.",
++					(unsigned int)offset, n);
++		}
+ 	}
+ 
++	printf("\rWriting data at 0x%x "
++			"-- %3d%% complete.",
++			(unsigned int)offset, 100);
++
+ 	return 0;
+ }
+ 
+diff --git a/drivers/mtd/onenand/onenand_base.c b/drivers/mtd/onenand/onenand_base.c
+index f94c407..acf9a53 100644
+--- a/drivers/mtd/onenand/onenand_base.c
++++ b/drivers/mtd/onenand/onenand_base.c
+@@ -1368,8 +1368,22 @@ static int onenand_write_ops_nolock(struct mtd_info *mtd, loff_t to,
+ 		column = 0;
+ 		to += thislen;
+ 		buf += thislen;
++
++		if (!strcmp(mtd->owner, "UBOOT"))
++		{
++			int n = written;
++
++			n = n / (len / 100);
++			printf("\rWriting data at 0x%x "
++					"-- %3d%% complete.",
++					(unsigned int)to, n);
++		}
+ 	}
+ 
++	if (!strcmp(mtd->owner, "UBOOT"))
++		printf("\rWriting data at 0x%x "
++				"-- %3d%% complete.",
++				(unsigned int)to, 100);
+ 	ops->retlen = written;
+ 
+ 	return ret;
+-- 
+1.6.0.4
+

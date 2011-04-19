@@ -1,0 +1,143 @@
+From 0811bebbef3bf5a03703341c2a292b61967697b2 Mon Sep 17 00:00:00 2001
+From: Bin Yang <bin.yang@marvell.com>
+Date: Tue, 2 Jun 2009 17:53:47 +0800
+Subject: [PATCH] pxa910: add ethernet support on DKB board
+
+Signed-off-by: Bin Yang <bin.yang@marvell.com>
+---
+ board/pxa/ttc_dkb/ttc_dkb.c              |   34 ++++++++++++++++-------------
+ include/asm-arm/arch-pxa168/mfp-pxa168.h |    4 +++
+ include/asm-arm/arch-pxa168/mfp.h        |    2 +
+ include/configs/ttc_dkb.h                |    2 +-
+ 4 files changed, 26 insertions(+), 16 deletions(-)
+
+diff --git a/board/pxa/ttc_dkb/ttc_dkb.c b/board/pxa/ttc_dkb/ttc_dkb.c
+index edb23f2..b7f9337 100644
+--- a/board/pxa/ttc_dkb/ttc_dkb.c
++++ b/board/pxa/ttc_dkb/ttc_dkb.c
+@@ -26,12 +26,15 @@
+ int set_volt(u32 vol);
+ 
+ static mfp_cfg_t pxa910_tavorevb_mfp_cfg[] __initdata = {
++	SLAVE_RESET_OUT_GPIO122,
++
+ 	/* UART2 */
+ 	GPIO47_UART2_RXD,
+ 	GPIO48_UART2_TXD,
+ 
+ 	/* SMC */
+ 	SM_nCS0_nCS0,
++	SM_nCS1_nCS1,
+ 	SM_ADV_SM_ADV,
+ 	SM_SCLK_SM_SCLK,
+ 	SM_SCLK_SM_SCLK,
+@@ -109,6 +112,7 @@ static struct pxa3xx_mfp_addr_map pxa910_910_mfp_addr_map[] __initdata = {
+ 	MFP_ADDR(SM_ADVMUX, 0x7c),
+ 	MFP_ADDR(SM_RDY, 0x80),
+ 
++	MFP_ADDR(SLAVE_RESET_OUT, 0xc8),
+ 
+ 	MFP_ADDR_END,
+ };
+@@ -172,12 +176,6 @@ int board_init (void)
+     /* enable GPIO clock */
+     *(volatile unsigned int *)0xd4015008=0x03;
+ 
+-    /* configure GPIO80 as input (ether_irq) */
+-    *(volatile unsigned int *)(0xd4019008 + 0x60)=0x10000;
+-    /* enable GPIO80 rising edge interrupt */
+-    *(volatile unsigned int *)(0xd4019008 + 0x6c)=0x10000;
+-    /* unmask GPIO80 interrupt */
+-    *(volatile unsigned int *)(0xd4019008 + 0x9c)=0x10000;
+ 
+     /* Core CPU settings */
+     __asm__ __volatile__ ("                     \n\
+@@ -213,15 +211,9 @@ int board_init (void)
+     BU_REG_WRITE( APBC_AIB_CLK_RST, APBC_AIB_CLK_RST_FNCLK  |
+ 		    APBC_AIB_CLK_RST_APBCLK );
+ 
+-    BU_REG_WRITE( SMC_CSDFICFGX, 0x51890009 );             
+-    BU_REG_WRITE( SMC_CSDFICFGX+0x4, 0x1000008 );              
+-    BU_REG_WRITE( SMC_CSDFICFGX+0x8, 0x1000008 );           
+-    BU_REG_WRITE( SMC_CSDFICFGX+0xc, 0x1000008 );           
+-
+-    BU_REG_WRITE( SMC_CSADRMAPX, 0x10000F00 );             
+-    BU_REG_WRITE( SMC_CSADRMAPX+0x4, 0x10300F00 );        
+-    BU_REG_WRITE( SMC_CSADRMAPX+0x8, 0x10200F00 );            
+-    BU_REG_WRITE( SMC_CSADRMAPX+0xc, 0x10100F00 );         
++    BU_REG_WRITE( SMC_CSDFICFGX, 0x51890009 );              // SMC_CSDFICFG0
++    BU_REG_WRITE( SMC_CSADRMAPX, 0x10000F00 );              // SMC_CSADRMAP0
++    BU_REG_WRITE(0xd4283894, 0x1000008 ); // SMC_CSDFICFG1s, A/D mode
+ 
+     /*configure for MFP*/
+     pxa3xx_init_mfp();
+@@ -264,6 +256,18 @@ int board_init (void)
+     *(volatile unsigned int *)0xd4282804=0x0ffd96d8;
+     reg = *(volatile unsigned int *)0xd4282804;
+ 
++    /* configure GPIO122 as output (slave reset out) */
++    *(volatile unsigned int *)(0xd4019100 + 0x54)=1<<26;
++    *(volatile unsigned int *)(0xd4019100 + 0x18)=1<<26;
++
++    /* configure GPIO13 as input (ether_irq) */
++    *(volatile unsigned int *)(0xd4019000 + 0x60)=1<<13;
++    /* enable GPIO13 rising edge interrupt */
++    *(volatile unsigned int *)(0xd4019000 + 0x6c)=1<<13;
++    /* unmask GPIO13 interrupt */
++    *(volatile unsigned int *)(0xd4019000 + 0x9c)=1<<13;
++
++
+     return 0;
+ }
+ 
+diff --git a/include/asm-arm/arch-pxa168/mfp-pxa168.h b/include/asm-arm/arch-pxa168/mfp-pxa168.h
+index 384f9f6..f3da356 100644
+--- a/include/asm-arm/arch-pxa168/mfp-pxa168.h
++++ b/include/asm-arm/arch-pxa168/mfp-pxa168.h
+@@ -17,6 +17,9 @@
+ 
+ #include <asm/arch/mfp.h>
+ 
++/*Slave reset out*/
++#define SLAVE_RESET_OUT_GPIO122       MFP_CFG(SLAVE_RESET_OUT, AF1)
++
+ /* UART2 */
+ #define GPIO47_UART2_RXD              MFP_CFG(GPIO47, AF6)
+ #define GPIO48_UART2_TXD              MFP_CFG(GPIO48, AF6)
+@@ -34,6 +37,7 @@
+ 
+ /* SMC */
+ #define SM_nCS0_nCS0           	 MFP_CFG(SM_nCS0, AF0)
++#define SM_nCS1_nCS1           	 MFP_CFG(SM_nCS1, AF0)
+ #define SM_ADV_SM_ADV        MFP_CFG(SM_ADV, AF0)
+ #define SM_SCLK_SM_SCLK        MFP_CFG(SM_SCLK, AF0)
+ #define SM_BE0_SM_BE0        MFP_CFG(SM_BE0, AF1)
+diff --git a/include/asm-arm/arch-pxa168/mfp.h b/include/asm-arm/arch-pxa168/mfp.h
+index 48694be..e600151 100644
+--- a/include/asm-arm/arch-pxa168/mfp.h
++++ b/include/asm-arm/arch-pxa168/mfp.h
+@@ -306,6 +306,8 @@ enum {
+ 	MFP_PIN_PMIC_INT,
+ 	MFP_PIN_RDY,
+ 
++	MFP_PIN_SLAVE_RESET_OUT,
++
+ 	MFP_PIN_MAX,
+ };
+ 
+diff --git a/include/configs/ttc_dkb.h b/include/configs/ttc_dkb.h
+index f8c38ef..5a8fd79 100644
+--- a/include/configs/ttc_dkb.h
++++ b/include/configs/ttc_dkb.h
+@@ -198,7 +198,7 @@
+ #ifdef TURN_ON_ETHERNET
+ #define CONFIG_USB_ETH			1
+ #define CONFIG_DRIVER_SMC91111 		1
+-#define CONFIG_SMC91111_BASE   		0xB0000300 /* PXA910*/
++#define CONFIG_SMC91111_BASE   		0x90000300 /* PXA910*/
+ #define CONFIG_SMC_USE_16_BIT
+ #undef CONFIG_SMC_USE_IOFUNCS          /* just for use with the kernel */
+ #endif
+-- 
+1.6.0.4
+

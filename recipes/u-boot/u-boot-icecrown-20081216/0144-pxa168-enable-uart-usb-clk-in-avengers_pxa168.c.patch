@@ -1,0 +1,60 @@
+From 3d44ba021a18d77682e56640cd09f66c0c28ba87 Mon Sep 17 00:00:00 2001
+From: Lei Wen <leiwen@marvell.com>
+Date: Tue, 13 Oct 2009 11:10:00 +0800
+Subject: [PATCH] pxa168:enable uart/usb clk in avengers_pxa168.c
+
+by gavin;work on aspen A0;
+
+Signed-off-by: TonyTeng <ylteng@marvell.com>
+---
+ board/pxa/avengers/avenger_pxa168.c |   20 ++++++++++++++++++++
+ include/configs/avengers.h          |    2 +-
+ 2 files changed, 21 insertions(+), 1 deletions(-)
+
+diff --git a/board/pxa/avengers/avenger_pxa168.c b/board/pxa/avengers/avenger_pxa168.c
+index ea84692..008ec90 100644
+--- a/board/pxa/avengers/avenger_pxa168.c
++++ b/board/pxa/avengers/avenger_pxa168.c
+@@ -46,6 +46,26 @@ int board_init (void)
+     *(volatile unsigned int *)0xd4015008=0x1;
+     aspen_init();
+ 
++    /* set SEL_MRVL_ID bit in MOHAWK_CPU_CONF register - Ning */
++    *(volatile unsigned int *)0xD4282c08 = *(volatile unsigned int *)0xD4282c08 | 0x100;
++    /* ensure L2 cache is not mapped as SRAM */
++    *(unsigned int *)0xd4282c08 &= ~(1<<4);
++
++    /* lowering RTC setting could improve Vmin */
++    *(unsigned int *)0xd4282c10 = 0x16b5ad6d;
++    *(unsigned int *)0xd4282c18 = 0x2d5b56b5;
++
++    /* Enable clocks */
++    *(unsigned int *)0xD4051024 = 0xffffffff;
++    /* enable UART2 clock */
++    *(unsigned int *)0xD4015000 = 0x13;
++    /* enable PMU user access */
++    __asm__ __volatile__ (
++		    "mcr     p15, 0, %0, c15, c9, 0\n\t"
++		    :
++		    : "r"(0x1)
++		    );
++
+     gd->bd->bi_dram[0].start = PHYS_SDRAM_1;
+     gd->bd->bi_dram[0].size  = PHYS_SDRAM_1_SIZE;
+ 
+diff --git a/include/configs/avengers.h b/include/configs/avengers.h
+index f906aba..3b886ea 100644
+--- a/include/configs/avengers.h
++++ b/include/configs/avengers.h
+@@ -184,7 +184,7 @@
+ /*-----------------------------------------------------------------------
+  * ONENAND configuration
+  */
+-#define CONFIG_CMD_ONENAND 		1
++//#define CONFIG_CMD_ONENAND 		1
+ #define CONFIG_SYS_ONENAND_BASE 	0x80000000  /* configure for ttc */
+ #define CONFIG_USB_ETH
+ #define CONFIG_U2O_REG_BASE		0xd4208000
+-- 
+1.6.0.4
+

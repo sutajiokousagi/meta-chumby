@@ -1,0 +1,76 @@
+From 9b6adaad64769550e4d84a8f8adffdb2839bc5f9 Mon Sep 17 00:00:00 2001
+From: Wen Lei <leiwen@marvell.com>
+Date: Fri, 27 Feb 2009 10:30:46 +0800
+Subject: [PATCH] pxa910: sync onenand erase behavior with nand
+
+---
+ common/cmd_onenand.c |   24 ++++++++++++------------
+ 1 files changed, 12 insertions(+), 12 deletions(-)
+
+diff --git a/common/cmd_onenand.c b/common/cmd_onenand.c
+index b17bc64..3330e91 100644
+--- a/common/cmd_onenand.c
++++ b/common/cmd_onenand.c
+@@ -46,7 +46,7 @@ int do_onenand(cmd_tbl_t * cmdtp, int flag, int argc, char *argv[])
+ 			struct erase_info instr = {
+ 				.callback	= NULL,
+ 			};
+-			ulong start, end;
++			ulong start, size;
+ 			ulong block;
+ 			char *endtail;
+ 			int clean = 0;
+@@ -62,7 +62,7 @@ int do_onenand(cmd_tbl_t * cmdtp, int flag, int argc, char *argv[])
+ 			if (strncmp(argv[2], "block", 5) == 0) {
+ 				start = simple_strtoul(argv[3], NULL, 10);
+ 				endtail = strchr(argv[3], '-');
+-				end = simple_strtoul(endtail + 1, NULL, 10);
++				size = simple_strtoul(endtail + 1, NULL, 10) - start;
+ 			}
+ 		        else if (strncmp(argv[2], "clean", 5) == 0) {
+ 				cleanmarker.magic = JFFS2_MAGIC_BITMASK;
+@@ -70,31 +70,31 @@ int do_onenand(cmd_tbl_t * cmdtp, int flag, int argc, char *argv[])
+ 				cleanmarker.totlen = 8;
+ 				
+ 				start = simple_strtoul(argv[3], NULL, 10);
+-				end = simple_strtoul(argv[4], NULL, 10);
++				size = simple_strtoul(argv[4], NULL, 10);
+ 
+ 				start >>= onenand_chip.erase_shift;
+-				end >>= onenand_chip.erase_shift;
++				size >>= onenand_chip.erase_shift;
+ 				/* Don't include the end block */
+-				end--;
++				size--;
+ 
+ 				clean = 1;
+ 				printf("ready to erase with cleanmarker\n");
+ 			} else {
+ 				start = simple_strtoul(argv[2], NULL, 10);
+-				end = simple_strtoul(argv[3], NULL, 10);
++				size = simple_strtoul(argv[3], NULL, 10);
+ 
+ 				start >>= onenand_chip.erase_shift;
+-				end >>= onenand_chip.erase_shift;
++				size >>= onenand_chip.erase_shift;
+ 				/* Don't include the end block */
+-				end--;
++				size--;
+ 			}
+ 
+-			if (!end || end < 0)
+-				end = start;
++			if (!size || size < 0)
++				size = 0;
+ 
+-			printf("Erase block from %lu to %lu\n", start, end);
++			printf("Erase begin with %luth block, erase size is %lu blocks\n", start, size);
+ 
+-			for (block = start; block <= end; block++) {
++			for (block = start; block <= start + size; block++) {
+ 				instr.addr = block << onenand_chip.erase_shift;
+ 				instr.len = 1 << onenand_chip.erase_shift;
+ 				ret = onenand_erase(&onenand_mtd, &instr);
+-- 
+1.6.0.4
+

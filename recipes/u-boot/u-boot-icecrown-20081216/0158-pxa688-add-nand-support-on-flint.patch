@@ -1,0 +1,105 @@
+From 8cca95c898393a3b277929ef3c7598c397d5db7c Mon Sep 17 00:00:00 2001
+From: Mingliang Hu <mingliang.hu@marvell.com>
+Date: Thu, 12 Nov 2009 14:13:38 +0800
+Subject: [PATCH] pxa688: add nand support on flint
+ Signed-off-by: Mingliang Hu <mingliang.hu@marvell.com>
+
+---
+ board/pxa/flint/flint.c                  |   27 ++++++++++++++-------------
+ drivers/mtd/nand/pxa3xx_nand.c           |    4 ++++
+ include/asm-arm/arch-pxa688/mfp-pxa688.h |    8 ++++++++
+ 3 files changed, 26 insertions(+), 13 deletions(-)
+
+diff --git a/board/pxa/flint/flint.c b/board/pxa/flint/flint.c
+index b4bf9f6..b586bf2 100644
+--- a/board/pxa/flint/flint.c
++++ b/board/pxa/flint/flint.c
+@@ -29,12 +29,13 @@ static mfp_cfg_t flint_pin_config[] __initdata = {
+ 	GPIO48_UART2_TXD,
+ 
+ 	/* SMC */
+-	SM_nCS0_nCS0,
+-	SM_ADV_SM_ADV,
+-	SM_SCLK_SM_SCLK,
+-	SM_SCLK_SM_SCLK,
+-	SM_BE0_SM_BE0,
+-	SM_BE1_SM_BE1,
++	GPIO151_SMC_SCLK,		
++	GPIO145_SMC_nCS0,			
++	GPIO146_SMC_nCS1,			
++	GPIO152_SMC_BE0,			
++	GPIO153_SMC_BE1,			
++	GPIO154_SMC_IRQ,			
++	GPIO113_SMC_RDY,
+ 
+ 	/* DFI */
+ 	GPIO168_DFI_D0,	
+@@ -200,24 +201,24 @@ int board_init (void)
+ 	BU_REG_WRITE( APBC_AIB_CLK_RST, APBC_AIB_CLK_RST_FNCLK  |
+ 		APBC_AIB_CLK_RST_APBCLK );
+ 
+-    BU_REG_WRITE( SMC_CSDFICFGX, 0x51890009 );              // SMC_CSDFICFG0
+-    BU_REG_WRITE( SMC_CSADRMAPX, 0x10000F00 );              // SMC_CSADRMAP0
++    //BU_REG_WRITE( SMC_CSDFICFGX, 0x51890009 );              // SMC_CSDFICFG0
++    //BU_REG_WRITE( SMC_CSADRMAPX, 0x10000F00 );              // SMC_CSADRMAP0
+ 	//BU_REG_WRITE(0xd4283824, 0xC6CFF2C9 );
+-	//BU_REG_WRITE(0xd4283894, 0x11000009 );
++	BU_REG_WRITE(0xd4283894, 0x11000008 );
+ 
+ 	BU_REG_WRITE(0xd4015000, 0x83 );
+ 	BU_REG_WRITE(0xd4015074, 0x3 );
+ 	BU_REG_WRITE(0xd4282864, 0x9 );
+-	BU_REG_WRITE(0xd4282860, 0x3f|(0<<6));
++	BU_REG_WRITE(0xd4282860, 0xbf);
+ 
+ 	/*configure for MFP*/
+ 	pxa3xx_init_mfp();
+     pxa3xx_mfp_init_addr(pxa688_mfp_addr_map);
+ 
+     pxa3xx_mfp_config(ARRAY_AND_SIZE(flint_pin_config));
+-    pxa3xx_mfp_set_pull(MFP_CFG_PIN(GPIO47_UART2_RXD), MFP_PULL_HIGH);
+-    pxa3xx_mfp_set_pull(MFP_CFG_PIN(GPIO48_UART2_TXD), MFP_PULL_HIGH);
+-    pxa3xx_mfp_set_pull(MFP_CFG_PIN(DF_RDY0_DF_RDY0), MFP_PULL_HIGH);
++    //pxa3xx_mfp_set_pull(MFP_CFG_PIN(GPIO47_UART2_RXD), MFP_PULL_HIGH);
++    //pxa3xx_mfp_set_pull(MFP_CFG_PIN(GPIO48_UART2_TXD), MFP_PULL_HIGH);
++    //pxa3xx_mfp_set_pull(MFP_CFG_PIN(DF_RDY0_DF_RDY0), MFP_PULL_HIGH);
+ 
+     return 0;
+ }
+diff --git a/drivers/mtd/nand/pxa3xx_nand.c b/drivers/mtd/nand/pxa3xx_nand.c
+index eb47af9..ce48313 100644
+--- a/drivers/mtd/nand/pxa3xx_nand.c
++++ b/drivers/mtd/nand/pxa3xx_nand.c
+@@ -1043,6 +1043,10 @@ static int pxa3xx_nand_sensing(struct pxa3xx_nand_info *info, int cs)
+ 	pxa3xx_nand_cmdfunc(mtd, NAND_CMD_RESET, 0, 0);
+ 	nand->wait_mode = 0;
+ 
++#if CONFIG_CPU_PXA688
++	return 1;
++#endif
++
+ 	if (nand->is_ready)
+ 		return 1;
+ 	else
+diff --git a/include/asm-arm/arch-pxa688/mfp-pxa688.h b/include/asm-arm/arch-pxa688/mfp-pxa688.h
+index 9043550..0f66574 100644
+--- a/include/asm-arm/arch-pxa688/mfp-pxa688.h
++++ b/include/asm-arm/arch-pxa688/mfp-pxa688.h
+@@ -62,6 +62,14 @@
+ #define DF_nCS1_SM_nCS3_nCS3        MFP_CFG(DF_nCS1_SM_nCS3, AF0)
+ #define SM_ADVMUX_SM_ADVMUX        MFP_CFG(SM_ADVMUX, AF0)
+ 
++#define GPIO145_SMC_nCS0	MFP_CFG(GPIO145, AF0)
++#define GPIO146_SMC_nCS1	MFP_CFG(GPIO146, AF0)
++#define GPIO152_SMC_BE0		MFP_CFG(GPIO152, AF0)
++#define GPIO153_SMC_BE1		MFP_CFG(GPIO153, AF0)
++#define GPIO154_SMC_IRQ		MFP_CFG(GPIO154, AF0)
++#define GPIO113_SMC_RDY		MFP_CFG(GPIO113, AF0)
++#define GPIO151_SMC_SCLK	MFP_CFG(GPIO151, AF0)
++
+ /* I2C */
+ #define GPIO53_CI2C_SCL             MFP_CFG(GPIO53, AF2)
+ #define GPIO54_CI2C_SDA             MFP_CFG(GPIO54, AF2)
+-- 
+1.6.0.4
+

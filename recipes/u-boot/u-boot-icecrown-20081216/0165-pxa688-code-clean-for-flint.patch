@@ -1,0 +1,196 @@
+From 565f2a810a6da0b03bab8b8b9b5b295d11bbfd84 Mon Sep 17 00:00:00 2001
+From: Mingliang Hu <mingliang.hu@marvell.com>
+Date: Wed, 6 Jan 2010 14:17:52 +0800
+Subject: [PATCH] pxa688: code clean for flint
+
+Signed-off-by: Mingliang Hu <mingliang.hu@marvell.com>
+---
+ board/pxa/flint/flint.c |  124 +++++++++++++++--------------------------------
+ 1 files changed, 39 insertions(+), 85 deletions(-)
+
+diff --git a/board/pxa/flint/flint.c b/board/pxa/flint/flint.c
+index 9408fe6..5ad9e77 100644
+--- a/board/pxa/flint/flint.c
++++ b/board/pxa/flint/flint.c
+@@ -121,49 +121,16 @@ unsigned long initdram (int board_type)
+ {
+     return (PHYS_SDRAM_SIZE_DEC*1024*1024);
+ }
+-void pll2_config()
+-{
+-/*pj_pm_setup_pll2(500)  500MHz
+- * Fix the pll2refdiv to 1(+2), to get 8.66MHz ref clk
+- * Stable val recomended between 8-12MHz. To get the reqd
+- * freq val, just program the fbdiv
+- * freq takes effect during a fc req
+- */
+-	volatile unsigned int gc_temp;
+-	unsigned int fbdiv;
+-
+-	gc_temp = *(volatile unsigned int *)0xD4050414;
+-	fbdiv=113;
+-
+-	/* make sure pll2 is in reset */
+-	gc_temp = gc_temp & (~(1<<29));
+-	*(volatile unsigned int *)0xD4050414 = gc_temp;
+ 
+-	/* Enable the pll2 and program the divider values */
+-	gc_temp = *(volatile unsigned int *)0xD4050034;
+-	gc_temp = gc_temp & (~(1<<8));
+-	*(volatile unsigned int *)0xD4050034 = gc_temp;
+-
+-	gc_temp = gc_temp & (~((0x1ff<<10)|(0x1f<<19)));
+-	gc_temp = gc_temp | (4<<19);
+-	gc_temp = gc_temp | (113<<10);
+-	*(volatile unsigned int *)0xD4050034 = gc_temp | (1<<9);
+-	*(volatile unsigned int *)0xD4050034 = gc_temp | (1<<8) | (1<<9);
+-
+-	/* pll2 out of reset */
+-	gc_temp = *(volatile unsigned int *)0xD4050414;
+-	gc_temp = gc_temp | (1<<29);
+-	*(volatile unsigned int *)0xD4050414 = gc_temp;
+-
+-}
+ void clock_config()
+ {
+ 	volatile unsigned int reg;
++
+ 	*(volatile unsigned int *)0xD4051024 = 0xffffffff;
+ 	*(volatile unsigned int *)0xD42828dc = 0x1FFFF;
+ 	*(volatile unsigned int *)0xD4015064 = 0x7;
+ 	*(volatile unsigned int *)0xD4015064 = 0x3;
+-	pll2_config();
++
+ 	/* Uart APB clock */
+ 	*(volatile unsigned int *)0xd4015034=0x3|(1<<4);
+ 	*(volatile unsigned int *)0xd4282848 = 0x00000008;
+@@ -183,29 +150,29 @@ void clock_config()
+ 	*(volatile unsigned int *)0xd4015024=0x33;
+ 
+ 	reg = *(volatile unsigned int *)0xd4282c08;
+-        reg |= (1<<6) | (1<<9) | (1<<14) | (1<<19) | (1<<13);
++	reg |= (1<<6) | (1<<9) | (1<<14) | (1<<19) | (1<<13);
+ 	reg &= ~(1<<23);
+-        *(volatile unsigned int *)0xd4282c08 = reg;
++	*(volatile unsigned int *)0xd4282c08 = reg;
++
+ 	*(volatile unsigned int *)0xd4015038=0x03;
++	*(volatile unsigned int *)0xd4282110=0;
++	*(volatile unsigned int *)0xd4283894=0x11000008; /*DFI chip select*/
+ }
+ 
+ void usb_init()
+ {
+-	*(volatile unsigned int *)0xd4282110=0;
+-	*(volatile unsigned int *)0xd4283894=0x11000008; /*DFI chip select*/
+-
+-	*(volatile unsigned int *)0xd4282100=0x0;
+ 	*(volatile unsigned int *)0xd428285c=0x8;
+ 	*(volatile unsigned int *)0xd428285c=0x9;
+ 
+ 	*(volatile unsigned int *)0xd42828f8=0x18;
+-        *(volatile unsigned int *)0xd42828f8=0x1b;
++	*(volatile unsigned int *)0xd42828f8=0x1b;
+ 	*(volatile unsigned int *)0xd42828fc=0x18;
+-        *(volatile unsigned int *)0xd42828fc=0x1b;
++	*(volatile unsigned int *)0xd42828fc=0x1b;
+ 
+ 	*(volatile unsigned int *)0xd4282900=0x18; /*USB3 clock control*/
+ 	*(volatile unsigned int *)0xd4282900=0x1b;
+ }
++
+ void audio_init()
+ {
+ 	*(volatile unsigned int *)0xd428290c=0x600;
+@@ -218,52 +185,38 @@ void audio_init()
+ 	*(volatile unsigned int *)0xd42a0c3c=0x10800;
+ 	*(volatile unsigned int *)0xd42a0c34=0x211921;
+ }
++
+ void vmeta_clock_config()
+ {
+-	/* Clk Reset for vemta.Clk Reset for vemta.*/
+-	volatile unsigned int reg;
+-	reg = *(volatile unsigned int *)0xd42828a4;
+-	reg = reg | (3<<9);
+-	reg = reg & (~(1<<9));
+-
+-	reg = *(volatile unsigned int *)0xd42828a4;
+-	*(volatile unsigned int *)0xd42828a4 = reg;
+-	reg = *(volatile unsigned int *)0xd42828a4;
+-
+-
+-	reg = reg | (1<<3);
+-	*(volatile unsigned int *)0xd42828a4 = reg;
+-	reg = *(volatile unsigned int *)0xd42828a4;
+-
+-	reg = reg | (1<<0);
+-	*(volatile unsigned int *)0xd42828a4 = reg;
+-	reg = *(volatile unsigned int *)0xd42828a4;
++    volatile unsigned int reg;
++
++    /* vmeta clock*/
++    reg = *(volatile unsigned int *)0xd42828a4;
++	reg |= (3<<9);
++	reg &= (~(1<<9));
++    *(volatile unsigned int *)0xd42828a4=reg;
++	reg |= (1<<3);
++    *(volatile unsigned int *)0xd42828a4=reg;
++	reg |= (1<<0);
++    *(volatile unsigned int *)0xd42828a4=reg;
++	reg |= (1<<4);
++    *(volatile unsigned int *)0xd42828a4=reg;
++	reg |= (1<<1);
++    *(volatile unsigned int *)0xd42828a4=reg;
++	reg |= (1<<5);
++    *(volatile unsigned int *)0xd42828a4=reg;
++	reg |= (1<<2);
++    *(volatile unsigned int *)0xd42828a4=reg;
++	reg |= (1<<8);
++    *(volatile unsigned int *)0xd42828a4=reg;
++	reg &= (~(1<<9));
++	reg &= (~(1<<6));
++    *(volatile unsigned int *)0xd42828a4=reg;
+ 
+-	reg = reg | (1<<4);
+-	*(volatile unsigned int *)0xd42828a4 = reg;
+-	reg = *(volatile unsigned int *)0xd42828a4;
+-
+-	reg = reg | (1<<1);
+-	*(volatile unsigned int *)0xd42828a4 = reg;
+-	reg = *(volatile unsigned int *)0xd42828a4;
+-
+-	reg = reg | (1<<5);
+-	*(volatile unsigned int *)0xd42828a4 = reg;
+-	reg = *(volatile unsigned int *)0xd42828a4;
+-
+-	reg = reg | (1<<2);
+-	*(volatile unsigned int *)0xd42828a4 = reg;
+-	reg = *(volatile unsigned int *)0xd42828a4;
+-
+-	reg = reg | (1<<8);
+-	*(volatile unsigned int *)0xd42828a4 = reg;
+-	reg = *(volatile unsigned int *)0xd42828a4;
+-
+-	reg = reg & (~(1<<9));
+-	reg = reg & (~(1<<6));
+-	*(volatile unsigned int *)0xd42828a4 = reg;
+-	reg = *(volatile unsigned int *)0xd42828a4;
++}
+ 
++void lcd_clock_config()
++{
+ 	*(volatile unsigned int *)0xd428284c = (1<<3);
+ 	*(volatile unsigned int *)0xd428284c = (1<<3) | 1;
+ 	*(volatile unsigned int *)0xd428284c = (1<<3) | 1 | (1<<4);
+@@ -284,6 +237,7 @@ int board_init (void)
+ 	dummy_delay(99999);
+ 	audio_init();
+ 	vmeta_clock_config();
++	lcd_clock_config();
+ 
+     __asm__ __volatile__ ("                     \n\
+          @ Enable MMX                           \n\
+-- 
+1.6.0.4
+

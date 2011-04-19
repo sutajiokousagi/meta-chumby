@@ -1,0 +1,27 @@
+From ad4cf8416012d150a8220043b7047011902b5ec6 Mon Sep 17 00:00:00 2001
+From: Mingliang Hu <mhu4@marvell.com>
+Date: Wed, 31 Mar 2010 14:50:55 +0800
+Subject: [PATCH] pxa688: fix mmc capacity length bug
+
+Signed-off-by: Mingliang Hu <mhu4@marvell.com>
+---
+ drivers/mmc/mmc.c |    3 ++-
+ 1 files changed, 2 insertions(+), 1 deletions(-)
+
+diff --git a/drivers/mmc/mmc.c b/drivers/mmc/mmc.c
+index 1b00a88..02a1095 100644
+--- a/drivers/mmc/mmc.c
++++ b/drivers/mmc/mmc.c
+@@ -673,7 +673,8 @@ int mmc_change_freq(struct mmc *mmc)
+ 		mmc->high_capacity = 1;
+ 		mmc->sectors = ext_csd[212] | (ext_csd[213] << 8)
+ 			| (ext_csd[214] << 16) | (ext_csd[215] << 24);
+-		mmc->capacity = mmc->sectors * 512;
++		mmc->capacity = mmc->sectors;
++		mmc->capacity *= 512;
+ 	} else
+ 		mmc->high_capacity = 0;
+ 
+-- 
+1.6.0.4
+

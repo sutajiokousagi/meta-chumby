@@ -1,0 +1,75 @@
+From 2fcbad3a137a6cfd6bf2e2eeea53e4bf7e9bc0de Mon Sep 17 00:00:00 2001
+From: Lei Wen <leiwen@marvell.com>
+Date: Thu, 12 Mar 2009 17:38:50 +0800
+Subject: [PATCH] pxa910: add autoboot check for all pxa910 series
+
+---
+ include/configs/aspenite.h  |    4 +++-
+ include/configs/avengers.h  |    4 +++-
+ include/configs/tavorevb.h  |    4 +++-
+ include/configs/zylonite2.h |    4 +++-
+ 4 files changed, 12 insertions(+), 4 deletions(-)
+
+diff --git a/include/configs/aspenite.h b/include/configs/aspenite.h
+index 83040c7..11bc8c8 100644
+--- a/include/configs/aspenite.h
++++ b/include/configs/aspenite.h
+@@ -111,7 +111,9 @@
+ #if (CONFIG_BOOTDELAY >= 0)
+ 
+ /* boot arguments" */
+-#define CONFIG_BOOTCOMMAND      	"nand read 0x500000 0x920000 0x300000; bootz 0x500000"
++#define CONFIG_ONENANDBOOT	     	"onenand read 0x500000 0x920000 0x300000"
++#define CONFIG_NANDBOOT 	     	"nand read 0x500000 0x920000 0x300000"
++#define CONFIG_BOOTCOMMAND      	"setenv autoboot boot; bootz 0x500000; setenv autoboot none"
+ #define CONFIG_ROOTPATH   		/tftpboot/rootfs_arm
+ 
+ #endif /* #if (CONFIG_BOOTDELAY >= 0) */
+diff --git a/include/configs/avengers.h b/include/configs/avengers.h
+index 65e83cf..a8bcc6a 100644
+--- a/include/configs/avengers.h
++++ b/include/configs/avengers.h
+@@ -111,7 +111,9 @@
+ #if (CONFIG_BOOTDELAY >= 0)
+ 
+ /* boot arguments" */
+-#define CONFIG_BOOTCOMMAND      	"bootz 0x500000"
++#define CONFIG_ONENANDBOOT	     	"onenand read 0x500000 0x920000 0x300000"
++#define CONFIG_NANDBOOT 	     	"nand read 0x500000 0x920000 0x300000"
++#define CONFIG_BOOTCOMMAND      	"setenv autoboot boot; bootz 0x500000; setenv autoboot none"
+ #define CONFIG_ROOTPATH   		/tftpboot/rootfs_arm
+ 
+ #endif /* #if (CONFIG_BOOTDELAY >= 0) */
+diff --git a/include/configs/tavorevb.h b/include/configs/tavorevb.h
+index b5a6a33..f05ddac 100644
+--- a/include/configs/tavorevb.h
++++ b/include/configs/tavorevb.h
+@@ -114,7 +114,9 @@
+ #if (CONFIG_BOOTDELAY >= 0)
+ 
+ /* boot arguments" */
+-#define CONFIG_BOOTCOMMAND      	"bootz 0x500000"
++#define CONFIG_ONENANDBOOT	     	"onenand read 0x500000 0x920000 0x300000"
++#define CONFIG_NANDBOOT 	     	"nand read 0x500000 0x920000 0x300000"
++#define CONFIG_BOOTCOMMAND      	"setenv autoboot boot; bootz 0x500000; setenv autoboot none"
+ #define CONFIG_ROOTPATH   		/tftpboot/rootfs_arm
+ 
+ #endif /* #if (CONFIG_BOOTDELAY >= 0) */
+diff --git a/include/configs/zylonite2.h b/include/configs/zylonite2.h
+index bfb31dc..b6cee0e 100644
+--- a/include/configs/zylonite2.h
++++ b/include/configs/zylonite2.h
+@@ -111,7 +111,9 @@
+ #if (CONFIG_BOOTDELAY >= 0)
+ 
+ /* boot arguments" */
+-#define CONFIG_BOOTCOMMAND      	"nand read 0x500000 0x920000 0x300000; bootz 0x500000"
++#define CONFIG_ONENANDBOOT	     	"onenand read 0x500000 0x920000 0x300000"
++#define CONFIG_NANDBOOT 	     	"nand read 0x500000 0x920000 0x300000"
++#define CONFIG_BOOTCOMMAND      	"setenv autoboot boot; bootz 0x500000; setenv autoboot none"
+ #define CONFIG_ROOTPATH   		/tftpboot/rootfs_arm
+ 
+ #endif /* #if (CONFIG_BOOTDELAY >= 0) */
+-- 
+1.6.0.4
+

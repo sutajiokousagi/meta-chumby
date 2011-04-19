@@ -1,0 +1,26 @@
+From 46152911c2d606af2bfc0926ee998ce71e352592 Mon Sep 17 00:00:00 2001
+From: Yong Yao <yaoyong@marvell.com>
+Date: Sat, 15 Aug 2009 01:39:45 +0800
+Subject: [PATCH] pv2: increase the timeout in tftp
+
+Signed-off-by: Yong Yao <yaoyong@marvell.com>
+---
+ net/tftp.c |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/net/tftp.c b/net/tftp.c
+index 3dac3d8..1da1329 100644
+--- a/net/tftp.c
++++ b/net/tftp.c
+@@ -15,7 +15,7 @@
+ #if defined(CONFIG_CMD_NET)
+ 
+ #define WELL_KNOWN_PORT	69		/* Well known TFTP port #		*/
+-#define TIMEOUT		5000UL		/* Millisecs to timeout for lost pkt */
++#define TIMEOUT		50000UL		/* Millisecs to timeout for lost pkt */
+ #ifndef	CONFIG_NET_RETRY_COUNT
+ # define TIMEOUT_COUNT	10		/* # of timeouts before giving up  */
+ #else
+-- 
+1.6.0.4
+

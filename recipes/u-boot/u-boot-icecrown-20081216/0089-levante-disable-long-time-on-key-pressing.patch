@@ -1,0 +1,27 @@
+From 86cb18497cda5f7aa51ce84e1341c0fc166afc7d Mon Sep 17 00:00:00 2001
+From: Jack Ren <jack.ren@marvell.com>
+Date: Thu, 25 Jun 2009 12:08:59 +0800
+Subject: [PATCH] levante: disable long time on-key pressing
+
+Signed-off-by: Jack Ren <jack.ren@marvell.com>
+Signed-off-by: Bin Yang <bin.yang@marvell.com>
+---
+ board/pxa/common/freq.c |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/board/pxa/common/freq.c b/board/pxa/common/freq.c
+index fa09dce..f2c329c 100644
+--- a/board/pxa/common/freq.c
++++ b/board/pxa/common/freq.c
+@@ -945,7 +945,7 @@ U_BOOT_CMD(
+ int sanremo_ttc_mode(void)
+ {
+ 	/* set on_key hold bit */
+-	i2c_writeb(0x30, 0x0b, 0x82);
++	i2c_writeb(0x30, 0x0b, 0x80);
+ 	/* enter test mode */
+ 	i2c_write_addr(0x30, 0xfa);
+ 	i2c_write_addr(0x30, 0xfb);
+-- 
+1.6.0.4
+

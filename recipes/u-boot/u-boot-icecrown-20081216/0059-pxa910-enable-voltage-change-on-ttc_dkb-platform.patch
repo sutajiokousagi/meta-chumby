@@ -1,0 +1,105 @@
+From 9e0225bd72c24e35abc4b837b55b87d3f8f26903 Mon Sep 17 00:00:00 2001
+From: Ning Jiang <ning.jiang@marvell.com>
+Date: Wed, 22 Apr 2009 10:31:19 +0800
+Subject: [PATCH] pxa910: enable voltage change on ttc_dkb platform
+
+Signed-off-by: Ning Jiang <ning.jiang@marvell.com>
+---
+ board/pxa/common/freq.c               |   35 +++++++++++++++++++++++++++-----
+ board/pxa/common/usbeth/ether-mvu2o.c |    3 ++
+ include/configs/ttc_dkb.h             |    2 +-
+ 3 files changed, 33 insertions(+), 7 deletions(-)
+
+diff --git a/board/pxa/common/freq.c b/board/pxa/common/freq.c
+index 74f5b8f..f36cfbf 100644
+--- a/board/pxa/common/freq.c
++++ b/board/pxa/common/freq.c
+@@ -680,18 +680,43 @@ static void writei2c(u32 slave_addr, u32 addr, u32 data)
+ 	}
+ }
+ 
+-static void set_volt(u32 vol)
++#if CONFIG_TAVOREVB
++	#define VBUCK1_CNT(x)	((x < 0) ? -1 :			\
++				((x < 1525) ? ((x - 725) / 25)	\
++				: -1))
++#elif CONFIG_TTC_DKB
++	#define VBUCK1_CNT(x)	((x < 0) ? -1 :			\
++				((x < 800) ? (x / 25 + 0x20) :	\
++				((x < 1525) ? ((x - 800) / 25)	\
++				: -1)))
++#else
++	#define VBUCK1_CNT(x)	(-1)
++#endif
++
++int set_volt(u32 vol)
+ {
++	int cnt;
+ 	static int first_time = 1;
++
++	cnt = VBUCK1_CNT(vol);
++	if (cnt < 0)
++		return -1;
++
+ 	if (first_time) {
+ 		init_i2c();			/* init I2C */
+ 		first_time = 0;
+ 	}
+ 
++#if CONFIG_TAVOREVB
+ 	writei2c(0x68, 0x10, 0x07);	/* enable LDO2, BUCK1, BUCK2 */
+-
+-	writei2c(0x68, 0x24, vol);	/* set BUCK1 voltage in ADTV2 */
++	writei2c(0x68, 0x24, cnt);	/* set BUCK1 voltage in ADTV2 */
+ 	writei2c(0x68, 0x20, 0x03);	/* select ADTV2 and let it go ramping */
++#elif CONFIG_TTC_DKB
++	writei2c(0x60, 0x40, 0x0);	/* enable GI2C access to BUCK1_SET */
++	writei2c(0x60, 0x24, cnt);	/* set BUCK1 voltage */
++	writei2c(0x60, 0x20, 0x01);	/* let it go ramping */
++#endif
++	return 0;
+ }
+ 
+ int do_setvol(cmd_tbl_t * cmdtp, int flag, int argc, char *argv[])
+@@ -702,10 +727,8 @@ int do_setvol(cmd_tbl_t * cmdtp, int flag, int argc, char *argv[])
+ 		return -1;
+ 
+ 	vol = simple_strtoul(argv[1], NULL, 10);
+-	vol = (vol - 725) / 25;
+-	if (vol > 31)
++	if (set_volt(vol) < 0)
+ 		return -1;
+-	set_volt(vol);
+ 	return 0;
+ }
+ 
+diff --git a/board/pxa/common/usbeth/ether-mvu2o.c b/board/pxa/common/usbeth/ether-mvu2o.c
+index 03a4a42..cdef5d2 100644
+--- a/board/pxa/common/usbeth/ether-mvu2o.c
++++ b/board/pxa/common/usbeth/ether-mvu2o.c
+@@ -15,6 +15,9 @@
+ #ifdef   CONFIG_TAVOREVB
+ #include <configs/tavorevb.h>
+ #endif
++#ifdef   CONFIG_TTC_DKB
++#include <configs/ttc_dkb.h>
++#endif
+ #ifdef	 CONFIG_ZYLONITE2
+ #include <configs/zylonite2.h>
+ #endif
+diff --git a/include/configs/ttc_dkb.h b/include/configs/ttc_dkb.h
+index 85814f3..eca9d59 100644
+--- a/include/configs/ttc_dkb.h
++++ b/include/configs/ttc_dkb.h
+@@ -36,7 +36,7 @@
+  */
+ #define CONFIG_CPU_PXA910		1 /* This is an pxa910 core*/
+ #define CONFIG_PXAXXX      		1 /*  pxa family */
+-#define CONFIG_TAVOREVB    		1
++#define CONFIG_TTC_DKB    		1
+ #define CONFIG_FFUART
+ 
+ #define CONFIG_SYS_BOARD_NAME		"ARM926 based Hermon2"
+-- 
+1.6.0.4
+

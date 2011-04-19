@@ -1,0 +1,44 @@
+From 6528d0895f77a0c07a5bab3d9e5728bb79256464 Mon Sep 17 00:00:00 2001
+From: Mingliang Hu <mingliang.hu@marvell.com>
+Date: Mon, 8 Feb 2010 11:59:31 +0800
+Subject: [PATCH] pxa688: move sram address to avoid WTM conflict
+
+Signed-off-by: Mingliang Hu <mingliang.hu@marvell.com>
+---
+ board/pxa/flint/flint.c   |    4 ++--
+ board/pxa/jasper/jasper.c |    4 ++--
+ 2 files changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/board/pxa/flint/flint.c b/board/pxa/flint/flint.c
+index 5ad9e77..cebbcc0 100644
+--- a/board/pxa/flint/flint.c
++++ b/board/pxa/flint/flint.c
+@@ -231,8 +231,8 @@ int board_init (void)
+ 	DECLARE_GLOBAL_DATA_PTR;
+ 	volatile unsigned int reg;
+ 	clock_config();
+-	freq_init_sram(0xd1000000);
+-	freq_chg_seq(0xd1000000, 0xd1008000, 1);
++	freq_init_sram(0xd1020000);
++	freq_chg_seq(0xd1020000, 0xd1028000, 1);
+ 	usb_init();
+ 	dummy_delay(99999);
+ 	audio_init();
+diff --git a/board/pxa/jasper/jasper.c b/board/pxa/jasper/jasper.c
+index 2142ec6..9a2e4b2 100644
+--- a/board/pxa/jasper/jasper.c
++++ b/board/pxa/jasper/jasper.c
+@@ -213,8 +213,8 @@ int board_init (void)
+ 	reg &= ~(1<<23);
+ 	*(volatile unsigned int *)0xd4282c08 = reg;
+ 
+-    freq_init_sram(0xd1000000);
+-    freq_chg_seq(0xd1000000, 0xd1008000, 1);
++    freq_init_sram(0xd1020000);
++    freq_chg_seq(0xd1020000, 0xd1028000, 1);
+ 
+     *(volatile unsigned int *)0xd4282110 = 0x0;
+ 
+-- 
+1.6.0.4
+

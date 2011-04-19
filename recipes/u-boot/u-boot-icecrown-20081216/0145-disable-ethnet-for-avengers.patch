@@ -1,0 +1,27 @@
+From c2ae8fad980df5fd7aa747bddfd20b9d29175519 Mon Sep 17 00:00:00 2001
+From: TonyTeng <ylteng@marvell.com>
+Date: Mon, 21 Sep 2009 16:11:37 +0800
+Subject: [PATCH] disable ethnet for avengers
+
+Signed-off-by: TonyTeng <ylteng@marvell.com>
+Signed-off-by: Lei Wen <leiwen@marvell.com>
+---
+ include/configs/avengers.h |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/include/configs/avengers.h b/include/configs/avengers.h
+index 3b886ea..c8d7e57 100644
+--- a/include/configs/avengers.h
++++ b/include/configs/avengers.h
+@@ -75,7 +75,7 @@
+ 
+ #define CONFIG_CMD_PING
+ #define CONFIG_CMD_NET
+-#define CONFIG_NETCONSOLE
++//#define CONFIG_NETCONSOLE
+ #define CONFIG_NET_MULTI
+ #define MV_ETH_DEVS 			1
+ 
+-- 
+1.6.0.4
+

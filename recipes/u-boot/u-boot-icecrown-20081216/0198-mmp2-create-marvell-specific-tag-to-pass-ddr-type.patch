@@ -1,0 +1,173 @@
+From 05cc9eda19bfac013f7a934d8293bbb10149cae6 Mon Sep 17 00:00:00 2001
+From: WeiLi Xia <wlxia@marvell.com>
+Date: Thu, 3 Jun 2010 20:40:50 +0800
+Subject: [PATCH] mmp2: create marvell specific tag to pass ddr type
+
+Originally, tag_mem32 is modified so as to pass ddr type
+parameter to kernel. And in order to make code easier to be
+accepted by open source, the original approach is taken
+place by using a new specific tag to pass the parameter.
+
+Signed-off-by: WeiLi Xia <wlxia@marvell.com>
+---
+ include/asm-arm/setup.h              |   29 ++++++++++++++++++++++-------
+ include/configs/mmp2_jasper.h        |    1 +
+ include/configs/mmp2_jasper_epd512.h |    1 +
+ lib_arm/bootm.c                      |   27 +++++++++++++++++++++------
+ 4 files changed, 45 insertions(+), 13 deletions(-)
+
+diff --git a/include/asm-arm/setup.h b/include/asm-arm/setup.h
+index ce23f8c..29a532a 100644
+--- a/include/asm-arm/setup.h
++++ b/include/asm-arm/setup.h
+@@ -100,16 +100,9 @@ struct tag_core {
+ /* it is allowed to have multiple ATAG_MEM nodes */
+ #define ATAG_MEM	0x54410002
+ 
+-typedef enum _ddr_type {
+-	MEM_TYPE_INVALID = 0,
+-	MEM_TYPE_MICRON,
+-	MEM_TYPE_ELPIDA,
+-} _ddr_type;
+-
+ struct tag_mem32 {
+ 	u32	size;
+ 	u32	start;	/* physical start address */
+-	_ddr_type	type;
+ };
+ 
+ /* VGA text type displays */
+@@ -212,6 +205,21 @@ struct tag_memclk {
+ 	u32 fmemclk;
+ };
+ 
++#ifdef CONFIG_MARVELL_TAG
++
++typedef enum _ddr_type {
++	MEM_TYPE_INVALID = 0,
++	MEM_TYPE_MICRON,
++	MEM_TYPE_ELPIDA,
++} _ddr_type;
++
++#define ATAG_DRAMTYPE	0x41000403
++struct tag_dramtype {
++	u32	type;
++};
++
++#endif
++
+ struct tag {
+ 	struct tag_header hdr;
+ 	union {
+@@ -234,6 +242,13 @@ struct tag {
+ 		 * DC21285 specific
+ 		 */
+ 		struct tag_memclk	memclk;
++
++#ifdef CONFIG_MARVELL_TAG
++		/*
++		 * Marvell specific DDR RAM type 
++		 */
++		struct tag_dramtype	dramtype;
++#endif
+ 	} u;
+ };
+ 
+diff --git a/include/configs/mmp2_jasper.h b/include/configs/mmp2_jasper.h
+index bc84d94..07600cf 100644
+--- a/include/configs/mmp2_jasper.h
++++ b/include/configs/mmp2_jasper.h
+@@ -62,6 +62,7 @@
+ #define CONFIG_SYS_CPUSPEED		0x161		/* set core clock to 400/200/100 MHz */
+ #define CONFIG_DISPLAY_BOARDINFO
+ 
++#define CONFIG_MARVELL_TAG		1
+ #define CONFIG_CMDLINE_TAG         	1   /* enable passing of ATAGs  */
+ #define CONFIG_SETUP_MEMORY_TAGS   	1
+ #define CONFIG_MISC_INIT_R         	1   /* call misc_init_r during start up */
+diff --git a/include/configs/mmp2_jasper_epd512.h b/include/configs/mmp2_jasper_epd512.h
+index 9d4dcfa..a9238c2 100644
+--- a/include/configs/mmp2_jasper_epd512.h
++++ b/include/configs/mmp2_jasper_epd512.h
+@@ -62,6 +62,7 @@
+ #define CONFIG_SYS_CPUSPEED		0x161		/* set core clock to 400/200/100 MHz */
+ #define CONFIG_DISPLAY_BOARDINFO
+ 
++#define CONFIG_MARVELL_TAG		1
+ #define CONFIG_CMDLINE_TAG         	1   /* enable passing of ATAGs  */
+ #define CONFIG_SETUP_MEMORY_TAGS   	1
+ #define CONFIG_MISC_INIT_R         	1   /* call misc_init_r during start up */
+diff --git a/lib_arm/bootm.c b/lib_arm/bootm.c
+index 698750c..cd0eed8 100644
+--- a/lib_arm/bootm.c
++++ b/lib_arm/bootm.c
+@@ -34,6 +34,7 @@ DECLARE_GLOBAL_DATA_PTR;
+     defined (CONFIG_INITRD_TAG) || \
+     defined (CONFIG_SERIAL_TAG) || \
+     defined (CONFIG_REVISION_TAG) || \
++    defined (CONFIG_MARVELL_TAG) || \
+     defined (CONFIG_VFD) || \
+     defined (CONFIG_LCD)
+ static void setup_start_tag (bd_t *bd);
+@@ -52,6 +53,9 @@ static void setup_end_tag (bd_t *bd);
+ # if defined (CONFIG_VFD) || defined (CONFIG_LCD)
+ static void setup_videolfb_tag (gd_t *gd);
+ # endif
++#if defined (CONFIG_MARVELL_TAG)
++static void setup_dramtype_tag(void);
++#endif
+ 
+ static struct tag *params;
+ #endif /* CONFIG_SETUP_MEMORY_TAGS || CONFIG_CMDLINE_TAG || CONFIG_INITRD_TAG */
+@@ -88,6 +92,7 @@ int do_bootm_linux(int flag, int argc, char *argv[], bootm_headers_t *images)
+     defined (CONFIG_INITRD_TAG) || \
+     defined (CONFIG_SERIAL_TAG) || \
+     defined (CONFIG_REVISION_TAG) || \
++    defined (CONFIG_MARVELL_TAG) || \
+     defined (CONFIG_LCD) || \
+     defined (CONFIG_VFD)
+ 	setup_start_tag (bd);
+@@ -110,6 +115,9 @@ int do_bootm_linux(int flag, int argc, char *argv[], bootm_headers_t *images)
+ #if defined (CONFIG_VFD) || defined (CONFIG_LCD)
+ 	setup_videolfb_tag ((gd_t *) gd);
+ #endif
++#ifdef CONFIG_MARVELL_TAG
++	setup_dramtype_tag();
++#endif
+ 	setup_end_tag (bd);
+ #endif
+ 
+@@ -166,17 +174,24 @@ static void setup_memory_tags (bd_t *bd)
+ 		params->u.mem.start = bd->bi_dram[i].start;
+ 		params->u.mem.size = bd->bi_dram[i].size;
+ 
+-#if defined (CONFIG_DDR_MICRON_256M)
+-		params->u.mem.type = MEM_TYPE_MICRON;
+-#elif defined (CONFIG_DDR_EPD_512M)
+-		params->u.mem.type = MEM_TYPE_ELPIDA;
+-#endif
+-
+ 		params = tag_next (params);
+ 	}
+ }
+ #endif /* CONFIG_SETUP_MEMORY_TAGS */
+ 
++#if defined (CONFIG_MARVELL_TAG)
++static void setup_dramtype_tag()
++{
++	params->hdr.tag = ATAG_DRAMTYPE;
++	params->hdr.size = tag_size(tag_dramtype);
++#if defined (CONFIG_DDR_MICRON_256M)
++	params->u.dramtype.type = MEM_TYPE_MICRON;
++#elif defined (CONFIG_DDR_EPD_512M)
++	params->u.dramtype.type = MEM_TYPE_ELPIDA;
++#endif
++	params = tag_next(params);
++}
++#endif
+ 
+ static void setup_commandline_tag (bd_t *bd, char *commandline)
+ {
+-- 
+1.6.0.4
+

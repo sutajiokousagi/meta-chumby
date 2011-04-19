@@ -1,0 +1,41 @@
+From 4b78971b4f751152fea4f3197ba67b9106da789e Mon Sep 17 00:00:00 2001
+From: Mike Frysinger <vapier@gentoo.org>
+Date: Thu, 2 Apr 2009 08:11:31 -0400
+Subject: [PATCH] sf: set common timeouts in seconds, not milliseconds
+
+Since timeouts are only hit when there is a problem in the system, we
+don't want to prematurely timeout on a functioning setup.  Thus having
+low timeouts (in milliseconds) doesn't gain us anything in the production
+case, but rather increases likely hood of causing problems where none
+otherwise exist.
+
+Signed-off-by: Mike Frysinger <vapier@gentoo.org>
+CC: Haavard Skinnemoen <haavard.skinnemoen@atmel.com>
+Signed-off-by: Lei Wen <leiwen@marvell.com>
+---
+ drivers/mtd/spi/spi_flash_internal.h |    9 ++++++---
+ 1 files changed, 6 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/mtd/spi/spi_flash_internal.h b/drivers/mtd/spi/spi_flash_internal.h
+index 75f5900..010d845 100644
+--- a/drivers/mtd/spi/spi_flash_internal.h
++++ b/drivers/mtd/spi/spi_flash_internal.h
+@@ -4,9 +4,12 @@
+  * Copyright (C) 2008 Atmel Corporation
+  */
+ 
+-/* Common parameters */
+-#define SPI_FLASH_PROG_TIMEOUT		((10 * CONFIG_SYS_HZ) / 1000)
+-#define SPI_FLASH_PAGE_ERASE_TIMEOUT	((50 * CONFIG_SYS_HZ) / 1000)
++/* Common parameters -- kind of high, but they should only occur when there
++ * is a problem (and well your system already is broken), so err on the side
++ * of caution in case we're dealing with slower SPI buses and/or processors.
++ */
++#define SPI_FLASH_PROG_TIMEOUT		(2 * CONFIG_SYS_HZ)
++#define SPI_FLASH_PAGE_ERASE_TIMEOUT	(5 * CONFIG_SYS_HZ)
+ #define SPI_FLASH_SECTOR_ERASE_TIMEOUT	(10 * CONFIG_SYS_HZ)
+ 
+ /* Common commands */
+-- 
+1.6.0.4
+

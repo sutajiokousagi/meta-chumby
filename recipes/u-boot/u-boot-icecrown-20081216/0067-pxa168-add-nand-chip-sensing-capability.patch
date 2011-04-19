@@ -1,0 +1,156 @@
+From eb55fe0dc39e9047538469c23a792d32694d1636 Mon Sep 17 00:00:00 2001
+From: Lei Wen <leiwen@marvell.com>
+Date: Tue, 26 May 2009 13:32:26 +0800
+Subject: [PATCH] pxa168: add nand chip sensing capability
+
+Signed-off-by: Lei Wen <leiwen@marvell.com>
+---
+ board/pxa/common/nand.c                   |    1 +
+ drivers/mtd/nand/pxa3xx_nand.c            |   54 ++++++++++++++++++++++++----
+ include/asm-arm/arch-pxa168/pxa3xx_nand.h |    3 ++
+ 3 files changed, 50 insertions(+), 8 deletions(-)
+
+diff --git a/board/pxa/common/nand.c b/board/pxa/common/nand.c
+index 2e11a83..5a81105 100644
+--- a/board/pxa/common/nand.c
++++ b/board/pxa/common/nand.c
+@@ -97,6 +97,7 @@ void nand_init()
+ 	nand_chip_num = 0;
+ 	pxa_nandinfo.enable_arbiter 	= 1;
+ 	pxa_nandinfo.use_dma 		= 0; /* we only use polling in UBOOT */
++	pxa_nandinfo.RD_CNT_DEL		= 0;
+ 
+ 	pxa168_device_nand.dev.platform_data = &pxa_nandinfo;
+ 	pxa3xx_nand_probe(&pxa168_device_nand);
+diff --git a/drivers/mtd/nand/pxa3xx_nand.c b/drivers/mtd/nand/pxa3xx_nand.c
+index 7c3212b..8a91247 100644
+--- a/drivers/mtd/nand/pxa3xx_nand.c
++++ b/drivers/mtd/nand/pxa3xx_nand.c
+@@ -62,21 +62,33 @@ static void pxa3xx_nand_set_timing(struct pxa3xx_nand_info *info,
+ {
+ 	struct pxa3xx_nand *nand = info->nand_data;
+ 	unsigned long nand_clk = clk_get_rate(nand->clk);
+-	uint32_t ndtr0, ndtr1;
++	uint32_t ndtr0, ndtr1, tRP;
+ 
+-	ndtr0 = NDTR0_tCH(ns2cycle(t->tCH, nand_clk))		    \
++	ndtr0 = ndtr1 = 0;
++	tRP = (t->tRP > 0xf) ? 0xf : t->tRP;
++	if (tRP > 0x7) {
++		ndtr0 |= NDTR0_ETRP;
++		tRP &= 0x7;
++	}
++
++	if (nand->RD_CNT_DEL > 0)
++		ndtr0 |= NDTR0_SELCNTR
++			| (NDTR0_RD_CNT_DEL(nand->RD_CNT_DEL - 1));
++
++	ndtr0 |= NDTR0_tCH(ns2cycle(t->tCH, nand_clk))		    \
+ 		| NDTR0_tCS(ns2cycle(t->tCS, nand_clk))		    \
+ 		| NDTR0_tWH(ns2cycle(t->tWH, nand_clk))		    \
+ 		| NDTR0_tWP(ns2cycle(t->tWP, nand_clk))		    \
+ 		| NDTR0_tRH(ns2cycle(t->tRH, nand_clk))		    \
+-		| NDTR0_tRP(ns2cycle(t->tRP, nand_clk));
++		| NDTR0_tRP(ns2cycle(tRP, nand_clk));
++
++	if (nand->wait_mode)
++		ndtr1 |= NDTR1_WAIT_MODE;
+ 
+-	ndtr1 = NDTR1_tR(ns2cycle(t->tR, nand_clk))		    \
++	ndtr1 |= NDTR1_tR(ns2cycle(t->tR, nand_clk))		    \
+ 		| NDTR1_tWHR(ns2cycle(t->tWHR, nand_clk))	    \
+ 		| NDTR1_tAR(ns2cycle(t->tAR, nand_clk));
+ 
+-	info->timing0 = ndtr0;
+-	info->timing1 = ndtr1;
+ 
+ 	nand_writel(nand, NDTR0CS0, ndtr0);
+ 	nand_writel(nand, NDTR1CS0, ndtr1);
+@@ -320,6 +332,7 @@ static irqreturn_t pxa3xx_nand_irq(int irq, void *devid)
+ 			complete(&nand->cmd_complete);
+ 		}
+ 
++		nand->is_ready = 1;
+ 	}
+ 
+ 	if (status & NDSR_TRUSTVIO) {
+@@ -959,14 +972,34 @@ static void pxa3xx_nand_init_mtd(struct mtd_info *mtd)
+ 	this->block_markbad	= bbm->markbad;
+ }
+ 
++static int pxa3xx_nand_sensing(struct pxa3xx_nand_info *info, int cs)
++{
++	struct pxa3xx_nand *nand = info->nand_data;;
++	const struct pxa3xx_nand_flash *f = &nand_common;
++	struct mtd_info *mtd = nand->mtd[cs];
++
++	nand->wait_mode = 1;
++	nand->is_ready  = 0;
++	pxa3xx_nand_config_flash(info, f);
++	pxa3xx_nand_cmdfunc(mtd, NAND_CMD_RESET, 0, 0);
++	nand->wait_mode = 0;
++
++	if (nand->is_ready) {
++		nand->is_ready  = 0;
++		return 1;
++	}
++	else
++		return 0;
++}
++
+ static int pxa3xx_nand_detect_flash(struct pxa3xx_nand *nand)
+ {
+-	const struct pxa3xx_nand_flash *f;
++	struct pxa3xx_nand_flash *f;
+ 	struct nand_chip *chip;
+ 	struct pxa3xx_nand_info *info;
+ 	struct mtd_info *mtd;
+ 	uint32_t id = -1;
+-	int i, chip_select, extid;
++	int i, ret, chip_select;
+ 
+ 	f = builtin_flash_types[0];
+ 	chip_select = 0;
+@@ -974,6 +1007,10 @@ static int pxa3xx_nand_detect_flash(struct pxa3xx_nand *nand)
+ 		mtd = nand->mtd[chip_select];
+ 		chip = mtd->priv;
+ 		info = mtd->priv;
++		ret = pxa3xx_nand_sensing(info, chip_select);
++		if (!ret)
++			continue;
++
+ 		pxa3xx_nand_config_flash(info, f);
+ 		pxa3xx_nand_cmdfunc(mtd, NAND_CMD_READID, 0, 0);
+ 
+@@ -1162,6 +1199,7 @@ static int pxa3xx_nand_probe(struct platform_device *pdev)
+ 
+ 	nand->enable_arbiter 	= pdata->enable_arbiter;
+ 	nand->use_dma 		= pdata->use_dma;
++	nand->RD_CNT_DEL	= pdata->RD_CNT_DEL;
+ 	if (nand->use_dma) {
+ 		r = platform_get_resource(pdev, IORESOURCE_DMA, 0);
+ 		if (r == NULL) {
+diff --git a/include/asm-arm/arch-pxa168/pxa3xx_nand.h b/include/asm-arm/arch-pxa168/pxa3xx_nand.h
+index 3a86a9b..be0db9e 100644
+--- a/include/asm-arm/arch-pxa168/pxa3xx_nand.h
++++ b/include/asm-arm/arch-pxa168/pxa3xx_nand.h
+@@ -96,6 +96,8 @@ struct pxa3xx_nand {
+ 	/* 2 chipselects supported for the moment */
+ 	int			chip_select;
+ 	int			enable_arbiter;
++	int			RD_CNT_DEL;
++	int			wait_mode;
+ 	struct mtd_info		*mtd[NUM_CHIP_SELECT];
+ 
+ 	/* relate to the command */
+@@ -125,6 +127,7 @@ struct pxa3xx_nand_platform_data {
+ 	 */
+ 	int					enable_arbiter;
+ 	int					use_dma;	/* use DMA ? */
++	int					RD_CNT_DEL;
+ 
+ 	const struct mtd_partition		*parts;
+ 	unsigned int				nr_parts;
+-- 
+1.6.0.4
+

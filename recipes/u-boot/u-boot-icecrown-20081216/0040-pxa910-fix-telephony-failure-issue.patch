@@ -1,0 +1,44 @@
+From c9f91654cb9b657bfa3af686e536e88d658f5b43 Mon Sep 17 00:00:00 2001
+From: Jack Ren <jack.ren@marvell.com>
+Date: Wed, 15 Apr 2009 13:20:19 +0800
+Subject: [PATCH] pxa910: fix telephony failure issue
+
+Signed-off-by: Jack Ren <jack.ren@marvell.com>
+---
+ board/pxa/tavorEVB/tavorevb_pxa168.c |   20 ++++++++++++++++++++
+ 1 files changed, 20 insertions(+), 0 deletions(-)
+
+diff --git a/board/pxa/tavorEVB/tavorevb_pxa168.c b/board/pxa/tavorEVB/tavorevb_pxa168.c
+index 863a2bd..6860082 100644
+--- a/board/pxa/tavorEVB/tavorevb_pxa168.c
++++ b/board/pxa/tavorEVB/tavorevb_pxa168.c
+@@ -240,6 +240,26 @@ int board_init (void)
+     pxa3xx_mfp_set_pull(MFP_CFG_PIN(GPIO48_UART2_TXD), MFP_PULL_HIGH);
+     pxa3xx_mfp_set_pull(MFP_CFG_PIN(DF_RDY0_DF_RDY0), MFP_PULL_HIGH);
+ 
++    /* Works at 1.203V- 1.23V 312MHz core 156MHz ddr */
++    *(volatile unsigned int *)0xb00001f0=0xC0000077; /* MCU_PHY_CONTROL_9 */
++    *(volatile unsigned int *)0xb0000200=0x0011210c; /* MCU_PHY_CONTROL_10 */
++    *(volatile unsigned int *)0xb0000120=0x00000001; /* MCU_USER_INITIATED_COMMAND */
++
++    /* Following os for 624MHz/156MHz(cpu/ddr) with DLL+ */
++    *(volatile unsigned int *)0xb0000230=0x203C7D06; /* MCU_PHY_CONTROL_13 */
++    *(volatile unsigned int *)0xb0000e10=0x203C7D06; /* MCU_PHY_DLL_CONTROL_1 */
++    *(volatile unsigned int *)0xb0000e20=0x203C7D06; /* MCU_PHY_DLL_CONTROL_2 */
++    *(volatile unsigned int *)0xb0000e30=0x203C7D06; /* MCU_PHY_DLL_CONTROL_3 */
++    /* *(volatile unsigned int *)0xb0000240=0x20000000; */ /* MCU_PHY_CONTROL_14 */
++
++    /* Allow the freq chng DDR 156MHz CPU 312MHz while cp in reset */
++    *(volatile unsigned int *)0xd4050008=0x20800000;
++    *(volatile unsigned int *)0xd4282888=0x00060009;
++    *(volatile unsigned int *)0xd4282804=0x00fd96d8;
++    *(volatile unsigned int *)0xd4282800=0x08fd96d9;
++    *(volatile unsigned int *)0xd4282804=0x0ffd96d8;
++    reg = *(volatile unsigned int *)0xd4282804;
++
+     return 0;
+ }
+ 
+-- 
+1.6.0.4
+

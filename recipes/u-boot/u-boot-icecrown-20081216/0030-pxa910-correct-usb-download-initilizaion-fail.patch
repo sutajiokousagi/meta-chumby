@@ -1,0 +1,54 @@
+From 24ad7a1a55aa17d0e9d5dc3cfa4e8e3c0eb15edd Mon Sep 17 00:00:00 2001
+From: Lei Wen <leiwen@marvell.com>
+Date: Wed, 11 Mar 2009 19:21:33 +0800
+Subject: [PATCH] pxa910: correct usb download initilizaion fail
+
+Signed-off-by: Lei Wen <leiwen@marvell.com>
+---
+ board/pxa/common/usbeth/ether-mvu2o.c |   26 ++++++++++++++++++++++++--
+ 1 files changed, 24 insertions(+), 2 deletions(-)
+
+diff --git a/board/pxa/common/usbeth/ether-mvu2o.c b/board/pxa/common/usbeth/ether-mvu2o.c
+index 5ae56f6..03a4a42 100644
+--- a/board/pxa/common/usbeth/ether-mvu2o.c
++++ b/board/pxa/common/usbeth/ether-mvu2o.c
+@@ -224,12 +224,34 @@ static inline int check_usb_connection(void)
+ 
+ static int usb_eth_init(struct eth_device *dev, bd_t *bd)
+ {
+-	printf("%s\n\n", __func__);
++	int env_size, env_present = 0, reg;
++	char *s = NULL, *e, es[] = "11:22:33:44:55:66";
++	char s_env_mac[64];
++	uchar v_env_mac[6], *v_mac;
++
++	env_size = getenv_r ("ethaddr", s_env_mac, sizeof (s_env_mac));
++	if ((env_size > 0) && (env_size < sizeof (es))) {	/* exit if env is bad */
++		printf ("\n*** ERROR: ethaddr is not set properly!!\n");
++		return (-1);
++	}
++
++	if (env_size > 0) {
++		env_present = 1;
++		s = s_env_mac;
++	}
++
++	for (reg = 0; reg < 6; ++reg) { /* turn string into mac value */
++		v_env_mac[reg] = s ? simple_strtoul (s, &e, 16) : 0;
++		if (s)
++			s = (*e) ? e + 1 : e;
++	}
++
++	memcpy (bd->bi_enetaddr, v_mac, 6);	/* update global address to match env (allows env changing) */
++	memcpy(dev->enetaddr, bd->bi_enetaddr, 6);
+ }
+ 
+ static int usb_eth_halt(struct eth_device *dev, bd_t *bd)
+ {
+-	printf("%s\n\n", __func__);
+ }
+ static int loop=0;
+ 
+-- 
+1.6.0.4
+

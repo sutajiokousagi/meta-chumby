@@ -1,0 +1,81 @@
+From d313c2b5fe0c1346d3381bae8cfd0753583d675b Mon Sep 17 00:00:00 2001
+From: Wen Lei <leiwen@marvell.com>
+Date: Fri, 27 Feb 2009 10:30:14 +0800
+Subject: [PATCH] pxa910: add onenand cleanmarker write for JFFS2
+
+---
+ common/cmd_onenand.c |   35 +++++++++++++++++++++++++++++++++++
+ 1 files changed, 35 insertions(+), 0 deletions(-)
+
+diff --git a/common/cmd_onenand.c b/common/cmd_onenand.c
+index 62a9fe6..b17bc64 100644
+--- a/common/cmd_onenand.c
++++ b/common/cmd_onenand.c
+@@ -15,6 +15,7 @@
+ #include <linux/mtd/compat.h>
+ #include <linux/mtd/mtd.h>
+ #include <linux/mtd/onenand.h>
++#include <jffs2/jffs2.h>
+ 
+ #include <asm/io.h>
+ 
+@@ -48,11 +49,36 @@ int do_onenand(cmd_tbl_t * cmdtp, int flag, int argc, char *argv[])
+ 			ulong start, end;
+ 			ulong block;
+ 			char *endtail;
++			int clean = 0;
++			struct jffs2_unknown_node cleanmarker;
++			struct mtd_oob_ops ops = {
++				.datbuf = NULL,
++				.oobbuf = (uint8_t *)&cleanmarker,
++				.ooblen = 8,
++				.ooboffs= 0,
++				.mode	= MTD_OOB_PLACE,
++			};
+ 
+ 			if (strncmp(argv[2], "block", 5) == 0) {
+ 				start = simple_strtoul(argv[3], NULL, 10);
+ 				endtail = strchr(argv[3], '-');
+ 				end = simple_strtoul(endtail + 1, NULL, 10);
++			}
++		        else if (strncmp(argv[2], "clean", 5) == 0) {
++				cleanmarker.magic = JFFS2_MAGIC_BITMASK;
++				cleanmarker.nodetype = JFFS2_NODETYPE_CLEANMARKER;
++				cleanmarker.totlen = 8;
++				
++				start = simple_strtoul(argv[3], NULL, 10);
++				end = simple_strtoul(argv[4], NULL, 10);
++
++				start >>= onenand_chip.erase_shift;
++				end >>= onenand_chip.erase_shift;
++				/* Don't include the end block */
++				end--;
++
++				clean = 1;
++				printf("ready to erase with cleanmarker\n");
+ 			} else {
+ 				start = simple_strtoul(argv[2], NULL, 10);
+ 				end = simple_strtoul(argv[3], NULL, 10);
+@@ -72,10 +98,19 @@ int do_onenand(cmd_tbl_t * cmdtp, int flag, int argc, char *argv[])
+ 				instr.addr = block << onenand_chip.erase_shift;
+ 				instr.len = 1 << onenand_chip.erase_shift;
+ 				ret = onenand_erase(&onenand_mtd, &instr);
++			
+ 				if (ret) {
+ 					printf("erase failed %lu\n", block);
+ 					break;
+ 				}
++				
++				if (clean == 1) {
++					ret = onenand_write_oob(&onenand_mtd, instr.addr, &ops);
++					if (ret) {
++						printf("write OOB failed %lu\n", block);
++						break;
++					}
++				}
+ 			}
+ 
+ 			return 0;
+-- 
+1.6.0.4
+

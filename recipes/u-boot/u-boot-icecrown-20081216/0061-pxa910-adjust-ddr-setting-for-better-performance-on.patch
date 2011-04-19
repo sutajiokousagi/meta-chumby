@@ -1,0 +1,88 @@
+From ad726d8758b34879bb850f9c16b6c63bc910388a Mon Sep 17 00:00:00 2001
+From: Ning Jiang <ning.jiang@marvell.com>
+Date: Wed, 22 Apr 2009 16:05:53 +0800
+Subject: [PATCH] pxa910: adjust ddr setting for better performance on ttc_dkb
+
+Signed-off-by: Ning Jiang <ning.jiang@marvell.com>
+---
+ board/pxa/ttc_dkb/ttc_dkb.c |   51 +++++++++++++++++++++++++++----------------
+ 1 files changed, 32 insertions(+), 19 deletions(-)
+
+diff --git a/board/pxa/ttc_dkb/ttc_dkb.c b/board/pxa/ttc_dkb/ttc_dkb.c
+index 8423862..a830c54 100644
+--- a/board/pxa/ttc_dkb/ttc_dkb.c
++++ b/board/pxa/ttc_dkb/ttc_dkb.c
+@@ -140,31 +140,12 @@ int board_init (void)
+     *(volatile unsigned int *)0xD4051024 = 0xffffffff; 
+ 
+ 
+-    /* Use PLL1 */
+-    *(volatile unsigned int *)0xd4050008 = 0x20800000;
+-    /* If seagull is in reset, then write to this register so the Mohawk 
+-     * can do freq change */
+-    *(volatile unsigned int *)0xd4282888 = 0x00060009;
+-    /* Set the divider to get CPU p clock 312MHz  and ddr at 104MHz */
+-    *(volatile unsigned int *)0xd4282804 = 0x003da6d9;
+-    /* Set the allow bits from seagull side */
+-    *(volatile unsigned int *)0xd4282800 = 0x08fd96d9;
+-    /* Give the freq change command */
+-    *(volatile unsigned int *)0xd4282804 = 0x0f3da6d9;
+-
+-    /* Allow the freq chng ddr 104 CPU 624Mhz while cp in reset */
+-    /* TODO: Verify if the above comment makes sense */
+-    *(volatile unsigned int *)0xb0000230 = 0xf0007D04;
+-    *(volatile unsigned int *)0xb0000240 = 0x20000000;
+-
+     /* temporary work-around to fix DDR 156 issue -- Ning */
+     *(volatile unsigned int *)0xb0000230 = 0x20007c04;
+     *(volatile unsigned int *)0xb0000e10 = 0x20007c04;
+     *(volatile unsigned int *)0xb0000e20 = 0x20007c04;
+     *(volatile unsigned int *)0xb0000e30 = 0x20007c04;
+ 
+-    *(volatile unsigned int *)0xD4050024 = 0xfffffffb;
+-    *(volatile unsigned int *)0xd4015000 = 0x00000013;
+     *(volatile unsigned int *)0xd428284c = 0x00000008;
+     *(volatile unsigned int *)0xd428284c = 0x00000009;
+     *(volatile unsigned int *)0xd428284c = 0x00000019;
+@@ -251,6 +232,38 @@ int board_init (void)
+     pxa3xx_mfp_set_pull(MFP_CFG_PIN(GPIO48_UART2_TXD), MFP_PULL_HIGH);
+     pxa3xx_mfp_set_pull(MFP_CFG_PIN(DF_RDY0_DF_RDY0), MFP_PULL_HIGH);
+ 
++    /* adjust ddr setting for better performance -- Ning */
++    *(volatile unsigned int *)0xb0000140=0x20004411; /* MCU_PHY_CONTROL_3 */
++    //*(volatile unsigned int *)0xb0000100=0x000B0F81; /* MMU_MMAP0 */
++    *(volatile unsigned int *)0xb0000050=0x484904C2; /* MCU_SDRAM_TIMING_1 */
++    *(volatile unsigned int *)0xb0000060=0x32330122; /* MCU_SDRAM_TIMING_2 */
++    *(volatile unsigned int *)0xb00001c0=0x1282a000; /* MCU_SDRAM_TIMING_4 */
++    *(volatile unsigned int *)0xb00001d0=0x0ff00331; /* MCU_PHY_CONTROL_7 */
++    *(volatile unsigned int *)0xb00001e0=0x07700330; /* MCU_PHY_CONTROL_8 */
++    //*(volatile unsigned int *)0xb00001a0=0x0080c011; /* MCU_SDRAM_CONTROL_4 */
++    *(volatile unsigned int *)0xb0000090=0x00080000; /* MCU_SDRAM_CONTROL_2 */
++    *(volatile unsigned int *)0xb0000650=0x000700A1; /* MCU_SDRAM_TIMING_5 */
++
++    /* Works at 1.203V- 1.23V 312MHz core 156MHz ddr */
++    *(volatile unsigned int *)0xb00001f0=0xC0000077; /* MCU_PHY_CONTROL_9 */
++    *(volatile unsigned int *)0xb0000200=0x0011210c; /* MCU_PHY_CONTROL_10 */
++    *(volatile unsigned int *)0xb0000120=0x00000001; /* MCU_USER_INITIATED_COMMAND */
++
++    /* Following os for 624MHz/156MHz(cpu/ddr) with DLL+ */
++    *(volatile unsigned int *)0xb0000230=0x203C7D06; /* MCU_PHY_CONTROL_13 */
++    *(volatile unsigned int *)0xb0000e10=0x203C7D06; /* MCU_PHY_DLL_CONTROL_1 */
++    *(volatile unsigned int *)0xb0000e20=0x203C7D06; /* MCU_PHY_DLL_CONTROL_2 */
++    *(volatile unsigned int *)0xb0000e30=0x203C7D06; /* MCU_PHY_DLL_CONTROL_3 */
++    /* *(volatile unsigned int *)0xb0000240=0x20000000; */ /* MCU_PHY_CONTROL_14 */
++
++    /* Allow the freq chng DDR 156MHz CPU 312MHz while cp in reset */
++    *(volatile unsigned int *)0xd4050008=0x20800000;
++    *(volatile unsigned int *)0xd4282888=0x00060009;
++    *(volatile unsigned int *)0xd4282804=0x00fd96d8;
++    *(volatile unsigned int *)0xd4282800=0x08fd96d9;
++    *(volatile unsigned int *)0xd4282804=0x0ffd96d8;
++    reg = *(volatile unsigned int *)0xd4282804;
++
+     /* set voltage to 1300mV by default */
+     set_volt(1300);
+ 
+-- 
+1.6.0.4
+

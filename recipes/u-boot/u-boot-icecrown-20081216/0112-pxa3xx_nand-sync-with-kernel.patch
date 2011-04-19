@@ -1,0 +1,132 @@
+From 6155211f33bc9952e0f785b31b64794ad0d3cdb0 Mon Sep 17 00:00:00 2001
+From: Lei Wen <leiwen@marvell.com>
+Date: Wed, 15 Jul 2009 17:55:56 +0800
+Subject: [PATCH] pxa3xx_nand: sync with kernel
+
+---
+ drivers/mtd/nand/pxa3xx_nand.c |   45 ++++++++++++++++++++-------------------
+ 1 files changed, 23 insertions(+), 22 deletions(-)
+
+diff --git a/drivers/mtd/nand/pxa3xx_nand.c b/drivers/mtd/nand/pxa3xx_nand.c
+index ab7062f..6baa103 100644
+--- a/drivers/mtd/nand/pxa3xx_nand.c
++++ b/drivers/mtd/nand/pxa3xx_nand.c
+@@ -643,9 +643,9 @@ static void pxa3xx_nand_cmdfunc(struct mtd_info *mtd, unsigned command,
+ 		page_addr = addr >> pxa3xx_bbm->page_shift;
+ 	}
+ 
+-RETRY:
+ 	nand->command = command;
+ 	use_dma = nand->use_dma;
++RETRY:
+ 	exec_cmd = prepare_command_poll(nand, command, column, page_addr);
+ 
+ 	switch (command) {
+@@ -689,6 +689,8 @@ RETRY:
+ 	}
+ 
+ 	if (exec_cmd) {
++		nand->state |= 16;
++
+ 		/* prepare for the first command */
+ 		init_completion(&nand->cmd_complete);
+ 
+@@ -701,9 +703,7 @@ RETRY:
+ 		/* Stop State Machine for next command cycle */
+ 		pxa3xx_nand_stop(nand);
+ 
+-		if (nand->errcode & ERR_BBERR)
+-			mtd->block_markbad(mtd, addr);
+-		else if (!ret && !nand->errcode) {
++		if (!ret && !nand->errcode) {
+ 			printk(KERN_ERR "IRQ timeout, command %x, ndcb1 %x, \
+ 					\nndcb2 %x, state %x, cmd seqs %x\n", \
+ 					command, info->ndcb1, info->ndcb2,  \
+@@ -721,7 +721,10 @@ RETRY:
+ 					nand_readl(nand, NDECCCTRL),
+ 					nand_readl(nand, NDBZCNT));
+ 
+-			if (retry_times ++ < 3)
++			/* It is just a workaround way for aspen R0 silicon
++			 * should be remove in the future.
++			 */
++			if (retry_times ++ < 3 && nand->command == NAND_CMD_PAGEPROG)
+ 				goto RETRY;
+ 			else
+ 				nand->errcode |= ERR_SENDCMD;
+@@ -731,6 +734,7 @@ RETRY:
+ 	/* reset ECC */
+ 	nand->use_dma = use_dma;
+ 	info->use_ecc = ECC_NONE;
++	nand->state = 0;
+ }
+ 
+ static uint8_t pxa3xx_nand_read_byte(struct mtd_info *mtd)
+@@ -795,7 +799,7 @@ static int pxa3xx_nand_waitfunc(struct mtd_info *mtd, struct nand_chip *this)
+ 	struct pxa3xx_nand_info *info = mtd->priv;
+ 	struct pxa3xx_nand *nand = info->nand_data;
+ 
+-	if (nand->errcode & ERR_SENDCMD)
++	if (nand->errcode & (ERR_BBERR | ERR_SENDCMD))
+ 		return NAND_STATUS_FAIL;
+ 	else
+ 		return 0;
+@@ -1114,7 +1118,7 @@ static int pxa3xx_nand_detect_flash(struct pxa3xx_nand *nand)
+  * the largest size of page of NAND flash
+  * that currently controller support
+  */
+-#define MAX_BUFF_SIZE	(PAGE_CHUNK_SIZE + OOB_CHUNK_SIZE) * 2
++#define MAX_BUFF_SIZE	((PAGE_CHUNK_SIZE + OOB_CHUNK_SIZE) * 2) + sizeof(struct pxa_dma_desc)
+ 
+ static struct pxa3xx_nand *alloc_nand_resource(struct platform_device *pdev,
+ 						int use_dma)
+@@ -1366,34 +1370,31 @@ static int pxa3xx_nand_remove(struct platform_device *pdev)
+ }
+ 
+ #ifdef CONFIG_PM
++static unsigned int ndtr0cs0, ndtr1cs0;
++
+ static int pxa3xx_nand_suspend(struct platform_device *pdev,
+ 		pm_message_t state)
+ {
+-	struct mtd_info *mtd = (struct mtd_info *)platform_get_drvdata(pdev);
+-	struct pxa3xx_nand_info *info = mtd->priv;
+-	struct pxa3xx_nand *nand = info->nand_data;
+-
+-	pxa3xx_nand_stop(nand);
+-	if (nand->state != STATE_READY) {
+-		dev_err(&pdev->dev, "driver busy, state = %d\n",    \
+-				nand->state);
++	struct pxa3xx_nand *nand = platform_get_drvdata(pdev);
+ 
++	if (nand->state) {
++		dev_err(&pdev->dev, "driver busy, state = %d\n", nand->state);
+ 		return -EAGAIN;
+ 	}
+ 
++	ndtr0cs0 = nand_readl(nand, NDTR0CS0);
++	ndtr1cs0 = nand_readl(nand, NDTR1CS0);
++
+ 	return 0;
+ }
+ 
+ static int pxa3xx_nand_resume(struct platform_device *pdev)
+ {
+-	struct mtd_info *mtd = (struct mtd_info *)platform_get_drvdata(pdev);
+-	struct pxa3xx_nand_info *info = mtd->priv;
+-	struct pxa3xx_nand *nand = info->nand_data;
+-
+-	pxa3xx_nand_stop(nand);
+-	pxa3xx_nand_start(info);
++	struct pxa3xx_nand *nand = platform_get_drvdata(pdev);
+ 
+-	return 1;
++	nand_writel(nand, NDTR0CS0, ndtr0cs0);
++	nand_writel(nand, NDTR1CS0, ndtr1cs0);
++	return 0;
+ }
+ #else
+ #define pxa3xx_nand_suspend	NULL
+-- 
+1.6.0.4
+

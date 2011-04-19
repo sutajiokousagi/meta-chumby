@@ -1,0 +1,102 @@
+From df1af8b3cb8ab3a1148131340561d0c0b212ec82 Mon Sep 17 00:00:00 2001
+From: Wen Lei <leiwen@marvell.com>
+Date: Fri, 27 Feb 2009 10:28:26 +0800
+Subject: [PATCH] pxa910: add onenand dump function
+
+---
+ common/cmd_onenand.c                |   10 ++++++
+ drivers/mtd/onenand/onenand_uboot.c |   53 +++++++++++++++++++++++++++++++++++
+ 2 files changed, 63 insertions(+), 0 deletions(-)
+
+diff --git a/common/cmd_onenand.c b/common/cmd_onenand.c
+index 8d87b78..ed02b77 100644
+--- a/common/cmd_onenand.c
++++ b/common/cmd_onenand.c
+@@ -81,6 +81,15 @@ int do_onenand(cmd_tbl_t * cmdtp, int flag, int argc, char *argv[])
+ 			return 0;
+ 		}
+ 
++		if (strncmp(argv[1], "dump", 4) == 0) {
++			ulong ofs = simple_strtoul(argv[2], NULL, 16);
++
++			onenand_dump(&onenand_mtd, ofs);
++			printf("Done\n");
++
++			return 0;
++		}
++
+ 		if (strncmp(argv[1], "read", 4) == 0) {
+ 			ulong addr = simple_strtoul(argv[2], NULL, 16);
+ 			ulong ofs = simple_strtoul(argv[3], NULL, 16);
+@@ -169,6 +178,7 @@ U_BOOT_CMD(
+ 	"onenand - OneNAND sub-system\n",
+ 	"info   - show available OneNAND devices\n"
+ 	"onenand read[.oob] addr ofs len - read data at ofs with len to addr\n"
++	"onenand dump addr - dump the specified page's content\n"
+ 	"onenand write addr ofs len - write data at ofs with len from addr\n"
+ 	"onenand erase saddr eaddr - erase block start addr to end addr\n"
+ 	"onenand block[.oob] addr block [page] [len] - "
+diff --git a/drivers/mtd/onenand/onenand_uboot.c b/drivers/mtd/onenand/onenand_uboot.c
+index 08082f3..48d8843 100644
+--- a/drivers/mtd/onenand/onenand_uboot.c
++++ b/drivers/mtd/onenand/onenand_uboot.c
+@@ -34,3 +34,56 @@ void onenand_init(void)
+ 	puts("OneNAND: ");
+ 	print_size(onenand_mtd.size, "\n");
+ }
++
++int onenand_dump(struct mtd_info *mtd, ulong off)
++{
++	int i;
++	u_char *buf, *p;
++	int writesize = mtd->writesize;
++	int oobsize = mtd->oobsize;
++	struct mtd_oob_ops ops;
++
++	off &= ~(writesize - 1);
++	buf = malloc(writesize + oobsize);
++	if (!buf) {
++		puts("No memory for page buffer\n");
++		return 1;
++	}
++
++	ops.datbuf 	= (uint8_t *)buf;
++	ops.len		= mtd->writesize;
++	ops.mode 	= MTD_OOB_PLACE;
++	ops.oobbuf 	= (uint8_t *)(buf + mtd->writesize);
++	ops.ooblen 	= mtd->oobsize;
++	ops.ooboffs 	= off & (mtd->oobsize - 1);
++
++	i = onenand_read_oob(mtd, off & ~(mtd->oobsize - 1), &ops);
++
++	if (i < 0) {
++		printf("Error (%d) reading page %08lx\n", i, off);
++		free(buf);
++		return 1;
++	}
++	
++	printf("Page %08lx dump: buf: %x, %x\n", off, buf[0], buf[1]);
++	i = mtd->writesize >> 4; p = buf;
++	
++	while (i--) {
++		printf( "\t%02x %02x %02x %02x %02x %02x %02x %02x"
++				"  %02x %02x %02x %02x %02x %02x %02x %02x\n",
++				p[0], p[1], p[2], p[3], p[4], p[5], p[6], p[7],
++				p[8], p[9], p[10], p[11], p[12], p[13], p[14], p[15]);
++		p += 16;
++	}
++
++	puts("OOB:\n");
++	i = mtd->oobsize >> 3;
++	
++	while (i--) {
++		printf( "\t%02x %02x %02x %02x %02x %02x %02x %02x\n",
++				p[0], p[1], p[2], p[3], p[4], p[5], p[6], p[7]);
++		p += 8;
++	}
++
++	free(buf);
++}
+-- 
+1.6.0.4
+

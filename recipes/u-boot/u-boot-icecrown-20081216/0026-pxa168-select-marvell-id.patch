@@ -1,0 +1,111 @@
+From 1710579f98a99a594c7268beb1b5444b2f13660f Mon Sep 17 00:00:00 2001
+From: Jing Xiang <jxiang@marvell.com>
+Date: Thu, 5 Mar 2009 16:11:37 +0800
+Subject: [PATCH] pxa168: select marvell id
+
+Signed-off-by: Jing Xiang <jxiang@marvell.com>
+---
+ board/pxa/common/Makefile  |    1 +
+ board/pxa/common/cpuid.c   |   61 ++++++++++++++++++++++++++++++++++++++++++++
+ include/configs/aspenite.h |    5 +++
+ 3 files changed, 67 insertions(+), 0 deletions(-)
+ create mode 100644 board/pxa/common/cpuid.c
+
+diff --git a/board/pxa/common/Makefile b/board/pxa/common/Makefile
+index a5a910a..ffb170f 100644
+--- a/board/pxa/common/Makefile
++++ b/board/pxa/common/Makefile
+@@ -30,6 +30,7 @@ endif
+ LIB	= $(obj)lib$(VENDOR).a
+ 
+ COBJS-y				+= boot.o
++COBJS-${CONFIG_CMD_CPUID}	+= cpuid.o
+ COBJS-${CONFIG_CMD_NAND}	+= nand.o
+ COBJS-${CONFIG_CMD_NET}		+= tftp.o
+ COBJS-${CONFIG_USB_ETH}		+= usbeth/ether-mvu2o.o
+diff --git a/board/pxa/common/cpuid.c b/board/pxa/common/cpuid.c
+new file mode 100644
+index 0000000..2f637d7
+--- /dev/null
++++ b/board/pxa/common/cpuid.c
+@@ -0,0 +1,61 @@
++/*
++ * cpuid check
++ */
++#include <common.h>
++#include <command.h>
++#include <malloc.h>
++#include <environment.h>
++#include <linux/ctype.h>
++
++#define __stringify_1(x)	#x
++#define __stringify(x)		__stringify_1(x)
++
++#define read_cpuid(reg)						\
++	({							\
++	 unsigned int __val;					\
++	 asm("mrc	p15, 0, %0, c0, c0, " __stringify(reg)	\
++		 : "=r" (__val)					\
++		 :						\
++		 : "cc");					\
++	 __val;							\
++	 })
++
++int do_cpuid(cmd_tbl_t * cmdtp, int flag, int argc, char *argv[])
++{
++	printf("cpu id:		%x\n", read_cpuid(0));
++	printf("cache type:	%x\n", read_cpuid(1));
++	printf("chip id:	%x\n", *(volatile unsigned int *)0xd4282c00);
++	return 0;
++}
++
++U_BOOT_CMD(
++		cpuid,	6,	1,	do_cpuid,
++		"cpuid	- read cpu id\n",
++		" - read cpu id\n"
++	  );
++
++int do_setid(cmd_tbl_t * cmdtp, int flag, int argc, char *argv[])
++{
++	*(volatile unsigned int *)0xD4282c08 = *(volatile unsigned int *)0xD4282c08 | 0x100;
++	return 0;
++}
++
++U_BOOT_CMD(
++		setid,	6,	1,	do_setid,
++		"setid	- set SEL_MRVL_ID bit in MOHAWK_CPU_CONF register\n",
++		" - set SEL_MRVL_ID bit in MOHAWK_CPU_CONF register\n"
++	  );
++
++int do_unsetid(cmd_tbl_t * cmdtp, int flag, int argc, char *argv[])
++{
++	*(volatile unsigned int *)0xD4282c08 = *(volatile unsigned int *)0xD4282c08 & ~0x100;
++	return 0;
++}
++
++U_BOOT_CMD(
++		unsetid,	6,	1,	do_unsetid,
++		"unsetid - unset SEL_MRVL_ID bit in MOHAWK_CPU_CONF register\n",
++		" - unset SEL_MRVL_ID bit in MOHAWK_CPU_CONF register\n"
++	  );
++
++
+diff --git a/include/configs/aspenite.h b/include/configs/aspenite.h
+index aa2fbf1..e20e1ab 100644
+--- a/include/configs/aspenite.h
++++ b/include/configs/aspenite.h
+@@ -169,6 +169,11 @@
+ #define CONFIG_BBM			1
+ 
+ /*-----------------------------------------------------------------------
++ * cpuid configuration
++ */
++#define CONFIG_CMD_CPUID 		1
++
++/*-----------------------------------------------------------------------
+  * NAND and DFC configuration
+  */
+ #define CONFIG_CMD_NAND 		1
+-- 
+1.6.0.4
+

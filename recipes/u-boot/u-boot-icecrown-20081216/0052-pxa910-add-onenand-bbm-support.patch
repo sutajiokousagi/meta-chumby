@@ -1,0 +1,368 @@
+From 65e785bea40c83199248aa25aadbd885dd138f79 Mon Sep 17 00:00:00 2001
+From: Lei Wen <leiwen@marvell.com>
+Date: Wed, 6 May 2009 17:06:49 +0800
+Subject: [PATCH] pxa910: add onenand bbm support
+
+---
+ board/pxa/common/bbt.c                   |    4 +-
+ drivers/mtd/nand/pxa3xx_nand.c           |   36 ++++++++++++++++++-
+ drivers/mtd/onenand/onenand_base.c       |   57 ++++++++++++++++++++++++++---
+ drivers/mtd/onenand/onenand_uboot.c      |   19 +++++++++-
+ drivers/mtd/pxa3xx_bbm.c                 |   51 ++++----------------------
+ include/asm-arm/arch-pxa168/pxa3xx_bbm.h |    1 -
+ 6 files changed, 114 insertions(+), 54 deletions(-)
+
+diff --git a/board/pxa/common/bbt.c b/board/pxa/common/bbt.c
+index 3b231d9..af97bcf 100644
+--- a/board/pxa/common/bbt.c
++++ b/board/pxa/common/bbt.c
+@@ -5,7 +5,7 @@
+ #include <malloc.h>
+ 
+ extern int nand_curr_device;
+-extern struct mtd_info *nand_info;
++extern struct mtd_info nand_info[];
+ extern struct mtd_info onenand_mtd;
+ 
+ int do_bbt (cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
+@@ -96,7 +96,7 @@ int do_bbt (cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
+ 			bbm->table_init	  = 0;
+ 			
+ 			for (ofs = 0; ofs < maxsize; ofs += mtd->erasesize)
+-				if (bbm->isbad_bbt(mtd, ofs, 0))
++				if (mtd->block_isbad(mtd, ofs))
+ 					update_reloc_tb(mtd, ofs >> bbm->erase_shift);
+ 
+ 			bbm->table_init	  = 1;
+diff --git a/drivers/mtd/nand/pxa3xx_nand.c b/drivers/mtd/nand/pxa3xx_nand.c
+index 399e062..3a504d2 100644
+--- a/drivers/mtd/nand/pxa3xx_nand.c
++++ b/drivers/mtd/nand/pxa3xx_nand.c
+@@ -849,6 +849,40 @@ static int pxa3xx_scan_bbt(struct mtd_info *mtd, loff_t ofs, int getchip)
+ 	return 0;
+ }
+ 
++static int pxa3xx_block_bad(struct mtd_info *mtd, loff_t ofs, int allowbbt)
++{
++	struct pxa3xx_bbm *bbm;
++	struct reloc_table *table;
++	struct mtd_oob_ops ops;
++	uint32_t bad_mark;
++	loff_t _ofs;
++
++	bbm	= mtd->bbm;
++	table	= bbm->table;
++
++	if (bbm->current_slot <= PXA_BEGIN_SLOT
++			|| table->total >= bbm->max_reloc_entry
++			|| !bbm->table_init) {
++
++		_ofs = bbm->search(mtd, ofs);
++		if (_ofs != ofs)
++			return 0;
++
++		ops.ooboffs	= 0;
++		ops.ooblen	= 2;
++		ops.len		= 2;
++		ops.datbuf	= NULL;
++		ops.oobbuf	= &bad_mark;
++		ops.mode	= MTD_OOB_PLACE;
++
++		mtd->read_oob(mtd, ofs, &ops);
++		if ((bad_mark & 0xFF) != 0xFF)
++			return 1;
++	}
++
++	return 0;
++}
++
+ static void pxa3xx_nand_init_mtd(struct mtd_info *mtd)
+ {
+ 	struct pxa3xx_nand_info *info = mtd->priv;
+@@ -917,7 +951,7 @@ static void pxa3xx_nand_init_mtd(struct mtd_info *mtd)
+ 	this->chip_delay = 25;
+ 
+ 	this->scan_bbt		= pxa3xx_scan_bbt;
+-	this->block_bad		= bbm->isbad_bbt;
++	this->block_bad		= pxa3xx_block_bad;
+ 	this->block_markbad	= bbm->markbad;
+ }
+ 
+diff --git a/drivers/mtd/onenand/onenand_base.c b/drivers/mtd/onenand/onenand_base.c
+index ebdcaa2..c0353ff 100644
+--- a/drivers/mtd/onenand/onenand_base.c
++++ b/drivers/mtd/onenand/onenand_base.c
+@@ -25,18 +25,21 @@
+ #include <linux/mtd/mtd.h>
+ #include <linux/mtd/onenand.h>
+ #include <linux/mtd/partitions.h>
++#include <asm/arch-pxa168/pxa3xx_bbm.h>
+ 
+ #include <asm/io.h>
+ 
+ void * memcpy_32_aligned(void * dest,const void *src,size_t count)
+ {
+-	uint32_t *tmp = (uint32_t  *) dest, *s = (uint32_t *) src;
++	uint32_t *tmp = dest, *s = src;
+ 	int size = count / 4;
+ 
+-	while (size--)
++	while (size > 0) {
+ 		*tmp++ = *s++;
++		size --;
++	}
+ 
+-	if(4 * size != count)
++	if((4 * size) != count)
+ 		*tmp = *s;
+ 
+ 	return dest;
+@@ -211,8 +214,18 @@ static inline int onenand_get_density(int dev_id)
+ static int onenand_command(struct mtd_info *mtd, int cmd, loff_t addr, size_t len)
+ {
+ 	struct onenand_chip *this = mtd->priv;
++	struct pxa3xx_bbm *bbm = mtd->bbm;
+ 	int value, block, page;
+ 
++	if (cmd != ONENAND_CMD_UNLOCK
++			&& cmd != ONENAND_CMD_LOCK
++			&& cmd != ONENAND_CMD_LOCK_TIGHT
++			&& cmd != ONENAND_CMD_UNLOCK_ALL)
++
++		if (bbm->table_init)
++			addr = bbm->search(mtd, addr);
++
++
+ 	/* Address translation */
+ 	switch (cmd) {
+ 	case ONENAND_CMD_UNLOCK:
+@@ -1767,10 +1780,40 @@ int onenand_write_oob(struct mtd_info *mtd, loff_t to,
+ static int onenand_block_isbad_nolock(struct mtd_info *mtd, loff_t ofs, int allowbbt)
+ {
+ 	struct onenand_chip *this = mtd->priv;
+-	struct bbm_info *bbm = this->bbm;
++	struct reloc_table *table;
++	struct pxa3xx_bbm *bbm;
++	struct mtd_oob_ops ops;
++	loff_t _ofs;
++	int ret, bad_mark;
++
++	bbm	= mtd->bbm;
++	table	= bbm->table;
+ 
+-	/* Return info from the table */
+-	return bbm->isbad_bbt(mtd, ofs, allowbbt);
++	if (bbm->current_slot <= PXA_BEGIN_SLOT
++			|| table->total >= bbm->max_reloc_entry
++			|| !bbm->table_init) {
++
++		_ofs = bbm->search(mtd, ofs);
++		if (_ofs != ofs)
++			return 0;
++
++		ops.ooboffs	= 0;
++		ops.ooblen	= 2;
++		ops.len		= 2;
++		ops.datbuf	= NULL;
++		ops.oobbuf	= &bad_mark;
++		ops.mode	= MTD_OOB_PLACE;
++
++		ret = onenand_read_oob_nolock(mtd, ofs, &ops);
++		if (ret)
++			return ret;
++		else {
++			if ((bad_mark & 0xFF) != 0xFF)
++				return 1;
++		}
++	}
++
++	return 0;
+ }
+ 
+ /**
+@@ -2840,7 +2883,9 @@ int onenand_scan(struct mtd_info *mtd, int maxchips)
+ void onenand_release(struct mtd_info *mtd)
+ {
+ 	struct onenand_chip *this = mtd->priv;
++	struct pxa3xx_bbm *bbm = mtd->bbm;
+ 
++	bbm->uninit(mtd);
+ #ifdef CONFIG_MTD_PARTITIONS
+ 	/* Deregister partitions */
+ 	del_mtd_partitions (mtd);
+diff --git a/drivers/mtd/onenand/onenand_uboot.c b/drivers/mtd/onenand/onenand_uboot.c
+index 48d8843..5767090 100644
+--- a/drivers/mtd/onenand/onenand_uboot.c
++++ b/drivers/mtd/onenand/onenand_uboot.c
+@@ -17,22 +17,39 @@
+ #include <linux/mtd/compat.h>
+ #include <linux/mtd/mtd.h>
+ #include <linux/mtd/onenand.h>
++#include <asm/arch-pxa168/pxa3xx_bbm.h>
+ 
+ struct mtd_info onenand_mtd;
+ struct onenand_chip onenand_chip;
+ 
++int onenand_no_bbt(struct mtd_info *mtd)
++{
++	return 0;
++}
++
+ void onenand_init(void)
+ {
++	struct pxa3xx_bbm *bbm;
++
+ 	memset(&onenand_mtd, 0, sizeof(struct mtd_info));
+ 	memset(&onenand_chip, 0, sizeof(struct onenand_chip));
+ 
++	bbm = alloc_pxa3xx_bbm();
++	onenand_mtd.bbm = bbm;
++
+ 	onenand_chip.base = (void *) CONFIG_SYS_ONENAND_BASE;
++	onenand_chip.scan_bbt = onenand_no_bbt;
++	onenand_chip.block_markbad = bbm->markbad;
+ 	onenand_mtd.priv = &onenand_chip;
+ 
+ 	onenand_scan(&onenand_mtd, 1);
+ 
+ 	puts("OneNAND: ");
+ 	print_size(onenand_mtd.size, "\n");
++	if (onenand_mtd.size > 0) {
++		printf("reloc table on ONENAND:\n");
++		bbm->show(&onenand_mtd);
++	}
+ }
+ 
+ int onenand_dump(struct mtd_info *mtd, ulong off)
+@@ -65,7 +82,7 @@ int onenand_dump(struct mtd_info *mtd, ulong off)
+ 		return 1;
+ 	}
+ 	
+-	printf("Page %08lx dump: buf: %x, %x\n", off, buf[0], buf[1]);
++	printf("Page %08lx dump:\n", off);
+ 	i = mtd->writesize >> 4; p = buf;
+ 	
+ 	while (i--) {
+diff --git a/drivers/mtd/pxa3xx_bbm.c b/drivers/mtd/pxa3xx_bbm.c
+index 558cd10..415179f 100644
+--- a/drivers/mtd/pxa3xx_bbm.c
++++ b/drivers/mtd/pxa3xx_bbm.c
+@@ -20,10 +20,10 @@ void dump_reloc_table(struct pxa3xx_bbm *bbm)
+ 	int i;
+ 
+ 	if (bbm->table->total == 0)
+-		printk("The relocation is empty now\n");
++		printk(KERN_INFO "The reloc table is empty now\n");
+ 	else
+ 		for (i = 0; i < bbm->table->total; i++) {
+-			printk("block: %8d is relocated to block: %d\n",
++			printk(KERN_INFO "block: %8d is relocated to block: %d\n",
+ 					bbm->reloc[i].from, bbm->reloc[i].to);
+ 		}
+ }
+@@ -89,8 +89,8 @@ int update_reloc_tb(struct mtd_info *mtd, int block)
+ 	int i;
+ 
+ 	if (table->total > bbm->max_reloc_entry) {
+-		printk("Relocation table exceed max num,");
+-		printk("cannot relocate block 0x%x\n", block);
++		printk(KERN_WARNING "Relocation table exceed max num,");
++		printk(KERN_WARNING "cannot relocate block 0x%x\n", block);
+ 		return -ENOSPC;
+ 	}
+ 
+@@ -231,7 +231,7 @@ static int pxa3xx_scan_reloc_tb(struct mtd_info *mtd)
+ 	}
+ 
+ 	if (valid) {
+-		printk("relocation table at page:%d\n", bbm->current_slot);
++		printk(KERN_INFO "relocation table at page:%d\n", bbm->current_slot);
+ 		bbm->table_init = 1;
+ 	} else {
+ 		/* There should be a valid relocation table slot at least. */
+@@ -298,18 +298,18 @@ static int pxa3xx_mark_reloc_tb(struct mtd_info *mtd, loff_t ofs)
+ {
+ 	struct pxa3xx_bbm *bbm = mtd->bbm;
+ 	struct mtd_oob_ops ops;
+-	uint8_t buf[2] = {0, 0};
++	uint32_t bad_mark = 0xFFFFFF00;
+ 	int ret = 0, block, _ofs;
+ 
+ 	_ofs = bbm->search(mtd, ofs);
+ 	if (_ofs < 0 || _ofs > mtd->size)
+ 		return 0;
+ 
+-	ops.mode	= MTD_OOB_RAW;
++	ops.mode	= MTD_OOB_PLACE;
+ 	ops.len		= mtd->oobsize;
+ 	ops.ooblen	= 2;
+ 	ops.ooboffs	= 0;
+-	ops.oobbuf	= buf;
++	ops.oobbuf	= &bad_mark;
+ 	ops.datbuf	= NULL;
+ 
+ 	mtd->write_oob(mtd, ofs, &ops);
+@@ -326,40 +326,6 @@ static int pxa3xx_mark_reloc_tb(struct mtd_info *mtd, loff_t ofs)
+ 	return 0;
+ }
+ 
+-static int pxa3xx_block_bad(struct mtd_info *mtd, loff_t ofs, int allowbbt)
+-{
+-	struct pxa3xx_bbm *bbm;
+-	struct reloc_table *table;
+-	struct mtd_oob_ops ops;
+-	uint8_t bad_mark[2];
+-	loff_t _ofs;
+-
+-	bbm	= mtd->bbm;
+-	table	= bbm->table;
+-
+-	if (bbm->current_slot <= PXA_BEGIN_SLOT
+-			|| table->total >= bbm->max_reloc_entry
+-			|| !bbm->table_init) {
+-
+-		_ofs = pxa3xx_search_reloc_tb(mtd, ofs);
+-		if (_ofs != ofs)
+-			return 0;
+-
+-		ops.ooboffs	= 0;
+-		ops.ooblen	= 2;
+-		ops.len		= 2;
+-		ops.datbuf	= NULL;
+-		ops.oobbuf	= bad_mark;
+-		ops.mode	= MTD_OOB_RAW;
+-
+-		mtd->read_oob(mtd, ofs, &ops);
+-		if (bad_mark[0] != 0xFF || bad_mark[1] != 0xFF)
+-			return 1;
+-	}
+-
+-	return 0;
+-}
+-
+ struct pxa3xx_bbm* alloc_pxa3xx_bbm(void)
+ {
+ 	/* FIXME: We don't want to add module_init entry
+@@ -373,7 +339,6 @@ struct pxa3xx_bbm* alloc_pxa3xx_bbm(void)
+ 
+ 	bbm->uninit	= pxa3xx_uninit_reloc_tb;
+ 	bbm->search	= pxa3xx_search_reloc_tb;
+-	bbm->isbad_bbt	= pxa3xx_block_bad;
+ 	bbm->markbad	= pxa3xx_mark_reloc_tb;
+ 	bbm->scan_bbt	= pxa3xx_scan_reloc_tb;
+ 	bbm->show	= show_bbm;
+diff --git a/include/asm-arm/arch-pxa168/pxa3xx_bbm.h b/include/asm-arm/arch-pxa168/pxa3xx_bbm.h
+index 223a7a6..b90f14b 100644
+--- a/include/asm-arm/arch-pxa168/pxa3xx_bbm.h
++++ b/include/asm-arm/arch-pxa168/pxa3xx_bbm.h
+@@ -38,7 +38,6 @@ struct pxa3xx_bbm {
+ 
+ 	void	(*uninit)(struct mtd_info *mtd);
+ 	loff_t	(*search)(struct mtd_info *mtd,	loff_t ofs);
+-	int	(*isbad_bbt)(struct mtd_info *mtd, loff_t ofs, int allowbbt);
+ 	int	(*markbad)(struct mtd_info *mtd, loff_t ofs);
+ 	int	(*scan_bbt)(struct mtd_info *mtd);
+ 	void	(*show)(struct mtd_info *mtd);
+-- 
+1.6.0.4
+

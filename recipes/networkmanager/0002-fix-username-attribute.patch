@@ -1,0 +1,16 @@
+Binary files t-stock/system-settings/plugins/chumby/.plugin.c.swp and t/system-settings/plugins/chumby/.plugin.c.swp differ
+diff -ur t-stock/system-settings/plugins/chumby/plugin.c t/system-settings/plugins/chumby/plugin.c
+--- t-stock/system-settings/plugins/chumby/plugin.c	2011-04-09 20:03:04.472196740 +0800
++++ t/system-settings/plugins/chumby/plugin.c	2011-04-09 20:03:07.488195503 +0800
+@@ -293,9 +293,10 @@
+ 			strtoip(value, &conn->nameserver1);
+ 		else if (!strcmp(name, "nameserver2"))
+ 			strtoip(value, &conn->nameserver2);
++		else if (!strcmp(name, "username"))
++			;
+ 		else {
+ 			PLUGIN_PRINT("chumby", "Unrecognized field: %s\n", name);
+-			return;
+ 		}
+ 	}
+ }

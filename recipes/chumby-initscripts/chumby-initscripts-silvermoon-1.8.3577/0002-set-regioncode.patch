@@ -1,0 +1,12 @@
+diff -ur etc-stock/init.d/rcS.background etc/init.d/rcS.background
+--- etc-stock/init.d/rcS.background	2010-10-23 05:15:13.938286379 +0000
++++ etc/init.d/rcS.background	2010-10-23 05:15:55.188299998 +0000
+@@ -415,6 +415,8 @@
+ 
+ 
+ # Bring up whatever interface(s) the user has connected.
++# First set region to USA.
++iwpriv wlan0 setregioncode 0x10
+ message_start "Starting network"
+ if /usr/chumby/scripts/start_network
+ then

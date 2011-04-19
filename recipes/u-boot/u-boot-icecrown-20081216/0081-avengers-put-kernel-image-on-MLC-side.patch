@@ -1,0 +1,26 @@
+From 8cba6cbd1ef5f2adf6c83539e9862bda0be8eb80 Mon Sep 17 00:00:00 2001
+From: Lei Wen <leiwen@marvell.com>
+Date: Mon, 8 Jun 2009 11:22:37 +0800
+Subject: [PATCH] avengers: put kernel image on MLC side
+
+Signed-off-by: Lei Wen <leiwen@marvell.com>
+---
+ include/configs/avengers.h |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/include/configs/avengers.h b/include/configs/avengers.h
+index c7b24db..38eb19d 100644
+--- a/include/configs/avengers.h
++++ b/include/configs/avengers.h
+@@ -114,7 +114,7 @@
+ 
+ /* boot arguments" */
+ #define CONFIG_ONENANDBOOT	     	"onenand read 0x500000 0x920000 0x300000"
+-#define CONFIG_NANDBOOT 	     	"nand read 0x500000 0x100000 0x300000"
++#define CONFIG_NANDBOOT 	     	"nand device 1; nand read 0x500000 0x80000 0x280000"
+ #define CONFIG_BOOTCOMMAND      	"setenv autoboot boot; bootz 0x500000; setenv autoboot none"
+ #define CONFIG_ROOTPATH   		/tftpboot/rootfs_arm
+ 
+-- 
+1.6.0.4
+

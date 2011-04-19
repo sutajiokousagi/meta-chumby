@@ -1,0 +1,644 @@
+From 61044f90a24b5c2d8fa7d605eea03127ee5e71bb Mon Sep 17 00:00:00 2001
+From: Lei Wen <leiwen@marvell.com>
+Date: Tue, 15 Sep 2009 10:11:46 +0800
+Subject: [PATCH] eliminate compile warnings
+
+Signed-off-by: Lei Wen <leiwen@marvell.com>
+---
+ board/pxa/aspenite/aspenite_pxa168.c |   15 ++++----
+ board/pxa/common/bbt.c               |    5 ++-
+ board/pxa/common/boot.c              |    8 +---
+ board/pxa/common/common.c            |   61 ----------------------------------
+ board/pxa/common/tftp.c              |    1 -
+ common/cmd_nand.c                    |   12 +++---
+ common/main.c                        |    6 ++-
+ cpu/88SV331xV5/pxa168/mfp.c          |   52 ++---------------------------
+ drivers/mtd/nand/nand_util.c         |    6 ++--
+ drivers/mtd/pxa3xx_bbm.c             |    5 +--
+ drivers/spi/pxa3xx_spi.c             |    9 +----
+ include/asm-arm/arch-pxa168/common.h |    1 -
+ include/configs/aspenite.h           |    1 -
+ include/configs/avengers.h           |    1 -
+ include/configs/zylonite2.h          |    1 -
+ lib_arm/board.c                      |    1 +
+ net/eth.c                            |    3 +-
+ 17 files changed, 34 insertions(+), 154 deletions(-)
+
+diff --git a/board/pxa/aspenite/aspenite_pxa168.c b/board/pxa/aspenite/aspenite_pxa168.c
+index 97ecec3..884eec0 100644
+--- a/board/pxa/aspenite/aspenite_pxa168.c
++++ b/board/pxa/aspenite/aspenite_pxa168.c
+@@ -23,7 +23,7 @@
+ #include <asm/arch/mfp.h>
+ #include <asm/arch/mfp-pxa168.h>
+ 
+-extern void aspen_init();
++extern void aspen_init(void);
+ static mfp_cfg_t zyloniteii_mfp_cfg[] __initdata = {
+ #ifdef CONFIG_PXA3XX_SPI
+ 	/* SSP1 */
+@@ -101,7 +101,6 @@ unsigned long initdram (int board_type)
+ int board_init (void)
+ {
+     DECLARE_GLOBAL_DATA_PTR;
+-    volatile unsigned int reg;
+ 
+     aspen_init();
+ 
+@@ -232,11 +231,6 @@ void reset_cpu(ulong addr)
+    *(volatile unsigned int*)(CPU_SYS_SOFT_RST_REG) = 0x0;
+ }
+ 
+-int checkboard (void)
+-{
+-	return display_marvell_banner();
+-}
+-
+ int display_marvell_banner (void)
+ {
+    printf("\n");
+@@ -257,7 +251,12 @@ int display_marvell_banner (void)
+    return 0;
+ }
+ 
+-void lowlevel_init()
++int checkboard (void)
++{
++	return display_marvell_banner();
++}
++
++void lowlevel_init(void)
+ {
+ 	return;
+ }
+diff --git a/board/pxa/common/bbt.c b/board/pxa/common/bbt.c
+index af97bcf..be0ce81 100644
+--- a/board/pxa/common/bbt.c
++++ b/board/pxa/common/bbt.c
+@@ -1,12 +1,13 @@
+ #include <command.h>
++#include <malloc.h>
+ #include <asm/arch-pxa168/common.h>
+-#include <asm/arch-pxa168/pxa3xx_bbm.h>
+ #include <linux/mtd/mtd.h>
+-#include <malloc.h>
++#include <asm/arch-pxa168/pxa3xx_bbm.h>
+ 
+ extern int nand_curr_device;
+ extern struct mtd_info nand_info[];
+ extern struct mtd_info onenand_mtd;
++extern int update_reloc_tb(struct mtd_info *mtd, int block);
+ 
+ int do_bbt (cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
+ {
+diff --git a/board/pxa/common/boot.c b/board/pxa/common/boot.c
+index 53be505..8631c0f 100644
+--- a/board/pxa/common/boot.c
++++ b/board/pxa/common/boot.c
+@@ -11,6 +11,7 @@
+ #include <nand.h>
+ #include <onenand_uboot.h>
+ 
++extern int do_reset (cmd_tbl_t *cmdtp, int flag, int argc, char *argv[]);
+ DECLARE_GLOBAL_DATA_PTR;
+ ulong load_addr = CONFIG_SYS_LOAD_ADDR;	/* Default Load Address */
+ static bootm_headers_t images;		/* pointers to os/initrd/fdt images */
+@@ -52,12 +53,8 @@ static int relocated = 0;
+ 
+ int do_bootz (cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
+ {
+-	ulong		iflag;
+-	ulong		load_end = 0;
+-	int		ret;
+ 	boot_os_fn	*boot_fn;
+ 	int		is_zImage, is_autoboot;
+-	char		cmd_buf[CONFIG_SYS_CBSIZE];
+ 
+ 	if(argc < 2)
+ 		images.ep = CONFIG_SYS_LOAD_ADDR;
+@@ -74,7 +71,6 @@ int do_bootz (cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
+ 
+ 	/* Autoboot sequence is NAND, OneNAND .. */
+ 	if (is_autoboot) {
+-		int n, col;
+ 		if (nand_curr_device >= 0) {
+ 			/* NAND Device Exist, try to boot from NAND */
+ 			printf("read zImage from NAND\n");
+@@ -106,7 +102,7 @@ int do_bootz (cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
+ 		relocated = 1;
+ 	}
+ 
+-	printf("Ready to boot %s from %x\n\n", is_zImage ? "zImage" : "Image", images.ep);
++	printf("Ready to boot %s from %lx\n\n", is_zImage ? "zImage" : "Image", images.ep);
+ 	boot_fn = boot_os[images.os.os];
+ 	boot_fn(0, argc, argv, &images);
+ 
+diff --git a/board/pxa/common/common.c b/board/pxa/common/common.c
+index 5af9e84..2cc972d 100644
+--- a/board/pxa/common/common.c
++++ b/board/pxa/common/common.c
+@@ -1,67 +1,6 @@
+ #include <asm/arch/common.h>
+ 
+-void complete(struct completion *completion)
+-{
+-	completion->done = 1;
+-}
+-
+ inline unsigned long msecs_to_jiffies(int time)
+ {
+ 	return time * HZ / USEC_PER_SEC;
+ }
+-
+-
+-int platform_driver_register(struct platform_device *pdev)
+-{
+-	return 1;
+-}
+-
+-/*
+- * platform_get_resource - get a resource for a device
+- * @dev: platform device
+- * @type: resource type
+- * @num: resource index
+- */
+-struct resource *platform_get_resource(struct platform_device *dev,
+-		unsigned int type, unsigned int num)
+-{
+-	int i;
+-
+-	for (i = 0; i < dev->num_resources; i++) {
+-		struct resource *r = &dev->resource[i];
+-
+-		if ((r->flags & (IORESOURCE_IO|IORESOURCE_MEM|
+-						IORESOURCE_IRQ|IORESOURCE_DMA)) == type)
+-			if (num-- == 0)
+-				return r;
+-	}
+-	return NULL;
+-}
+-
+-void dev_err(struct device * dev, char *msg)
+-{
+-	printf("%s: %s\n", (struct platform_device *)(container_of(dev, struct platform_device, dev))->name, msg);
+-}
+-
+-int request_irq(unsigned int irq,
+-		irq_handler_t handler,
+-		unsigned long flags, const char *devname, void *dev_id)
+-{
+-	return 1;
+-}
+-
+-void inline getnstimeofday(struct timespec *tv)
+-{
+-	long ticks = get_ticks();
+-	tv->tv_nsec = ticks / (CONFIG_SYS_HZ / 5000); // KV
+-	tv->tv_sec = 0;
+-}
+-
+-struct clk *clk_get(struct device *dev, const char *id) {return NULL;}
+-void clk_put(struct clk *clk) {return NULL;}
+-
+-unsigned long  clk_get_rate(struct clk * clk) 
+-{
+-	return 208 * 1000000;
+-}
+-
+diff --git a/board/pxa/common/tftp.c b/board/pxa/common/tftp.c
+index 668ad27..38d41ee 100644
+--- a/board/pxa/common/tftp.c
++++ b/board/pxa/common/tftp.c
+@@ -7,7 +7,6 @@ int do_switch (cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
+ 	char *s;
+ 	char *net[2];
+ 	int now, i, original;
+-	char *hostIP, *clientIP;
+ 
+ #ifdef CONFIG_DRIVER_SMC91111
+ 	net[0] = "smc91111";
+diff --git a/common/cmd_nand.c b/common/cmd_nand.c
+index ba509e2..f18b5d0 100644
+--- a/common/cmd_nand.c
++++ b/common/cmd_nand.c
+@@ -47,7 +47,7 @@ static struct yaffs_oob_desc yaffs_oob = {2, 38};
+ 
+ static int nand_dump(nand_info_t *nand, ulong off, int only_oob)
+ {
+-	int i;
++	size_t i;
+ 	u_char *datbuf, *oobbuf, *p;
+ 	struct nand_chip *chip = nand->priv;
+ 
+@@ -140,10 +140,10 @@ static int nand_dump(nand_info_t *nand, ulong off, int only_oob)
+ 
+ static int nand_biterr(nand_info_t *nand, loff_t off)
+ {
+-	int _off, ret, i;
++	int _off, ret;
+ 	loff_t buf_off;
+ 	u_char *datbuf;
+-	size_t size;
++	size_t size, i;
+ 	struct nand_chip * n_chip = (struct nand_chip *)(nand->priv);
+ 	int original_mode;
+ 
+@@ -166,7 +166,7 @@ static int nand_biterr(nand_info_t *nand, loff_t off)
+ 	n_chip->ecc.mode = NAND_ECC_HW;
+ 
+ 	if (i < 0) {
+-		printf("Error (%d) reading page %08lx\n", i, off);
++		printf("Error (%d) reading page %016qx\n", i, off);
+ 		free(datbuf);
+ 		return 1;
+ 	}
+@@ -509,11 +509,11 @@ int do_nand(cmd_tbl_t * cmdtp, int flag, int argc, char *argv[])
+ 
+ 		int ret = nand_biterr(nand, addr);
+ 		if(ret == 0) {
+-			printf("\noffset 0x%x has been injected error successfully!\n", addr);
++			printf("\noffset 0x%lx has been injected error successfully!\n", addr);
+ 			return 0;
+ 		}
+ 		else {
+-			printf("Inject error to offset 0x%x failed!!\n", addr);
++			printf("Inject error to offset 0x%lx failed!!\n", addr);
+ 		}
+ 
+ 		return 1;
+diff --git a/common/main.c b/common/main.c
+index abbdc56..fcd53b6 100644
+--- a/common/main.c
++++ b/common/main.c
+@@ -237,8 +237,10 @@ static __inline__ int abortboot(int bootdelay)
+ #endif
+ 
+ 	while ((bootdelay > 0) && (!abort)) {
+-		int i;
+-		unsigned long long start, end, usleft;
++		int __attribute__((unused)) i;
++		unsigned long long __attribute__((unused)) start;
++		unsigned long long __attribute__((unused)) end;
++	        unsigned long long __attribute__((unused)) usleft;
+ 
+ 		--bootdelay;
+ 		/* delay 100 * 10ms */
+diff --git a/cpu/88SV331xV5/pxa168/mfp.c b/cpu/88SV331xV5/pxa168/mfp.c
+index e46eac1..34abb8d 100644
+--- a/cpu/88SV331xV5/pxa168/mfp.c
++++ b/cpu/88SV331xV5/pxa168/mfp.c
+@@ -23,12 +23,6 @@
+ #include <asm/arch/common.h>
+ #include <asm/arch/mfp.h>
+ 
+-/* mfp_spin_lock is used to ensure that MFP register configuration
+- * (most likely a read-modify-write operation) is atomic, and that
+- * mfp_table[] is consistent
+- */
+-static DEFINE_SPINLOCK(mfp_spin_lock);
+-
+ static void __iomem *mfpr_mmio_base;
+ static struct pxa3xx_mfp_pin mfp_table[MFP_PIN_MAX];
+ 
+@@ -55,11 +49,9 @@ static inline void __mfp_config(int pin, unsigned long val)
+ void pxa3xx_mfp_config(mfp_cfg_t *mfp_cfgs, int num)
+ {
+ 	int i, pin;
+-	unsigned long val, flags;
++	unsigned long val;
+ 	mfp_cfg_t *mfp_cfg = mfp_cfgs;
+ 
+-	spin_lock_irqsave(&mfp_spin_lock, flags);
+-
+ 	for (i = 0; i < num; i++, mfp_cfg++) {
+ 		pin = MFP_CFG_PIN(*mfp_cfg);
+ 		val = MFP_CFG_VAL(*mfp_cfg);
+@@ -79,42 +71,30 @@ void pxa3xx_mfp_config(mfp_cfg_t *mfp_cfgs, int num)
+ 	}
+ 
+ 	mfpr_sync();
+-	spin_unlock_irqrestore(&mfp_spin_lock, flags);
+ }
+ 
+ unsigned long pxa3xx_mfp_read(int mfp)
+ {
+-	unsigned long val, flags;
++	unsigned long val;
+ 
+ 	BUG_ON(mfp >= MFP_PIN_MAX);
+-
+-	spin_lock_irqsave(&mfp_spin_lock, flags);
+ 	val = mfpr_readl(mfp_table[mfp].mfpr_off);
+-	spin_unlock_irqrestore(&mfp_spin_lock, flags);
+-
+ 	return val;
+ }
+ 
+ void pxa3xx_mfp_write(int mfp, unsigned long val)
+ {
+-	unsigned long flags;
+ 
+ 	BUG_ON(mfp >= MFP_PIN_MAX);
+-
+-	spin_lock_irqsave(&mfp_spin_lock, flags);
+ 	mfpr_writel(mfp_table[mfp].mfpr_off, val);
+ 	mfpr_sync();
+-	spin_unlock_irqrestore(&mfp_spin_lock, flags);
+ }
+ 
+ void pxa3xx_mfp_set_afds(int mfp, int af, int ds)
+ {
+ 	uint32_t mfpr_off, mfpr_val;
+-	unsigned long flags;
+ 
+ 	BUG_ON(mfp >= MFP_PIN_MAX);
+-
+-	spin_lock_irqsave(&mfp_spin_lock, flags);
+ 	mfpr_off = mfp_table[mfp].mfpr_off;
+ 
+ 	mfpr_val = mfpr_readl(mfpr_off);
+@@ -124,19 +104,14 @@ void pxa3xx_mfp_set_afds(int mfp, int af, int ds)
+ 
+ 	mfpr_writel(mfpr_off, mfpr_val);
+ 	mfpr_sync();
+-
+-	spin_unlock_irqrestore(&mfp_spin_lock, flags);
+ }
+ 
+ void pxa3xx_mfp_set_rdh(int mfp, int rdh)
+ {
+ 	uint32_t mfpr_off, mfpr_val;
+-	unsigned long flags;
+ 
+ 	BUG_ON(mfp >= MFP_PIN_MAX);
+ 
+-	spin_lock_irqsave(&mfp_spin_lock, flags);
+-
+ 	mfpr_off = mfp_table[mfp].mfpr_off;
+ 
+ 	mfpr_val = mfpr_readl(mfpr_off);
+@@ -147,19 +122,14 @@ void pxa3xx_mfp_set_rdh(int mfp, int rdh)
+ 
+ 	mfpr_writel(mfpr_off, mfpr_val);
+ 	mfpr_sync();
+-
+-	spin_unlock_irqrestore(&mfp_spin_lock, flags);
+ }
+ 
+ void pxa3xx_mfp_set_lpm(int mfp, int lpm)
+ {
+ 	uint32_t mfpr_off, mfpr_val;
+-	unsigned long flags;
+ 
+ 	BUG_ON(mfp >= MFP_PIN_MAX);
+ 
+-	spin_lock_irqsave(&mfp_spin_lock, flags);
+-
+ 	mfpr_off = mfp_table[mfp].mfpr_off;
+ 	mfpr_val = mfpr_readl(mfpr_off);
+ 	mfpr_val &= ~MFPR_LPM_MASK;
+@@ -172,19 +142,14 @@ void pxa3xx_mfp_set_lpm(int mfp, int lpm)
+ 
+ 	mfpr_writel(mfpr_off, mfpr_val);
+ 	mfpr_sync();
+-
+-	spin_unlock_irqrestore(&mfp_spin_lock, flags);
+ }
+ 
+ void pxa3xx_mfp_set_pull(int mfp, int pull)
+ {
+ 	uint32_t mfpr_off, mfpr_val;
+-	unsigned long flags;
+ 
+ 	BUG_ON(mfp >= MFP_PIN_MAX);
+ 
+-	spin_lock_irqsave(&mfp_spin_lock, flags);
+-
+ 	mfpr_off = mfp_table[mfp].mfpr_off;
+ 	mfpr_val = mfpr_readl(mfpr_off);
+ 	mfpr_val &= ~MFPR_PULL_MASK;
+@@ -192,19 +157,14 @@ void pxa3xx_mfp_set_pull(int mfp, int pull)
+ 
+ 	mfpr_writel(mfpr_off, mfpr_val);
+ 	mfpr_sync();
+-
+-	spin_unlock_irqrestore(&mfp_spin_lock, flags);
+ }
+ 
+ void pxa3xx_mfp_set_edge(int mfp, int edge)
+ {
+ 	uint32_t mfpr_off, mfpr_val;
+-	unsigned long flags;
+ 
+ 	BUG_ON(mfp >= MFP_PIN_MAX);
+ 
+-	spin_lock_irqsave(&mfp_spin_lock, flags);
+-
+ 	mfpr_off = mfp_table[mfp].mfpr_off;
+ 	mfpr_val = mfpr_readl(mfpr_off);
+ 
+@@ -214,18 +174,14 @@ void pxa3xx_mfp_set_edge(int mfp, int edge)
+ 
+ 	mfpr_writel(mfpr_off, mfpr_val);
+ 	mfpr_sync();
+-
+-	spin_unlock_irqrestore(&mfp_spin_lock, flags);
+ }
+ 
+ void __init pxa3xx_mfp_init_addr(struct pxa3xx_mfp_addr_map *map)
+ {
+ 	struct pxa3xx_mfp_addr_map *p;
+-	unsigned long offset, flags;
++	unsigned long offset;
+ 	int i;
+ 
+-	spin_lock_irqsave(&mfp_spin_lock, flags);
+-
+ 	for (p = map; p->start != MFP_PIN_INVALID; p++) {
+ 		offset = p->offset;
+ 		i = p->start;
+@@ -236,8 +192,6 @@ void __init pxa3xx_mfp_init_addr(struct pxa3xx_mfp_addr_map *map)
+ 			offset += 4; i++;
+ 		} while ((i <= p->end) && (p->end != -1));
+ 	}
+-
+-	spin_unlock_irqrestore(&mfp_spin_lock, flags);
+ }
+ 
+ void __init pxa3xx_init_mfp(void)
+diff --git a/drivers/mtd/nand/nand_util.c b/drivers/mtd/nand/nand_util.c
+index ffc4f35..511c2e7 100644
+--- a/drivers/mtd/nand/nand_util.c
++++ b/drivers/mtd/nand/nand_util.c
+@@ -127,7 +127,7 @@ int nand_erase_opts(nand_info_t *meminfo, const nand_erase_options_t *opts)
+ 			if (ret > 0) {
+ 				if (!opts->quiet)
+ 					printf("\rSkipping bad block at  "
+-					       "0x%08x                   "
++					       "0x%qx                   "
+ 					       "                         \n",
+ 					       erase.addr);
+ 				continue;
+@@ -186,7 +186,7 @@ int nand_erase_opts(nand_info_t *meminfo, const nand_erase_options_t *opts)
+ 				       erase.addr, percent);
+ 
+ 				if (opts->jffs2 && result == 0)
+-					printf(" Cleanmarker written at 0x%x.",
++					printf(" Cleanmarker written at 0x%qx.",
+ 					       erase.addr);
+ 			}
+ 		}
+@@ -483,7 +483,7 @@ int nand_write_skip_bad(nand_info_t *nand, size_t offset, size_t *length,
+ 	u_char *p_buffer = buffer;
+ 	struct nand_chip * n_chip = (struct nand_chip *)(nand->priv);
+ 	int is_yaffs = 0, blocksize;
+-	u_char *tmp_buf;
++	u_char *tmp_buf = NULL;
+ 
+ 	/* Reject writes, which are not page aligned */
+ 	if ( unlikely(n_chip->ops.oobbuf != NULL && \
+diff --git a/drivers/mtd/pxa3xx_bbm.c b/drivers/mtd/pxa3xx_bbm.c
+index ced7d44..7d877f4 100644
+--- a/drivers/mtd/pxa3xx_bbm.c
++++ b/drivers/mtd/pxa3xx_bbm.c
+@@ -9,7 +9,7 @@
+  * published by the Free Software Foundation.
+  *
+  */
+-
++#include <malloc.h>
+ #include <linux/mtd/mtd.h>
+ #include <asm/arch-pxa168/pxa3xx_bbm.h>
+ #include <asm/errno.h>
+@@ -301,7 +301,7 @@ static int pxa3xx_mark_reloc_tb(struct mtd_info *mtd, loff_t ofs)
+ 	ops.len		= mtd->oobsize;
+ 	ops.ooblen	= 2;
+ 	ops.ooboffs	= 0;
+-	ops.oobbuf	= &bad_mark;
++	ops.oobbuf	= (uint8_t *)&bad_mark;
+ 	ops.datbuf	= NULL;
+ 
+ 	mtd->write_oob(mtd, ofs, &ops);
+@@ -337,4 +337,3 @@ struct pxa3xx_bbm* alloc_pxa3xx_bbm(void)
+ 
+ 	return bbm;
+ }
+-EXPORT_SYMBOL(alloc_pxa3xx_bbm);
+diff --git a/drivers/spi/pxa3xx_spi.c b/drivers/spi/pxa3xx_spi.c
+index b464705..48bf4ab 100644
+--- a/drivers/spi/pxa3xx_spi.c
++++ b/drivers/spi/pxa3xx_spi.c
+@@ -21,7 +21,7 @@ struct pxa_spi_slave {
+ 	u32 cr0, cr1;
+ 	u32 int_cr1;
+ 	u32 clear_sr;
+-	void *tx;
++	const void *tx;
+ 	void *rx;
+ 	int gpio_cs_inverted;
+ 
+@@ -32,7 +32,7 @@ struct pxa_spi_slave {
+ #define to_pxa_spi_slave(s) container_of(s, struct pxa_spi_slave, slave)
+ 
+ #define DEFINE_SSP_REG(reg, off) \
+-	static inline u32 read_##reg() \
++	static inline u32 read_##reg(void) \
+ { return __raw_readl(CONFIG_SYS_SSP_BASE + (off)); } \
+ \
+ static inline void write_##reg(u32 v) \
+@@ -149,11 +149,6 @@ void spi_free_slave(struct spi_slave *slave)
+ 
+ void spi_init()
+ {
+-	struct spi_slave *flash;
+-	struct pxa_spi_slave *pss;
+-	u8 cmd = 0x9f;
+-	u8 null_word = 0xff;
+-	int reader;
+ 	char init_cmd[100];
+ 
+ 	/* Load default SSP configuration */
+diff --git a/include/asm-arm/arch-pxa168/common.h b/include/asm-arm/arch-pxa168/common.h
+index 6c3ae0e..59303e7 100644
+--- a/include/asm-arm/arch-pxa168/common.h
++++ b/include/asm-arm/arch-pxa168/common.h
+@@ -57,7 +57,6 @@ typedef int spinlock_t;
+ #define clk_enable(...)	
+ #define clk_disable(...)
+ #define DEBUG(...)
+-#define del_mtd_device(...)
+ 
+ static inline int __decalare_return(void)
+ {
+diff --git a/include/configs/aspenite.h b/include/configs/aspenite.h
+index 0d12ae4..7a88301 100644
+--- a/include/configs/aspenite.h
++++ b/include/configs/aspenite.h
+@@ -169,7 +169,6 @@
+ #define PHYS_SDRAM_SIZE_DEC     	64
+ #define CONFIG_SYS_ENV_SIZE            	0x10000   /* Total Size of Environment Sector */
+ #define	CONFIG_ENV_IS_IN_NAND		1
+-#define CMD_SAVEENV			1
+ #define CONFIG_SYS_NO_FLASH		1
+ #define CONFIG_BBM			1
+ 
+diff --git a/include/configs/avengers.h b/include/configs/avengers.h
+index 901e6aa..f906aba 100644
+--- a/include/configs/avengers.h
++++ b/include/configs/avengers.h
+@@ -170,7 +170,6 @@
+ #define PHYS_SDRAM_SIZE_DEC     	128
+ #define CONFIG_SYS_ENV_SIZE            	0x10000   /* Total Size of Environment Sector */
+ #define	CONFIG_ENV_IS_IN_NAND		1
+-#define CMD_SAVEENV			1
+ #define CONFIG_SYS_NO_FLASH		1
+ #define CONFIG_BBM			1
+ 
+diff --git a/include/configs/zylonite2.h b/include/configs/zylonite2.h
+index 35b7303..c5b0d15 100644
+--- a/include/configs/zylonite2.h
++++ b/include/configs/zylonite2.h
+@@ -168,7 +168,6 @@
+ #define PHYS_SDRAM_SIZE_DEC     	64
+ #define CONFIG_SYS_ENV_SIZE            	0x10000   /* Total Size of Environment Sector */
+ #define	CONFIG_ENV_IS_IN_NAND		1
+-#define CMD_SAVEENV			1
+ #define CONFIG_SYS_NO_FLASH		1
+ #define CONFIG_BBM			1
+ 
+diff --git a/lib_arm/board.c b/lib_arm/board.c
+index 3cd4b34..2cea9f2 100644
+--- a/lib_arm/board.c
++++ b/lib_arm/board.c
+@@ -47,6 +47,7 @@
+ #include <net.h>
+ #include <serial.h>
+ #include <nand.h>
++#include <spi.h>
+ #include <onenand_uboot.h>
+ 
+ #ifdef CONFIG_DRIVER_SMC91111
+diff --git a/net/eth.c b/net/eth.c
+index 09df28e..40acdde 100644
+--- a/net/eth.c
++++ b/net/eth.c
+@@ -26,6 +26,7 @@
+ #include <net.h>
+ #include <miiphy.h>
+ 
++extern int u2o_eth_initialize(bd_t *);
+ #if defined(CONFIG_CMD_NET) && defined(CONFIG_NET_MULTI)
+ 
+ /*
+@@ -476,8 +477,6 @@ extern int emac4xx_miiphy_initialize(bd_t *bis);
+ extern int mcf52x2_miiphy_initialize(bd_t *bis);
+ extern int ns7520_miiphy_initialize(bd_t *bis);
+ extern int davinci_eth_miiphy_initialize(bd_t *bis);
+-extern int u2o_eth_initialize(bd_t *);
+-
+ 
+ int eth_initialize(bd_t *bis)
+ {
+-- 
+1.6.0.4
+

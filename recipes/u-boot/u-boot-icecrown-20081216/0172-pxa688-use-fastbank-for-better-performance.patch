@@ -1,0 +1,28 @@
+From acf256e4cb7c7afae57f48d27478d160412f9e06 Mon Sep 17 00:00:00 2001
+From: Mingliang Hu <mingliang.hu@marvell.com>
+Date: Fri, 22 Jan 2010 11:42:51 +0800
+Subject: [PATCH] pxa688: use fastbank for better performance
+
+Signed-off-by: Mingliang Hu <mingliang.hu@marvell.com>
+
+The NTIM is also updated for fastbank
+---
+ board/pxa/common/freq_ll.S |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/board/pxa/common/freq_ll.S b/board/pxa/common/freq_ll.S
+index fa53f03..7810444 100644
+--- a/board/pxa/common/freq_ll.S
++++ b/board/pxa/common/freq_ll.S
+@@ -238,7 +238,7 @@ freq_sram_start:
+ 	str	r7, [r4, #0x090]
+ 	ldr	r7, =0xC0000000
+ 	str	r7, [r4, #0x0F0]
+-	ldr	r7, =0x00C08115
++	ldr	r7, =0x20C08115
+ 	str	r7, [r4, #0x1A0]
+ 	ldr	r7, =0x01010101
+ 	str	r7, [r4, #0x280]
+-- 
+1.6.0.4
+

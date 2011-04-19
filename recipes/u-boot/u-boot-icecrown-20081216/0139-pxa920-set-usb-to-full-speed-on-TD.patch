@@ -1,0 +1,56 @@
+From bc5ae47aa09555fb310a862a54479d24f233a5b8 Mon Sep 17 00:00:00 2001
+From: Bin Yang <bin.yang@marvell.com>
+Date: Mon, 21 Sep 2009 11:26:28 +0800
+Subject: [PATCH] pxa920: set usb to full speed on TD
+
+Signed-off-by: Bin Yang <bin.yang@marvell.com>
+---
+ board/pxa/common/usbeth/mvUsbHsDevMain.c |    4 ++++
+ include/asm-arm/arch-pxa168/common.h     |    6 ++++++
+ 2 files changed, 10 insertions(+), 0 deletions(-)
+
+diff --git a/board/pxa/common/usbeth/mvUsbHsDevMain.c b/board/pxa/common/usbeth/mvUsbHsDevMain.c
+index 4ffcecb..005aaf0 100644
+--- a/board/pxa/common/usbeth/mvUsbHsDevMain.c
++++ b/board/pxa/common/usbeth/mvUsbHsDevMain.c
+@@ -19,9 +19,11 @@ disclaimer.
+ *******************************************************************************/
+ 
+ #include "common.h"
++#include "asm/arch/common.h"
+ #include "mvUsbDevApi.h"
+ #include "mvUsbDevPrv.h"
+ 
++
+ /*FUNCTION*-------------------------------------------------------------
+ *
+ *  Function Name  : _usb_dci_vusb20_init
+@@ -278,6 +280,8 @@ void _usb_dci_vusb20_chip_initialize
+        port_control |= EHCI_PORTSCX_FORCE_FULL_SPEED_CONNECT;
+ #endif
+    }
++   if(cpu_is_pxa920_z2())
++	   port_control |= EHCI_PORTSCX_FORCE_FULL_SPEED_CONNECT;
+    dev_ptr->REGISTERS.OPERATIONAL_DEVICE_REGISTERS.PORTSCX[0] = USB_32BIT_LE(port_control);
+    port_control = USB_32BIT_LE(dev_ptr->REGISTERS.OPERATIONAL_DEVICE_REGISTERS.PORTSCX[0]);
+  //  USB_printf("PORTSCX[0]===========%x\n", port_control);
+diff --git a/include/asm-arm/arch-pxa168/common.h b/include/asm-arm/arch-pxa168/common.h
+index 59303e7..d1f3a32 100644
+--- a/include/asm-arm/arch-pxa168/common.h
++++ b/include/asm-arm/arch-pxa168/common.h
+@@ -400,6 +400,12 @@ unsigned long clk_get_rate(struct clk * clk);
+ 	 unsigned int id = read_cpuid(CPUID_ID); 			\
+ 	 __cpu_is_pxa910_168(id);                        		\
+ 	 })
++#define cpu_is_pxa920_z2()                                 		\
++	({                                              		\
++	 unsigned int chip_id = __raw_readl(0xd4282c00);		\
++	 unsigned int id = read_cpuid(CPUID_ID); 			\
++	 __cpu_is_pxa910(id) && ((chip_id & 0x00fff000) == 0x0070c000);	\
++	 })
+ 
+ #define DMA_BIT_MASK(n) (((n) == 64) ? ~0ULL : ((1ULL<<(n))-1))
+ 
+-- 
+1.6.0.4
+

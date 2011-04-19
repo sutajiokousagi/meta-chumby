@@ -1,0 +1,95 @@
+From a75fb0225f437e4c202327a1da532ab718b385aa Mon Sep 17 00:00:00 2001
+From: Lei Wen <leiwen@marvell.com>
+Date: Thu, 19 Mar 2009 11:28:31 +0800
+Subject: [PATCH] pxa910: add samsung 2Gbit nand
+
+Signed-off-by: Lei Wen <leiwen@marvell.com>
+---
+ include/asm-arm/arch-pxa168/pxa3xx_nand.h |   34 ++++++++++++++++++++++++----
+ 1 files changed, 29 insertions(+), 5 deletions(-)
+
+diff --git a/include/asm-arm/arch-pxa168/pxa3xx_nand.h b/include/asm-arm/arch-pxa168/pxa3xx_nand.h
+index 33dc1fa..0ae47ef 100644
+--- a/include/asm-arm/arch-pxa168/pxa3xx_nand.h
++++ b/include/asm-arm/arch-pxa168/pxa3xx_nand.h
+@@ -214,10 +214,10 @@ extern void pxa3xx_set_nand_info(struct pxa3xx_nand_platform_data *info);
+ #define NDBZCNT_ND_RNB_CNT1(x)	(((x & NDBZCNT_MASK) << 16)
+ #define NDBZCNT_ND_RNB_CNT0(x)	(x & NDBZCNT_MASK)
+ 
+-/* NAND Controller MUTEX Lock Register */
++		/* NAND Controller MUTEX Lock Register */
+ #define NDMUTEX_MUTEX		(0x1)
+ 
+-/* Partition Command Match Registers */
++		/* Partition Command Match Registers */
+ #define NDCMDMAT_VALIDCNT_MASK	(0x3)
+ #define NDCMDMAT_CMD_MASK	(0xFF)
+ #define NDCMDMAT_VALIDCNT	((x & NDCMDMAT_VALIDCNT_MASK) << 30)
+@@ -231,7 +231,7 @@ extern void pxa3xx_set_nand_info(struct pxa3xx_nand_platform_data *info);
+ #define NDCMDMAT_ROWADD0	(0x1 << 28)
+ #define NDCMDMAT_CMD0(x)	((x & NDCMDMAT) << 20)
+ 
+-/* NAND Controller Command Buffers */
++		/* NAND Controller Command Buffers */
+ #define NDCB0_CMD_XTYPE_MASK	(0x7 << 29)
+ #define NDCB0_CMD_XTYPE(x)	(((x) << 29) & NDCB0_CMD_XTYPE_MASK)
+ #define NDCB0_LEN_OVRD		(0x1 << 28)
+@@ -339,8 +339,8 @@ struct pxa3xx_nand_info {
+ 	unsigned int		state;
+ 
+ 	int			use_ecc;	/* use HW ECC ? */
+-						/* 0:off, 1:Hammin ECC */
+-						/* 2: BCH ECC */
++	/* 0:off, 1:Hammin ECC */
++	/* 2: BCH ECC */
+ 
+ 	int			use_dma;	/* use DMA ? */
+ 
+@@ -387,6 +387,18 @@ static struct pxa3xx_nand_timing samsung512MbX16_timing = {
+ 	.tAR	= 10,
+ };
+ 
++static struct pxa3xx_nand_timing samsung2GbX8_timing = {
++	.tCH = 10,
++	.tCS = 35,
++	.tWH = 15,
++	.tWP = 25,
++	.tRH = 20,
++	.tRP = 25,
++	.tR = 25000,
++	.tWHR = 60,
++	.tAR = 10,
++};
++
+ static struct pxa3xx_nand_timing samsung32GbX8_timing = {
+ 	.tCH = 5,
+ 	.tCS = 20,
+@@ -443,6 +455,17 @@ static struct pxa3xx_nand_flash samsung512MbX16 = {
+ 	.chip_id	= 0x46ec,
+ };
+ 
++static struct pxa3xx_nand_flash samsung2GbX8 = {
++	.timing		= &samsung2GbX8_timing,
++	.cmdset         = &largepage_cmdset,
++	.page_per_block	= 64,
++	.page_size	= 2048,
++	.flash_width	= 8,
++	.dfc_width	= 8,
++	.num_blocks	= 2048,
++	.chip_id	= 0xdaec,
++};
++
+ static struct pxa3xx_nand_flash samsung32GbX8 = {
+ 	.timing		= &samsung32GbX8_timing,
+ 	.cmdset         = &largepage_cmdset,
+@@ -501,6 +524,7 @@ static struct pxa3xx_nand_flash stm2GbX16 = {
+ static struct pxa3xx_nand_flash *builtin_flash_types[] = {
+ 	&nand_common,
+ 	&samsung512MbX16,
++	&samsung2GbX8,
+ 	&samsung32GbX8,
+ 	&micron1GbX8,
+ 	&micron4GbX8,
+-- 
+1.6.0.4
+

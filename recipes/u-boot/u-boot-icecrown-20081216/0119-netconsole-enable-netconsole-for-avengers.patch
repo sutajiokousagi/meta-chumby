@@ -1,0 +1,41 @@
+From 696e733c883f4bb17b576e3591a8121826dfc8cb Mon Sep 17 00:00:00 2001
+From: Lei Wen <leiwen@marvell.com>
+Date: Mon, 10 Aug 2009 15:58:04 +0800
+Subject: [PATCH] netconsole: enable netconsole for avengers
+
+---
+ board/pxa/common/usbeth/ether-mvu2o.c |    4 +++-
+ include/configs/avengers.h            |    1 +
+ 2 files changed, 4 insertions(+), 1 deletions(-)
+
+diff --git a/board/pxa/common/usbeth/ether-mvu2o.c b/board/pxa/common/usbeth/ether-mvu2o.c
+index 856d37d..570dc89 100644
+--- a/board/pxa/common/usbeth/ether-mvu2o.c
++++ b/board/pxa/common/usbeth/ether-mvu2o.c
+@@ -355,8 +355,10 @@ int u2o_eth_initialize(u32 base)
+ 	check_usb_connection(6);
+ 	if(usb_connected) {
+ 		extern int netconsole;
++		char *serverip = getenv("serverip");
++
+ 		/* switch to netconsole */
+-		setenv("ncip","192.168.1.100");
++		setenv("ncip", serverip);
+ 		setenv("stdin","nc");
+ 		setenv("stdout","nc");
+ 		netconsole = 1;
+diff --git a/include/configs/avengers.h b/include/configs/avengers.h
+index f5aa15e..1441a01 100644
+--- a/include/configs/avengers.h
++++ b/include/configs/avengers.h
+@@ -75,6 +75,7 @@
+ 
+ #define CONFIG_CMD_PING
+ #define CONFIG_CMD_NET
++#define CONFIG_NETCONSOLE
+ #define CONFIG_NET_MULTI
+ #define MV_ETH_DEVS 			1
+ 
+-- 
+1.6.0.4
+

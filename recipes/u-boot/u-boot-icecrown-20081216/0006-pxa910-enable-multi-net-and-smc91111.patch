@@ -1,0 +1,122 @@
+From c41ad1d657538d7916c5ae4301a7efda38ee3187 Mon Sep 17 00:00:00 2001
+From: Wen Lei <leiwen@marvell.com>
+Date: Fri, 27 Feb 2009 10:24:30 +0800
+Subject: [PATCH] pxa910: enable multi net and smc91111
+
+---
+ drivers/net/smc91111.c     |   56 ++++++++++++++++++++++++++++++++++++++++++++
+ include/configs/tavorevb.h |    1 +
+ net/eth.c                  |    3 ++
+ 3 files changed, 60 insertions(+), 0 deletions(-)
+
+diff --git a/drivers/net/smc91111.c b/drivers/net/smc91111.c
+index 82abb02..3764c86 100644
+--- a/drivers/net/smc91111.c
++++ b/drivers/net/smc91111.c
+@@ -171,7 +171,9 @@ extern int eth_send(volatile void *packet, int length);
+  .
+  . NB:This shouldn't be static since it is referred to externally.
+ */
++#ifndef CONFIG_NET_MULTI
+ int smc_init(void);
++#endif
+ 
+ /*
+  . This is called by  unregister_netdev().  It is responsible for
+@@ -1514,6 +1516,7 @@ static void print_packet( byte * buf, int length )
+ }
+ #endif
+ 
++#ifndef CONFIG_NET_MULTI
+ int eth_init(bd_t *bd) {
+ #ifdef SHARED_RESOURCES
+ 	swap_to(ETHERNET);
+@@ -1532,6 +1535,59 @@ int eth_rx() {
+ int eth_send(volatile void *packet, int length) {
+ 	return smc_send_packet(packet, length);
+ }
++#else
++
++static int smc_init(struct eth_device *dev, bd_t *bd) 
++{
++	int ret;
++	
++#ifdef SHARED_RESOURCES
++	swap_to(ETHERNET);
++#endif
++	ret = smc_open(bd);
++	memcpy(dev->enetaddr, bd->bi_enetaddr, 6);
++	return ret;
++}
++
++static void smc_halt(struct eth_device *dev, bd_t *bd)
++{
++	smc_close();
++}
++
++static int smc_rx(struct eth_device *dev)
++{
++	return smc_rcv();
++}
++ 
++static int smc_tx(struct eth_device *dev, volatile void *packet,
++			  int length)
++{
++	return smc_send_packet(packet, length);
++}
++
++int smc_eth_initialize(u32 base)
++{
++	struct eth_device *dev;
++	dev = (struct eth_device *)malloc(sizeof(*dev));
++
++	if (dev == NULL)
++		hang();
++
++	memset(dev, 0, sizeof(*dev));
++	sprintf(dev->name, "smc91111");
++
++	dev->iobase = 0;
++	dev->priv = 0;
++	dev->init = smc_init;
++	dev->halt = smc_halt;
++	dev->send = smc_tx;
++	dev->recv = smc_rx;
++
++	eth_register(dev);
++
++	return 1;
++}
++#endif
+ 
+ int smc_get_ethaddr (bd_t * bd)
+ {
+diff --git a/include/configs/tavorevb.h b/include/configs/tavorevb.h
+index 99f5e21..576a18c 100644
+--- a/include/configs/tavorevb.h
++++ b/include/configs/tavorevb.h
+@@ -78,6 +78,7 @@
+ 
+ #define CONFIG_CMD_PING
+ #define CONFIG_CMD_NET
++#define CONFIG_NET_MULTI
+ #define MV_ETH_DEVS 			1
+ 
+ #define CONFIG_IPADDR      		192.168.1.101
+diff --git a/net/eth.c b/net/eth.c
+index b7ef09f..9be93c9 100644
+--- a/net/eth.c
++++ b/net/eth.c
+@@ -152,6 +152,9 @@ int eth_initialize(bd_t *bis)
+ #if defined(CONFIG_DB64460) || defined(CONFIG_P3Mx)
+ 	mv6446x_eth_initialize(bis);
+ #endif
++#if defined(CONFIG_DRIVER_SMC91111) && defined(CONFIG_CMD_NET)
++	smc_eth_initialize();
++#endif
+ 	if (!eth_devices) {
+ 		puts ("No ethernet found.\n");
+ 		show_boot_progress (-64);
+-- 
+1.6.0.4
+

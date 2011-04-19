@@ -1,0 +1,703 @@
+From 89e7929c6310d34d2e7b319a20dfeff64b06537c Mon Sep 17 00:00:00 2001
+From: Ning Jiang <ning.jiang@marvell.com>
+Date: Sun, 23 Aug 2009 17:49:37 +0800
+Subject: [PATCH] pxa910: enable timer match interrupt
+
+Signed-off-by: Ning Jiang <ning.jiang@marvell.com>
+Signed-off-by: Bin Yang <bin.yang@marvell.com>
+---
+ board/pxa/common/freq.c                 |   22 ++
+ cpu/88SV331xV5/interrupts.c             |   99 ++++++++++
+ cpu/88SV331xV5/pxa168/timer.c           |   25 +++
+ cpu/88SV331xV5/start.S                  |   16 ++
+ include/asm-arm/arch-pxa168/common.h    |    1 +
+ include/asm-arm/arch-pxa168/icu.h       |  319 +++++++++++++++++++++++++++++++
+ include/asm-arm/arch-pxa168/interrupt.h |   95 +++++++++
+ include/configs/ttc_dkb.h               |    2 +
+ 8 files changed, 579 insertions(+), 0 deletions(-)
+ create mode 100644 include/asm-arm/arch-pxa168/icu.h
+ create mode 100644 include/asm-arm/arch-pxa168/interrupt.h
+
+diff --git a/board/pxa/common/freq.c b/board/pxa/common/freq.c
+index fa6d962..beec158 100644
+--- a/board/pxa/common/freq.c
++++ b/board/pxa/common/freq.c
+@@ -1505,3 +1505,25 @@ U_BOOT_CMD(
+ 		"hibernate	- put system into hibernate mode\n",
+ 		"hibernate - put system into hibernate mode\n"
+ 	  );
++
++int do_timeout(cmd_tbl_t * cmdtp, int flag, int argc, char *argv[])
++{
++	ulong secs;
++
++	if (argc != 2) {
++		printf ("Usage:\n%s\n", cmdtp->usage);
++		return 1;
++	}
++
++	secs = simple_strtoul(argv[1], NULL, 0);
++	set_timer_match(secs);
++
++	return 0;
++}
++
++U_BOOT_CMD(
++		timeout,	6,	1,	do_timeout,
++		"timeout	- set timeout for the system\n",
++		"timeout secs - set timeout secs\n"
++	  );
++
+diff --git a/cpu/88SV331xV5/interrupts.c b/cpu/88SV331xV5/interrupts.c
+index 7a41f0b..faf908f 100644
+--- a/cpu/88SV331xV5/interrupts.c
++++ b/cpu/88SV331xV5/interrupts.c
+@@ -37,6 +37,7 @@
+ 
+ #include <common.h>
+ #include <arm926ejs.h>
++#include <asm/arch/interrupt.h>
+ 
+ #ifdef CONFIG_INTEGRATOR
+ 
+@@ -44,11 +45,109 @@
+ 
+ #else
+ 
++#ifdef CONFIG_USE_IRQ
++struct _irq_handler {
++	void *m_data;
++	void (*m_func)( void *data);
++};
++
++static struct _irq_handler IRQ_HANDLER[N_IRQS];
++
++static void default_isr(void *data)
++{
++	printf("default_isr():  called for IRQ %d\n", (int)data);
++}
++
++BU_U32 GetIntStatus_IRQ(void)
++{
++	return BU_REG_READ(ICU_MOHAWK_IRQ_SEL_INT_NUM);
++}
++
++void do_irq (struct pt_regs *pt_regs)
++{
++	BU_U32 int_num;
++
++	/* read interrupt status */
++	int_num = GetIntStatus_IRQ();
++
++	/* checking the pending bit */
++	if ( int_num &  ICU_MOHAWK_IRQ_SEL_INT_NUM_INT_PENDING ) {
++		/* mask out the pending bit to get low 5 bit INT num */
++		int_num &= ~ICU_MOHAWK_IRQ_SEL_INT_NUM_INT_PENDING;
++		/* get ISR entry from table and call it */
++		IRQ_HANDLER[int_num].m_func(IRQ_HANDLER[int_num].m_data);
++	}
++}
++
++void INT_init(void)
++{
++	int i;
++
++	BU_REG_WRITE(ICU_MOHAWK_GBL_IRQ_MSK,
++		ICU_MOHAWK_GBL_IRQ_MSK_IRQ_MSK
++		| ICU_MOHAWK_GBL_IRQ_MSK_FIQ_MSK);
++	for (i = 0; i < N_IRQS; i++) {
++		IRQ_HANDLER[i].m_data = (void *)i;
++		IRQ_HANDLER[i].m_func = default_isr;
++		BU_REG_WRITE(ICU_INT_0_TO_63_CONF+i*4,
++			(BU_REG_READ(ICU_INT_0_TO_63_CONF+i*4)
++			 & ~(ICU_INT_0_TO_63_CONF_MOHAWK_INT
++			 |ICU_INT_0_TO_63_CONF_SEAGULL_INT)));
++	}
++}
++
++void IRQ_Glb_Ena(void)
++{
++	unsigned int reg;
++
++	reg = BU_REG_READ(ICU_MOHAWK_GBL_IRQ_MSK);
++	reg &= (~ICU_MOHAWK_GBL_IRQ_MSK_IRQ_MSK);
++	BU_REG_WRITE( ICU_MOHAWK_GBL_IRQ_MSK, reg);
++}
++
++void INT_Enable(BU_U32 int_num, BU_U32 irq_fiq, BU_U32 priority )
++{
++	volatile BU_U32 mask; /* do not touch the int route to other CPU */
++	mask = (BU_REG_READ(ICU_INT_0_TO_63_CONF+int_num*4)
++		& ICU_INT_0_TO_63_CONF_SEAGULL_INT);
++	BU_REG_WRITE(ICU_INT_0_TO_63_CONF+int_num*4,
++		ICU_INT_0_TO_63_CONF_MOHAWK_INT | (irq_fiq<<4) | priority | mask);
++}
++
++void INT_Disable(BU_U32 int_num )
++{
++	BU_REG_WRITE(ICU_INT_0_TO_63_CONF+int_num*4, 0);
++}
++
++void ISR_Connect(BU_U32 int_num, void (*m_func)( void *data), void *data)
++{
++
++	if(NULL == m_func)
++		return;
++
++	/* assign the user defined function*/
++	IRQ_HANDLER[int_num].m_data = data;
++	IRQ_HANDLER[int_num].m_func = m_func;
++}
++
++#endif
++
+ /* nothing really to do with interrupts, just starts up a counter. */
+ int interrupt_init (void)
+ {
+ 	extern void timer_init(void);
+ 
++#ifdef CONFIG_USE_IRQ
++	/* install default interrupt handlers */
++	INT_init();
++
++	/* enable irq for AP */
++	IRQ_Glb_Ena();
++
++	/* enable interrupts on the CPU side */
++	enable_interrupts();
++#endif
++
+ 	timer_init();
+ 
+ 	return 0;
+diff --git a/cpu/88SV331xV5/pxa168/timer.c b/cpu/88SV331xV5/pxa168/timer.c
+index 638873a..d53f52b 100644
+--- a/cpu/88SV331xV5/pxa168/timer.c
++++ b/cpu/88SV331xV5/pxa168/timer.c
+@@ -37,6 +37,7 @@
+ 
+ #include <asm/io.h>
+ #include <common.h>
++#include <asm/arch/interrupt.h>
+ 
+ #define READ_TIMER ({volatile int loop=100; \
+ 	         	*(volatile ulong *)(CONFIG_SYS_TIMERBASE+0xa4) = 0x1; \
+@@ -48,6 +49,14 @@
+ static ulong timestamp;
+ static ulong lastdec;
+ 
++#ifdef CONFIG_USE_IRQ
++static void timer_isr(void *data)
++{
++	printf("timer_isr():  called for IRQ %d\n", (int)data);
++	*(volatile ulong *)(CONFIG_SYS_TIMERBASE + 0x74) = 0x1;
++}
++#endif
++
+ int timer_init(void)
+ {
+ 	volatile unsigned int i;
+@@ -72,6 +81,22 @@ int timer_init(void)
+ 	*(volatile ulong *)(CONFIG_SYS_TIMERBASE + 0x84) = 0x1;
+ 	/* init the timestamp and lastdec value */
+ 	reset_timer_masked();
++
++#ifdef CONFIG_USE_IRQ
++	/* enable timer interrupt */
++	INT_Enable(INT_AP_TMR1, IRQ_ROUTE, TIMER_PRIORITY);
++
++	/* install interrupt handler for timer */
++	ISR_Connect(INT_AP_TMR1, timer_isr, (void *)0);
++#endif
++}
++
++int set_timer_match(ulong secs)
++{
++	*(volatile ulong *)(CONFIG_SYS_TIMERBASE + 0x4) =
++		(READ_TIMER + secs * CONFIG_SYS_HZ);
++	*(volatile ulong *)(CONFIG_SYS_TIMERBASE + 0x74) = 0x1;
++	*(volatile ulong *)(CONFIG_SYS_TIMERBASE + 0x40) = 0x1;
+ }
+ 
+ void reset_timer_masked (void)
+diff --git a/cpu/88SV331xV5/start.S b/cpu/88SV331xV5/start.S
+index 1b880f2..34356f3 100644
+--- a/cpu/88SV331xV5/start.S
++++ b/cpu/88SV331xV5/start.S
+@@ -167,6 +167,22 @@ stack_setup:
+ #endif
+ 	sub	sp, r0, #12		/* leave 3 words for abort-stack    */
+ 
++
++#ifdef CONFIG_USE_IRQ
++	/* relocate vector to 0x0 so we can enable interrupt */
++	adr	r0, _start
++	add	r0, r0, #0x4
++	mov	r1, #0x4
++vec_reloc:
++	ldr	r2, [r0]
++	str	r2, [r1]
++	add	r1, r1, #0x4
++	add	r0, r0, #0x4
++	cmp	r1, #0x40
++	bne	vec_reloc
++#endif
++
++
+ clear_bss:
+ 	ldr	r0, _bss_start		/* find start of bss segment        */
+ 	ldr	r1, _bss_end		/* stop here                        */
+diff --git a/include/asm-arm/arch-pxa168/common.h b/include/asm-arm/arch-pxa168/common.h
+index 55293d0..6c3ae0e 100644
+--- a/include/asm-arm/arch-pxa168/common.h
++++ b/include/asm-arm/arch-pxa168/common.h
+@@ -43,6 +43,7 @@
+ 
+ #define __REG_PXA910(x)	(*((volatile u32 *)(x)))
+ #define BU_U32            unsigned int
++#define BU_REG_READ(x)    (*(volatile BU_U32 *)(x))
+ #define BU_REG_WRITE(x,y) ((*(volatile BU_U32 *)(x)) = y )
+ 
+ typedef int wait_queue_head_t; 
+diff --git a/include/asm-arm/arch-pxa168/icu.h b/include/asm-arm/arch-pxa168/icu.h
+new file mode 100644
+index 0000000..44205dd
+--- /dev/null
++++ b/include/asm-arm/arch-pxa168/icu.h
+@@ -0,0 +1,319 @@
++/******************************************************************************
++ *
++ * Name:	ICU.h
++ * Project:	Hermon-2
++ * Purpose:	Testing
++ *
++ ******************************************************************************/
++
++/******************************************************************************
++ *
++ *  (C)Copyright 2005 - 2008 Marvell. All Rights Reserved.
++ *
++ *  THIS IS UNPUBLISHED PROPRIETARY SOURCE CODE OF MARVELL.
++ *  The copyright notice above does not evidence any actual or intended
++ *  publication of such source code.
++ *  This Module contains Proprietary Information of Marvell and should be
++ *  treated as Confidential.
++ *  The information in this file is provided for the exclusive use of the
++ *  licensees of Marvell.
++ *  Such users have the right to use, modify, and incorporate this code into
++ *  products for purposes authorized by the license agreement provided they
++ *  include this notice and the associated copyright notice with any such
++ *  product.
++ *  The information in this file is provided "AS IS" without warranty.
++ *
++ ******************************************************************************/
++
++/******************************************************************************
++ *
++ * This file was automatically generated by reg.pl using  *	ICU.csv
++ *
++ ******************************************************************************/
++
++/******************************************************************************
++ *
++ * History:
++ *
++ ********* PLEASE INSERT THE CVS HISTORY OF THE PREVIOUS VERSION HERE. *********
++ *******************************************************************************/
++
++#ifndef	__INC_ICU_H
++#define	__INC_ICU_H
++
++
++/*
++ *
++ *	THE BASE ADDRESSES
++ *
++ */
++#define	ICU_BASE	0xD4282000
++
++/*
++ *
++ *	THE REGISTER DEFINES
++ *
++ */
++#define	ICU_INT_0_TO_63_CONF		(ICU_BASE+0x0000)	/* Interrupt 0 to 63
++														 *			Configuration
++														 *			Registers
++														 *			Start
++														 */
++#define	ICU_SEAGULL_FIQ_SEL_INT_NUM	(ICU_BASE+0x0100)	/* 32 bit	<var
++														 *			Processor:
++														 *			Osprey>
++														 *			FIQ
++														 *			Selected
++														 *			Interrupt
++														 *			Number
++														 *			Register
++														 */
++#define	ICU_SEAGULL_IRQ_SEL_INT_NUM	(ICU_BASE+0x0104)	/* 32 bit	<var
++														 *			Processor:
++														 *			Osprey>
++														 *			IRQ
++														 *			Selected
++														 *			Interrupt
++														 *			Number
++														 *			Register
++														 */
++#define	ICU_MOHAWK_FIQ_SEL_INT_NUM	(ICU_BASE+0x0108)	/* 32 bit	<var
++														 *			Processor:
++														 *			Mohawk>
++														 *			FIQ
++														 *			Selected
++														 *			Interrupt
++														 *			Number
++														 *			Register
++														 */
++#define	ICU_MOHAWK_IRQ_SEL_INT_NUM	(ICU_BASE+0x010C)	/* 32 bit	<var
++														 *			Processor:
++														 *			Mohawk>
++														 *			IRQ
++														 *			Selected
++														 *			Interrupt
++														 *			Number
++														 *			Register
++														 */
++#define	ICU_SEAGULL_GBL_IRQ_MSK		(ICU_BASE+0x0110)	/* 32 bit	<var
++														 *			Processor:
++														 *			Osprey>
++														 *			Global
++														 *			Interrupt
++														 *			Mask
++														 *			Register
++														 */
++#define	ICU_MOHAWK_GBL_IRQ_MSK		(ICU_BASE+0x0114)	/* 32 bit	<var
++														 *			Processor:
++														 *			Mohawk>
++														 *			Global
++														 *			Interrupt
++														 *			Mask
++														 *			Register
++														 */
++#define	ICU_DMA_SEAGULL_INT_MSK		(ICU_BASE+0x0118)	/* 32 bit	DMA <var
++														 *			Processor:
++														 *			Osprey>
++														 *			Interrupt
++														 *			Mask
++														 *			Register
++														 */
++#define	ICU_DMA_MOHAWK_INT_MSK		(ICU_BASE+0x011C)	/* 32 bit	DMA <var
++														 *			Processor:
++														 *			Mohawk>
++														 *			Interrupt
++														 *			Mask
++														 *			Register
++														 */
++#define	ICU_DMA_SEAGULL_INT_STATUS	(ICU_BASE+0x0120)	/* 32 bit	DMA <var
++														 *			Processor:
++														 *			Osprey>
++														 *			Interrupt
++														 *			Status
++														 *			Register
++														 */
++#define	ICU_DMA_MOHAWK_INT_STATUS	(ICU_BASE+0x0124)	/* 32 bit	DMA <var
++														 *			Processor:
++														 *			Mohawk>
++														 *			Interrupt
++														 *			Status
++														 *			Register
++														 */
++#define	ICU_INT_STATUS_0			(ICU_BASE+0x0128)	/* 32 bit	Interrupt
++														 *			Status
++														 *			Register
++														 *			0
++														 */
++#define	ICU_INT_STATUS_1			(ICU_BASE+0x012C)	/* 32 bit	Interrupt
++														 *			Status
++														 *			Register
++														 *			1
++														 */
++#define	ICU_DDR_ARM_L2_INT_MSK		(ICU_BASE+0x0130)	/* 32 bit	DDR and ARM
++														 *			L2 cache
++														 *			Interrupt
++														 *			Mask
++														 *			Register
++														 */
++#define	ICU_DDR_ARM_L2_INT_STATUS	(ICU_BASE+0x0134)	/* 32 bit	DDR and ARM
++														 *			L2 cache
++														 *			Interrupt
++														 *			Status
++														 *			Register
++														 */
++
++/*
++ *
++ *	THE BIT DEFINES
++ *
++ */
++/*	ICU_INT_0_TO_63_CONF		0x0000	Interrupt 0 to 63 Configuration
++ *										Registers
++ */
++/*		Bit(s) ICU_INT_0_TO_63_CONF_RSRV_31_7 reserved */
++/* <var Processor: Mohawk> Interrupt */
++#define	ICU_INT_0_TO_63_CONF_MOHAWK_INT					BIT_6
++/* <var Processor: Osprey> Interrupt */
++#define	ICU_INT_0_TO_63_CONF_SEAGULL_INT				BIT_5
++/* IRQ/FIQ */
++#define	ICU_INT_0_TO_63_CONF_IRQ_FIQ					BIT_4
++/* Priority/Masking */
++#define	ICU_INT_0_TO_63_CONF_PRIORITY_MASKING_MSK		SHIFT0(0xf)
++#define	ICU_INT_0_TO_63_CONF_PRIORITY_MASKING_BASE		0
++
++/*	ICU_SEAGULL_FIQ_SEL_INT_NUM	0x0100	<var Processor: Osprey> FIQ Selected
++ *										Interrupt Number Register
++ */
++/*		Bit(s) ICU_SEAGULL_FIQ_SEL_INT_NUM_RSRV_31_7 reserved */
++/* Interrupt Pending */
++#define	ICU_SEAGULL_FIQ_SEL_INT_NUM_INT_PENDING				BIT_6
++/* Selected Interrupt Number */
++#define	ICU_SEAGULL_FIQ_SEL_INT_NUM_SEL_INT_NUM_MSK			SHIFT0(0x3f)
++#define	ICU_SEAGULL_FIQ_SEL_INT_NUM_SEL_INT_NUM_BASE		0
++
++/*	ICU_SEAGULL_IRQ_SEL_INT_NUM	0x0104	<var Processor: Osprey> IRQ Selected
++ *										Interrupt Number Register
++ */
++/*		Bit(s) ICU_SEAGULL_IRQ_SEL_INT_NUM_RSRV_31_7 reserved */
++/* Interrupt Pending */
++#define	ICU_SEAGULL_IRQ_SEL_INT_NUM_INT_PENDING				BIT_6
++/* Selected Interrupt Number */
++#define	ICU_SEAGULL_IRQ_SEL_INT_NUM_SEL_INT_NUM_MSK			SHIFT0(0x3f)
++#define	ICU_SEAGULL_IRQ_SEL_INT_NUM_SEL_INT_NUM_BASE		0
++
++/*	ICU_MOHAWK_FIQ_SEL_INT_NUM	0x0108	<var Processor: Mohawk> FIQ Selected
++ *										Interrupt Number Register
++ */
++/*		Bit(s) ICU_MOHAWK_FIQ_SEL_INT_NUM_RSRV_31_7 reserved */
++/* Interrupt Pending */
++#define	ICU_MOHAWK_FIQ_SEL_INT_NUM_INT_PENDING			BIT_6
++/* Selected Interrupt Number */
++#define	ICU_MOHAWK_FIQ_SEL_INT_NUM_SEL_INT_NUM_MSK		SHIFT0(0x3f)
++#define	ICU_MOHAWK_FIQ_SEL_INT_NUM_SEL_INT_NUM_BASE		0
++
++/*	ICU_MOHAWK_IRQ_SEL_INT_NUM	0x010C	<var Processor: Mohawk> IRQ Selected
++ *										Interrupt Number Register
++ */
++/*		Bit(s) ICU_MOHAWK_IRQ_SEL_INT_NUM_RSRV_31_7 reserved */
++/* Interrupt Pending */
++#define	ICU_MOHAWK_IRQ_SEL_INT_NUM_INT_PENDING			BIT_6
++/* Selected Interrupt Number */
++#define	ICU_MOHAWK_IRQ_SEL_INT_NUM_SEL_INT_NUM_MSK		SHIFT0(0x3f)
++#define	ICU_MOHAWK_IRQ_SEL_INT_NUM_SEL_INT_NUM_BASE		0
++
++/*	ICU_SEAGULL_GBL_IRQ_MSK		0x0110	<var Processor: Osprey> Global
++ *										Interrupt Mask Register
++ */
++/*		Bit(s) ICU_SEAGULL_GBL_IRQ_MSK_RSRV_31_2 reserved */
++#define	ICU_SEAGULL_GBL_IRQ_MSK_IRQ_MSK				BIT_1				/* Mask IRQ */
++#define	ICU_SEAGULL_GBL_IRQ_MSK_FIQ_MSK				BIT_0				/* Mask FIQ */
++
++/*	ICU_MOHAWK_GBL_IRQ_MSK		0x0114	<var Processor: Mohawk> Global
++ *										Interrupt Mask Register
++ */
++/*		Bit(s) ICU_MOHAWK_GBL_IRQ_MSK_RSRV_31_2 reserved */
++#define	ICU_MOHAWK_GBL_IRQ_MSK_IRQ_MSK				BIT_1				/* Mask IRQ */
++#define	ICU_MOHAWK_GBL_IRQ_MSK_FIQ_MSK				BIT_0				/* Mask FIQ */
++
++/*	ICU_DMA_SEAGULL_INT_MSK		0x0118	DMA <var Processor: Osprey> Interrupt
++ *										Mask Register
++ */
++/* DMA <var Processor: Osprey> Interrupt Mask */
++#define	ICU_DMA_SEAGULL_INT_MSK_DMA_SEAGULL_INT_MSK_MSK			SHIFT0(0xffffffff)
++#define	ICU_DMA_SEAGULL_INT_BASE_DMA_SEAGULL_INT_BASE_BASE		0
++
++/*	ICU_DMA_MOHAWK_INT_MSK		0x011C	DMA <var Processor: Mohawk> Interrupt
++ *										Mask Register
++ */
++/* DMA <var Processor: Mohawk> Interrupt Mask */
++#define	ICU_DMA_MOHAWK_INT_MSK_DMA_MOHAWK_INT_MSK_MSK			SHIFT0(0xffffffff)
++#define	ICU_DMA_MOHAWK_INT_BASE_DMA_MOHAWK_INT_BASE_BASE		0
++
++/*	ICU_DMA_SEAGULL_INT_STATUS	0x0120	DMA <var Processor: Osprey> Interrupt
++ *										Status Register
++ */
++/* DMA <var Processor: Osprey> Interrupt Status */
++#define	ICU_DMA_SEAGULL_INT_STATUS_DMA_SEAGULL_INT_STATUS_MSK		SHIFT0(0xffffffff)
++#define	ICU_DMA_SEAGULL_INT_STATUS_DMA_SEAGULL_INT_STATUS_BASE		0
++
++/*	ICU_DMA_MOHAWK_INT_STATUS	0x0124	DMA <var Processor: Mohawk> Interrupt
++ *										Status Register
++ */
++/* DMA Interrupt 1 Status */
++#define	ICU_DMA_MOHAWK_INT_STATUS_DMA_INT1_STATUS_MSK		SHIFT0(0xffffffff)
++#define	ICU_DMA_MOHAWK_INT_STATUS_DMA_INT1_STATUS_BASE		0
++
++/*	ICU_INT_STATUS_0			0x0128	Interrupt Status Register 0 */
++/* Interrupt Status [31:0] */
++#define	ICU_INT_STATUS_0_INT_STATUS_0_MSK		SHIFT0(0xffffffff)
++#define	ICU_INT_STATUS_0_INT_STATUS_0_BASE		0
++
++/*	ICU_INT_STATUS_1			0x012C	Interrupt Status Register 1 */
++/* Interrupt Status [63:32] */
++#define	ICU_INT_STATUS_1_INT_STATUS_1_MSK		SHIFT0(0xffffffff)
++#define	ICU_INT_STATUS_1_INT_STATUS_1_BASE		0
++
++/*	ICU_DDR_ARM_L2_INT_MSK		0x0130	DDR and ARM L2 cache Interrupt Mask
++ *										Register
++ */
++/*		Bit(s) ICU_DDR_ARM_L2_INT_MSK_RSRV_31_7 reserved */
++/* DDR Interrupt Mask */
++#define	ICU_DDR_ARM_L2_INT_MSK_DDR_INT_MSK						BIT_6
++/* <var Processor: Mohawk> L2 UECC Interrupt Mask */
++#define	ICU_DDR_ARM_L2_INT_MSK_MOHAWK_L2_UECC_INT_MSK			BIT_5
++/* <var Processor: Mohawk> L2 ECC Interrupt Mask */
++#define	ICU_DDR_ARM_L2_INT_MSK_MOHAWK_L2_ECC_INT_MSK			BIT_4
++/* <var Processor: Mohawk> L2 PA ECC Interrupt Mask */
++#define	ICU_DDR_ARM_L2_INT_MSK_MOHAWK_L2_PA_ECC_INT_MSK			BIT_3
++/* <var Processor: Osprey> L2 UECC Interrupt Mask */
++#define	ICU_DDR_ARM_L2_INT_MSK_SEAGULL_L2_UECC_INT_MSK			BIT_2
++/* <var Processor: Osprey> L2 ECC Interrupt Mask */
++#define	ICU_DDR_ARM_L2_INT_MSK_SEAGULL_L2_ECC_INT_MSK			BIT_1
++/* <var Processor: Osprey> L2 PA ECC Interrupt Mask */
++#define	ICU_DDR_ARM_L2_INT_MSK_SEAGULL_L2_PA_ECC_INT_MSK		BIT_0
++
++/*	ICU_DDR_ARM_L2_INT_STATUS	0x0134	DDR and ARM L2 cache Interrupt Status
++ *										Register
++ */
++/*		Bit(s) ICU_DDR_ARM_L2_INT_STATUS_RSRV_31_7 reserved */
++/* DDR Interrupt Status */
++#define	ICU_DDR_ARM_L2_INT_STATUS_DDR_INT_STATUS					BIT_6
++/* <var Processor: Mohawk> L2 UECC Interrupt Status */
++#define	ICU_DDR_ARM_L2_INT_STATUS_MOHAWK_L2_UECC_INT_STATUS			BIT_5
++/* <var Processor: Mohawk> L2 ECC Interrupt Status */
++#define	ICU_DDR_ARM_L2_INT_STATUS_MOHAWK_L2_ECC_INT_STATUS			BIT_4
++/* <var Processor: Mohawk> L2 PA ECC Interrupt Status */
++#define	ICU_DDR_ARM_L2_INT_STATUS_MOHAWK_L2_PA_ECC_INT_STATUS		BIT_3
++/* <var Processor: Osprey> L2 UECC Interrupt Status */
++#define	ICU_DDR_ARM_L2_INT_STATUS_SEAGULL_L2_UECC_INT_STATUS		BIT_2
++/* <var Processor: Osprey> L2 ECC Interrupt Status */
++#define	ICU_DDR_ARM_L2_INT_STATUS_SEAGULL_L2_ECC_INT_STATUS			BIT_1
++/* <var Processor: Osprey> L2 PA ECC Interrupt Status */
++#define	ICU_DDR_ARM_L2_INT_STATUS_SEAGULL_L2_PA_ECC_INT_STATUS		BIT_0
++
++
++
++/* -------------------- */
++
++
++#endif	/* __INC_ICU_H */
+diff --git a/include/asm-arm/arch-pxa168/interrupt.h b/include/asm-arm/arch-pxa168/interrupt.h
+new file mode 100644
+index 0000000..1c9120d
+--- /dev/null
++++ b/include/asm-arm/arch-pxa168/interrupt.h
+@@ -0,0 +1,95 @@
++#ifndef _BU_INTERRUPT_H_
++#define _BU_INTERRUPT_H_
++
++#include "common.h"
++#include "icu.h"
++
++#define	IPC_PRIORITY 	15
++#define	DMA_PRIORITY	15
++#define	SD_PRIORITY	15
++#define	TIMER_PRIORITY	15
++
++// definition for bit 4 of ICU_INT_0_63_CONF
++#define	FIQ_ROUTE	0x0
++#define	IRQ_ROUTE	0x1
++
++#define	INT_NUMS	64
++#define N_IRQS		INT_NUMS
++
++// ICU Hardware Interrupt Assignment
++//Description	INT REQ			APB signal		Comments
++
++#define		INT_AIRQ		0
++#define		INT_SSP_2		1
++#define		INT_SSP_1		2			//ssp1_int_req
++#define		INT_SSP_0		3			//ssp_int_req
++#define		INT_PMIC		4			//PAD -- m1_PMIC_INT
++#define		INT_RTC_1HZ		5			//rtc_hzclk_int_ndr
++#define		INT_RTC_ALARM		6			//rtc_slp_alarm_ndr
++#define		INT_I2C_AP		7			//i2c0_int
++#define		INT_GPU			8			//reserved for AP
++#define		INT_KeyPad		9			//kp_int
++#define		INT_Rotary		10
++#define		INT_Tackball		11
++#define		INT_1WIRE		12
++#define		INT_AP_TMR1		13			//timer_1_irq
++#define		INT_AP_TMR2		14			//timer_2_irq
++#define		INT_AP_TMR3		15			//timer_3_irq
++
++#define		INT_IPC_AP_DATAACK	16			//ipc_946_926_int0
++#define		INT_IPC_AP_SET_CMD	17			//ipc_946_926_int1
++#define		INT_IPC_AP_SET_MSG	18			//ipc_946_926_int2
++#define		INT_IPC_AP_SET_GP	19			//ipc_946_926_int3
++#define		INT_IPC_AP_WAKEUP	20			//ipc2pmu_946_wakeup
++#define		INT_IPC_CP_DATAACK	21			//ipc_926_946_int0
++#define		INT_IPC_CP_SET_CMD	22			//ipc_926_946_int1
++#define		INT_IPC_CP_SET_MSG	23			//ipc_926_946_int2
++#define		INT_IPC_CP_SET_GP	24			//ipc_926_946_int3
++#define		INT_IPC_CP_WAKEUP	25			//ipc2pmu_926_wakeup
++
++#define		INT_DDR			26			//DDR
++#define		INT_UART2		27			//ffuart1_int
++#define		INT_UART3		28			//ffuart2_int
++#define		INT_AP2_TMR1		29			//timer1_1_irq
++#define		INT_AP2_TMR2		30			//timer1_2_irq
++#define		INT_CP_TMR1		31			//timer_1_irq
++#define		INT_CP_TMR2		32			//timer_2_irq
++#define		INT_CP_TMR3		33			//timer_3_irq
++#define		INT_GSSP 		34			//COMM -- (PCM on MSA)
++#define		INT_WDT			35			//wdt_irq
++#define		INT_Main_PMU		36			//PMU
++#define		INT_CP_FRQ_CHG		37			//PMU
++#define		INT_AP_FRQ_CHG		38			//PMU
++#define		INT_MMC			39			//sdh2icu_int only 1 int from SD (2)
++#define		INT_AEU			40			//aeu_int
++#define		INT_LCD_INTF		41			//lcd_irq
++#define		INT_CCIC		42			//ipe_irq
++#define		INT_IRE			43			//Rotation Enging ire_irq
++#define		INT_USB			44			//usb_int
++#define		INT_NAND		45			//nd2icu_int
++#define		INT_SQU_DMA		46			//squ_int net name dc_int
++#define		INT_DMA_CP		47			//dma_int0
++#define		INT_DMA_AP		48			//dma_int1
++#define		INT_GPIO_AP		49			//gpio_int
++#define		INT_AP2_TMR3		50
++#define		INT_USB_2		51			//reserved
++
++#define		INT_IPC_SRV0_SG		52
++#define		INT_RESERVED_53		53
++#define		INT_TWIS		54
++#define		INT_GPIO_CP		55
++#define		INT_IPC_SRV0_MK		56
++#define		INT_RESERVED_57		57
++#define		INT_RESERVED_58		58
++#define		INT_UART1		59
++#define		INT_AP_PMU		60			//pmu_int
++#define		INT_Fab0_TO		61			//fabric0_timeout
++#define		INT_Fab1_TO		62			//fabric1_timeout
++#define		INT_PIN_MUX		63			//From Pin Mux (ND_RDY line)
++
++/* public methord */
++void	INT_Enable(BU_U32 int_num, BU_U32 irq_fiq, BU_U32 prio);
++void	INT_Disable(BU_U32 int_num );
++void	ISR_Connect(BU_U32 int_num, void (*m_func)(void *), void *m_data);
++
++#endif /* _BU_INTERRUPT_H_ */
+diff --git a/include/configs/ttc_dkb.h b/include/configs/ttc_dkb.h
+index cbd408e..2f48c2e 100644
+--- a/include/configs/ttc_dkb.h
++++ b/include/configs/ttc_dkb.h
+@@ -54,6 +54,8 @@
+ #define CONFIG_SETUP_MEMORY_TAGS   	1
+ #define CONFIG_MISC_INIT_R         	1   /* call misc_init_r during start up */
+ 
++#define CONFIG_USE_IRQ
++
+ /*
+  * Size of malloc() pool
+  */
+-- 
+1.6.0.4
+

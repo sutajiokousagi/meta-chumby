@@ -1,0 +1,53 @@
+From a2d733934f29fde8700cf9d69ca89f14479cb170 Mon Sep 17 00:00:00 2001
+From: Lei Wen <leiwen@marvell.com>
+Date: Tue, 13 Oct 2009 11:11:10 +0800
+Subject: [PATCH] enable all uart clk
+
+Signed-off-by: TonyTeng <ylteng@marvell.com>
+---
+ board/pxa/avengers/avenger_pxa168.c |   25 +++++++++++++++++++------
+ 1 files changed, 19 insertions(+), 6 deletions(-)
+
+diff --git a/board/pxa/avengers/avenger_pxa168.c b/board/pxa/avengers/avenger_pxa168.c
+index 008ec90..dbce45b 100644
+--- a/board/pxa/avengers/avenger_pxa168.c
++++ b/board/pxa/avengers/avenger_pxa168.c
+@@ -49,16 +49,29 @@ int board_init (void)
+     /* set SEL_MRVL_ID bit in MOHAWK_CPU_CONF register - Ning */
+     *(volatile unsigned int *)0xD4282c08 = *(volatile unsigned int *)0xD4282c08 | 0x100;
+     /* ensure L2 cache is not mapped as SRAM */
+-    *(unsigned int *)0xd4282c08 &= ~(1<<4);
++    *(volatile unsigned int *)0xd4282c08 &= ~(1<<4);
+ 
+     /* lowering RTC setting could improve Vmin */
+-    *(unsigned int *)0xd4282c10 = 0x16b5ad6d;
+-    *(unsigned int *)0xd4282c18 = 0x2d5b56b5;
++    *(volatile unsigned int *)0xd4282c10 = 0x16b5ad6d;
++    *(volatile unsigned int *)0xd4282c18 = 0x2d5b56b5;
+ 
+     /* Enable clocks */
+-    *(unsigned int *)0xD4051024 = 0xffffffff;
+-    /* enable UART2 clock */
+-    *(unsigned int *)0xD4015000 = 0x13;
++    *(volatile unsigned int *)0xD4051024 = 0xffffffff;
++
++    /* enable apbc UART1 clock */
++    *(volatile unsigned int *)0xD4015000 = 0x13;
++    /* enable apbc UART2 clock */
++    *(volatile unsigned int *)0xD4015004 = 0x13;
++    /* enable apbc UART3 clock */
++    *(volatile unsigned int *)0xD4015070 = 0x13;
++
++    /* enable UART1_IER */
++    *(volatile unsigned long *)0xd4017004 = 0x40;
++    /* enable UART2_IER */
++    *(volatile unsigned long *)0xd4018004 = 0x40;
++    /* enable UART3_IER */
++    *(volatile unsigned long *)0xd4026004 = 0x40;
++
+     /* enable PMU user access */
+     __asm__ __volatile__ (
+ 		    "mcr     p15, 0, %0, c15, c9, 0\n\t"
+-- 
+1.6.0.4
+

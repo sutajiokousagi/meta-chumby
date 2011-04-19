@@ -1,0 +1,38 @@
+// Falconwing STMP378x ROM command script to load and run chumby_boot
+
+sources {
+    power_prep="power";
+    clocks_prep="clocks";
+    sdram_prep="sdram_prep";
+    chumby_stub="chumby_stub";
+}
+
+section (0) {
+
+    //----------------------------------------------------------
+    // Power supply iinitialization.
+    //----------------------------------------------------------
+    load power_prep;
+    call power_prep;
+
+
+    //----------------------------------------------------------
+    // Clocks initialization.
+    //----------------------------------------------------------
+    load clocks_prep;
+    call clocks_prep;
+
+
+    //----------------------------------------------------------
+    // SDRAM initialization.
+    //----------------------------------------------------------
+    load sdram_prep;
+    call sdram_prep;
+
+
+    //----------------------------------------------------------
+    // Load linux command line files.
+    //----------------------------------------------------------
+    load chumby_stub;
+    jump chumby_stub;
+}

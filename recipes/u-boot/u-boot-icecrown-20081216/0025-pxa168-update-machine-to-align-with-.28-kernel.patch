@@ -1,0 +1,43 @@
+From d5dde84b3405b63bc4b5ec115bfab69857cccf94 Mon Sep 17 00:00:00 2001
+From: Jing Xiang <jxiang@marvell.com>
+Date: Wed, 4 Mar 2009 19:48:04 +0800
+Subject: [PATCH] pxa168: update machine to align with .28 kernel
+
+Signed-off-by: Jing Xiang <jxiang@marvell.com>
+---
+ board/pxa/aspenite/aspenite_pxa168.c |    9 ++++++---
+ 1 files changed, 6 insertions(+), 3 deletions(-)
+
+diff --git a/board/pxa/aspenite/aspenite_pxa168.c b/board/pxa/aspenite/aspenite_pxa168.c
+index f921511..c61f0a0 100644
+--- a/board/pxa/aspenite/aspenite_pxa168.c
++++ b/board/pxa/aspenite/aspenite_pxa168.c
+@@ -96,7 +96,10 @@ int board_init (void)
+ 
+     aspen_init();
+ 
+-    /* Ensure L2 cache is not mapped as SRAM */
++    /* set SEL_MRVL_ID bit in MOHAWK_CPU_CONF register - Ning */
++    *(volatile unsigned int *)0xD4282c08 = *(volatile unsigned int *)0xD4282c08 | 0x100;
++
++    /* ensure L2 cache is not mapped as SRAM */
+     *(unsigned int *)0xd4282c08 &= ~(1<<4);
+     /* Enable clocks */
+     *(unsigned int *)0xD4051024 = 0xffffffff;
+@@ -108,11 +111,11 @@ int board_init (void)
+ 
+ #ifdef CONFIG_ASPENITE 
+     /* arch number of Aspenite Board */
+-    gd->bd->bi_arch_number = 1830;  // MACH_ASPENITE
++    gd->bd->bi_arch_number = 2043;  // MACH_ASPENITE
+ #else 
+ #ifdef CONFIG_ZYLONITE2
+     /* arch number of Zylonite2 Board */
+-    gd->bd->bi_arch_number = 1829;  // MACH_ZYLONITE2
++    gd->bd->bi_arch_number = 2042;  // MACH_ZYLONITE2
+ #endif
+ #endif
+ 
+-- 
+1.6.0.4
+

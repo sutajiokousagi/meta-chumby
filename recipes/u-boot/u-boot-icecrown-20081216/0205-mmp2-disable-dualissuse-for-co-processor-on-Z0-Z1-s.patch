@@ -1,0 +1,67 @@
+From e00c0859caa7f4ce40d683dc940767cca325bd40 Mon Sep 17 00:00:00 2001
+From: Mingliang Hu <mhu4@marvell.com>
+Date: Wed, 14 Jul 2010 16:26:24 +0800
+Subject: [PATCH] mmp2: disable dualissuse for co-processor on Z0/Z1 stepping
+
+Signed-off-by: Mingliang Hu <mhu4@marvell.com>
+---
+ board/pxa/brownstone/brownstone.c    |    6 ++++++
+ board/pxa/jasper/jasper.c            |    6 ++++++
+ include/asm-arm/arch-pxa688/common.h |    7 +++++++
+ 3 files changed, 19 insertions(+), 0 deletions(-)
+
+diff --git a/board/pxa/brownstone/brownstone.c b/board/pxa/brownstone/brownstone.c
+index fc96f62..d2d3939 100644
+--- a/board/pxa/brownstone/brownstone.c
++++ b/board/pxa/brownstone/brownstone.c
+@@ -283,6 +283,12 @@ int board_init (void)
+ 	reg |= (1<<11);
+ 	__asm__("mcr p15, 0, %0, c1, c0, 0" : : "r" (reg));
+ 
++	if(!cpu_is_pxa688_a0()){
++		__asm__("mrc p15, 1, %0, c15, c1, 0" : "=r" (reg));
++		reg |= (1<<15);
++		__asm__("mcr p15, 1, %0, c15, c1, 0" : : "r" (reg));
++	}
++		
+     gd->bd->bi_dram[0].start = PHYS_SDRAM_1;
+     gd->bd->bi_dram[0].size  = PHYS_SDRAM_1_SIZE;
+ 
+diff --git a/board/pxa/jasper/jasper.c b/board/pxa/jasper/jasper.c
+index 581f490..bf5b604 100644
+--- a/board/pxa/jasper/jasper.c
++++ b/board/pxa/jasper/jasper.c
+@@ -308,6 +308,12 @@ int board_init (void)
+ 	reg |= (1<<11);
+ 	__asm__("mcr p15, 0, %0, c1, c0, 0" : : "r" (reg));
+ 
++	if(!cpu_is_pxa688_a0()){
++		__asm__("mrc p15, 1, %0, c15, c1, 0" : "=r" (reg));
++		reg |= (1<<15);
++		__asm__("mcr p15, 1, %0, c15, c1, 0" : : "r" (reg));
++	}
++
+     gd->bd->bi_dram[0].start = PHYS_SDRAM_1;
+     gd->bd->bi_dram[0].size  = PHYS_SDRAM_1_SIZE;
+ 
+diff --git a/include/asm-arm/arch-pxa688/common.h b/include/asm-arm/arch-pxa688/common.h
+index fbbb095..0e346cc 100644
+--- a/include/asm-arm/arch-pxa688/common.h
++++ b/include/asm-arm/arch-pxa688/common.h
+@@ -435,6 +435,13 @@ unsigned long clk_get_rate(struct clk * clk);
+ 	 __cpu_is_pxa688(id) && ((chip_id & 0x00ff0000) == 0x00e00000);	\
+ 	 })
+ 
++#define cpu_is_pxa688_a0()                                 		\
++	({                                              		\
++	 unsigned int chip_id = __raw_readl(0xd4282c00);		\
++	 unsigned int id = read_cpuid(CPUID_ID); 			\
++	 __cpu_is_pxa688(id) && ((chip_id & 0x00ff0000) == 0x00a00000);	\
++	 })
++
+ #define DMA_BIT_MASK(n) (((n) == 64) ? ~0ULL : ((1ULL<<(n))-1))
+ 
+ static inline void *dev_get_drvdata(const struct device *dev)
+-- 
+1.6.0.4
+

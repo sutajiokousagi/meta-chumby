@@ -1,0 +1,101 @@
+From 2f90f6df854b515a337b7085a3f76c9f0cb9f5ab Mon Sep 17 00:00:00 2001
+From: Wen Lei <leiwen@marvell.com>
+Date: Fri, 27 Feb 2009 10:31:56 +0800
+Subject: [PATCH] pxa910: add boot zImage from memory
+
+---
+ board/pxa/common/boot.c |   81 +++++++++++++++++++++++++++++++++++++++++++++++
+ 1 files changed, 81 insertions(+), 0 deletions(-)
+
+diff --git a/board/pxa/common/boot.c b/board/pxa/common/boot.c
+index cef655a..2fa1a5f 100644
+--- a/board/pxa/common/boot.c
++++ b/board/pxa/common/boot.c
+@@ -11,3 +11,84 @@
+ 
+ DECLARE_GLOBAL_DATA_PTR;
+ ulong load_addr = CONFIG_SYS_LOAD_ADDR;	/* Default Load Address */
++static bootm_headers_t images;		/* pointers to os/initrd/fdt images */
++
++typedef int boot_os_fn (int flag, int argc, char *argv[],
++			bootm_headers_t *images); /* pointers to os/initrd/fdt */
++
++#define CONFIG_BOOTM_LINUX 1
++#ifdef CONFIG_BOOTM_LINUX
++extern boot_os_fn do_bootm_linux;
++#endif
++
++boot_os_fn * boot_os[] = {
++#ifdef CONFIG_BOOTM_LINUX
++	[IH_OS_LINUX] = do_bootm_linux,
++#endif
++#ifdef CONFIG_BOOTM_NETBSD
++	[IH_OS_NETBSD] = do_bootm_netbsd,
++#endif
++#ifdef CONFIG_LYNXKDI
++	[IH_OS_LYNXOS] = do_bootm_lynxkdi,
++#endif
++#ifdef CONFIG_BOOTM_RTEMS
++	[IH_OS_RTEMS] = do_bootm_rtems,
++#endif
++#if defined(CONFIG_CMD_ELF)
++	[IH_OS_VXWORKS] = do_bootm_vxworks,
++	[IH_OS_QNX] = do_bootm_qnxelf,
++#endif
++#ifdef CONFIG_INTEGRITY
++	[IH_OS_INTEGRITY] = do_bootm_integrity,
++#endif
++};
++
++/*******************************************************************/
++/* bootz - boot zImage in memory */
++/*******************************************************************/
++static int relocated = 0;
++
++int do_bootz (cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
++{
++	ulong		iflag;
++	ulong		load_end = 0;
++	int		ret;
++	boot_os_fn	*boot_fn;
++
++	if(argc < 2)
++		images.ep = 0x500000;
++	else {
++		if (isxdigit(*(argv[1])))
++			images.ep = simple_strtoul(argv[1], NULL, 16);
++		else {
++			printf("Input address is not digital, ERROR!!\n");
++			return -1;
++		}
++	}
++
++	images.os.os = IH_OS_LINUX;
++	/* relocate boot function table */
++	if (!relocated) {
++		int i;
++		for (i = 0; i < ARRAY_SIZE(boot_os); i++)
++			boot_os[i] += gd->reloc_off;
++		relocated = 1;
++	}
++
++	boot_fn = boot_os[images.os.os];
++	boot_fn(0, argc, argv, &images);
++
++	show_boot_progress (-9);
++#ifdef DEBUG
++	puts ("\n## Control returned to monitor - resetting...\n");
++#endif
++	do_reset (cmdtp, flag, argc, argv);
++
++	return 1;
++}
++
++U_BOOT_CMD(
++        bootz,   CONFIG_SYS_MAXARGS,      1,      do_bootz,
++        "bootz   - boot zImge from memory\n",          
++        "[addr]"
++);
+-- 
+1.6.0.4
+

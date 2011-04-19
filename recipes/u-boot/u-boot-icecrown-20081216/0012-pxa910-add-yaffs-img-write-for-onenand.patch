@@ -1,0 +1,226 @@
+From ed1cfee1699df26004488fa26c570e5d90fb0834 Mon Sep 17 00:00:00 2001
+From: Wen Lei <leiwen@marvell.com>
+Date: Fri, 27 Feb 2009 10:28:55 +0800
+Subject: [PATCH] pxa910: add yaffs img write for onenand
+
+---
+ common/cmd_onenand.c               |   17 +++++-
+ drivers/mtd/onenand/onenand_base.c |  103 +++++++++++++++++++++++++++++++++++-
+ include/onenand_uboot.h            |    2 +
+ 3 files changed, 117 insertions(+), 5 deletions(-)
+
+diff --git a/common/cmd_onenand.c b/common/cmd_onenand.c
+index ed02b77..406ddad 100644
+--- a/common/cmd_onenand.c
++++ b/common/cmd_onenand.c
+@@ -123,9 +123,20 @@ int do_onenand(cmd_tbl_t * cmdtp, int flag, int argc, char *argv[])
+ 			ulong ofs = simple_strtoul(argv[3], NULL, 16);
+ 			size_t len = simple_strtoul(argv[4], NULL, 16);
+ 			size_t retlen = 0;
++			struct mtd_oob_ops ops = {
++				.datbuf = (uint8_t *) addr,
++				.len    = len,
++				.oobbuf = (uint8_t *) addr,
++				.ooblen = len,
++				.mode	= MTD_OOB_PLACE,
++			};
+ 
+-			onenand_write(&onenand_mtd, ofs, len, &retlen,
+-				      (u_char *) addr);
++			if (strncmp(argv[1], "write.yaffs", 11) == 0) {
++				onenand_write_oob(&onenand_mtd, ofs, &ops);
++			}
++			else
++				onenand_write(&onenand_mtd, ofs, len, &retlen,
++						(u_char *) addr);
+ 			printf("Done\n");
+ 
+ 			return 0;
+@@ -179,7 +190,7 @@ U_BOOT_CMD(
+ 	"info   - show available OneNAND devices\n"
+ 	"onenand read[.oob] addr ofs len - read data at ofs with len to addr\n"
+ 	"onenand dump addr - dump the specified page's content\n"
+-	"onenand write addr ofs len - write data at ofs with len from addr\n"
++	"onenand write[.yaffs] addr ofs len - write data at ofs with len from addr\n"
+ 	"onenand erase saddr eaddr - erase block start addr to end addr\n"
+ 	"onenand block[.oob] addr block [page] [len] - "
+ 		"read data with (block [, page]) to addr"
+diff --git a/drivers/mtd/onenand/onenand_base.c b/drivers/mtd/onenand/onenand_base.c
+index 360e4f9..f94c407 100644
+--- a/drivers/mtd/onenand/onenand_base.c
++++ b/drivers/mtd/onenand/onenand_base.c
+@@ -30,6 +30,10 @@
+ #endif
+ 
+ static struct pxa3xx_bbm *pxa3xx_bbm;
++struct ecc_layout {
++	int     offset;
++	int     length;
++};
+ 
+ /* It should access 16-bit instead of 8-bit */
+ static inline void *memcpy_16(void *dst, const void *src, unsigned int len)
+@@ -44,6 +48,28 @@ static inline void *memcpy_16(void *dst, const void *src, unsigned int len)
+ 	return ret;
+ }
+ 
++static inline void *memcpy_16aligned(void *dest, const void *src, int n)
++{
++	const u8 * pS = (const u8*)src;
++	u8 s_low;
++	short s_high = 0xffff;
++	short *d = dest;
++
++	while(n > 0) {
++		s_low = *pS;
++		if (n >= 2)
++			s_high = *(pS + 1);
++		else
++			s_high = 0xffff;
++
++		*d++ = ((s_high << 8) | s_low);
++		n -= 2;
++		pS += 2;
++	}
++
++	return dest;
++}
++
+ static const unsigned char ffchars[] = {
+ 	0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+ 	0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,	/* 16 */
+@@ -55,6 +81,60 @@ static const unsigned char ffchars[] = {
+ 	0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,	/* 64 */
+ };
+ 
++/* check whether a page and spare area is empty
++ * size should be sum of page size and spare area length
++ */
++static inline int is_buf_blank(const unsigned char * buf, int size)
++{
++	int i = 0;
++	while (i < size) {
++		if (*((unsigned long *)(buf + i)) != 0xFFFFFFFF)
++			return 0;
++		i += 4;
++	}
++	if (i > size) {
++		i -= 4;
++		while (i < size) {
++			if (*(buf + i) != 0xFF)
++				return 0;
++			i++;
++		}
++	}
++	return 1;
++}
++
++static struct ecc_layout onenand_ecc_layout[] = {
++	{2, 3},
++	{14, 2},
++	{18, 3},
++	{30, 2},
++	{34, 3},
++	{46, 2},
++	{50, 3},
++	{62, 2},
++};
++
++/* Convert generic oob buf to Onenand oob buf layout.
++ * This function should be called before Onenand write operation.
++ */
++static int convert_oob_before_write(unsigned char *oobbuf, const unsigned char *buf, int len)
++{
++	int i, count = 0;
++	unsigned char *tmp = (unsigned char *)buf;
++
++	for (i = 0; i < ARRAY_SIZE(onenand_ecc_layout); i++) {
++		if (count > len)
++			break;
++
++		memcpy_16aligned(oobbuf + onenand_ecc_layout[i].offset,
++				tmp, onenand_ecc_layout[i].length);
++		tmp += onenand_ecc_layout[i].length;
++		count += onenand_ecc_layout[i].length;
++	}
++
++	return count;
++}
++
+ #if defined(CONFIG_PXA3xx_DVFM)
+ static struct dvfm_lock dvfm_lock = {
+ 	.lock           = SPIN_LOCK_UNLOCKED,
+@@ -471,7 +551,10 @@ static int onenand_write_bufferram(struct mtd_info *mtd, int area,
+ 	bufferram = this->base + area;
+ 	bufferram += onenand_bufferram_offset(mtd, area);
+ 
+-	memcpy_16(bufferram + offset, buffer, count);
++	if (area == ONENAND_SPARERAM && !is_buf_blank(buffer, 64))
++		convert_oob_before_write(bufferram, buffer, count);
++	else
++		memcpy_16(bufferram + offset, buffer, count);
+ 
+ 	return 0;
+ }
+@@ -1150,6 +1233,10 @@ static int onenand_fill_auto_oob(struct mtd_info *mtd, u_char *oob_buf,
+ 	return 0;
+ }
+ 
++static inline int notsizealigned(int x, int pagesize) {
++	return x % pagesize;
++}
++
+ /**
+  * onenand_write_ops_nolock - [OneNAND Interface] write main and/or out-of-band
+  * @param mtd           MTD device structure
+@@ -1170,6 +1257,11 @@ static int onenand_write_ops_nolock(struct mtd_info *mtd, loff_t to,
+ 	const u_char *oob = ops->oobbuf;
+ 	u_char *oobbuf;
+ 	int ret = 0;
++	int pagesize;
++	int is_yaffs;
++
++	is_yaffs = (oob != NULL && oob == buf) ? 1 : 0;
++	pagesize = (is_yaffs) ? (mtd->writesize + mtd->oobsize) : (mtd->writesize);
+ 
+ 	MTDDEBUG(MTD_DEBUG_LEVEL3,
+ 		"onenand_write_ops_nolock: to = 0x%08x, len = %i\n",
+@@ -1186,7 +1278,7 @@ static int onenand_write_ops_nolock(struct mtd_info *mtd, loff_t to,
+ 	}
+ 
+ 	/* Reject writes, which are not page aligned */
+-	if (unlikely(NOTALIGNED(to) || NOTALIGNED(len))) {
++	if (unlikely(NOTALIGNED(to) || notsizealigned(len, pagesize))) {
+ 		printk(KERN_ERR "onenand_write_ops_nolock: Attempt to write not page aligned data\n");
+ 		return -EINVAL;
+ 	}
+@@ -1219,6 +1311,13 @@ static int onenand_write_ops_nolock(struct mtd_info *mtd, loff_t to,
+ 
+ 		this->write_bufferram(mtd, ONENAND_DATARAM, wbuf, 0, mtd->writesize);
+ 
++		/* YAFFS support */
++		if (is_yaffs) {
++			oob = wbuf + mtd->writesize;
++			buf += mtd->oobsize;
++			written += mtd->oobsize;
++		}
++
+ 		if (oob) {
+ 			oobbuf = this->oob_buf;
+ 
+diff --git a/include/onenand_uboot.h b/include/onenand_uboot.h
+index e960257..3979280 100644
+--- a/include/onenand_uboot.h
++++ b/include/onenand_uboot.h
+@@ -30,6 +30,8 @@ extern int onenand_read_oob(struct mtd_info *mtd, loff_t from,
+ 			    struct mtd_oob_ops *ops);
+ extern int onenand_write(struct mtd_info *mtd, loff_t from, size_t len,
+ 			 size_t * retlen, const u_char * buf);
++extern int onenand_write_oob(struct mtd_info *mtd, loff_t to,
++			struct mtd_oob_ops *ops);
+ extern int onenand_erase(struct mtd_info *mtd, struct erase_info *instr);
+ 
+ extern int onenand_unlock(struct mtd_info *mtd, loff_t ofs, size_t len);
+-- 
+1.6.0.4
+

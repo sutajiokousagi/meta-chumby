@@ -1,0 +1,83 @@
+From 5f03bda5bbcdef76097c63cd333f2ee5b1c6e97c Mon Sep 17 00:00:00 2001
+From: Lei Wen <leiwen@marvell.com>
+Date: Wed, 3 Jun 2009 12:13:01 +0800
+Subject: [PATCH] pxa3xx_nand: move write ECC control into write_page_hwecc function
+
+Signed-off-by: Lei Wen <leiwen@marvell.com>
+---
+ common/cmd_nand.c              |    1 -
+ drivers/mtd/nand/pxa3xx_nand.c |   15 +++++++++++----
+ 2 files changed, 11 insertions(+), 5 deletions(-)
+
+diff --git a/common/cmd_nand.c b/common/cmd_nand.c
+index 8614962..50c8a7e 100644
+--- a/common/cmd_nand.c
++++ b/common/cmd_nand.c
+@@ -372,7 +372,6 @@ int do_nand(cmd_tbl_t * cmdtp, int flag, int argc, char *argv[])
+ 			n_chip->ops.oobbuf = (uint8_t *)addr;
+ 			n_chip->ops.ooboffs = yaffs_oob.offset; 
+ 			n_chip->ops.ooblen = yaffs_oob.size;
+-			n_chip->ops.mode = MTD_OOB_RAW;
+ 
+ 			if (read)
+ 				ret = nand_read_skip_bad(nand, off, &size,
+diff --git a/drivers/mtd/nand/pxa3xx_nand.c b/drivers/mtd/nand/pxa3xx_nand.c
+index 69c49aa..30cd823 100644
+--- a/drivers/mtd/nand/pxa3xx_nand.c
++++ b/drivers/mtd/nand/pxa3xx_nand.c
+@@ -419,7 +419,6 @@ static int prepare_command_poll(struct pxa3xx_nand *nand, int command,
+ 	info->current_cmd_seqs	= 0;
+ 	info->need_addressing	= 0;
+ 	info->need_wait_ready	= -1;
+-	info->use_ecc		= ECC_NONE;
+ 
+ 	nand->state		= 0;
+ 	nand->use_dma		= 0;
+@@ -440,8 +439,10 @@ static int prepare_command_poll(struct pxa3xx_nand *nand, int command,
+ 		info->buf_count = mtd->writesize + mtd->oobsize;
+ 		memset(info->data_buff, 0xFF, info->buf_count);
+ 
+-		if (command == NAND_CMD_READOOB)
++		if (command == NAND_CMD_READOOB) {
+ 			info->buf_start = mtd->writesize + column;
++			info->use_ecc = ECC_NONE;
++		}
+ 		else {
+ 			info->buf_start = column;
+ 			info->use_ecc = flash_info->ecc_type;
+@@ -492,8 +493,6 @@ static int prepare_command_poll(struct pxa3xx_nand *nand, int command,
+ 		cmd = flash_info->cmdset->program;
+ 
+ 		nand->is_write = 1;
+-		info->use_ecc = flash_info->ecc_type;
+-
+ 		pxa3xx_set_datasize(info);
+ 		if (flash_info->page_size > PAGE_CHUNK_SIZE) {
+ 			/* need addressing at second command cycle */
+@@ -710,6 +709,9 @@ RETRY:
+ 				nand->errcode |= ERR_SENDCMD;
+ 		}
+ 	}
++
++	/* reset ECC */
++	info->use_ecc = ECC_NONE;
+ }
+ 
+ static uint8_t pxa3xx_nand_read_byte(struct mtd_info *mtd)
+@@ -821,8 +823,13 @@ static int pxa3xx_nand_read_page_hwecc(struct mtd_info *mtd,
+ static void pxa3xx_nand_write_page_hwecc(struct mtd_info *mtd,
+ 			struct nand_chip *chip, const uint8_t *buf)
+ {
++	struct pxa3xx_nand_info *info = mtd->priv;
++	const struct pxa3xx_nand_flash *flash_info = info->flash_info;
++
+ 	chip->write_buf(mtd, buf, mtd->writesize);
+ 	chip->write_buf(mtd, chip->oob_poi, mtd->oobsize);
++
++	info->use_ecc = flash_info->ecc_type;
+ }
+ 
+ static int pxa3xx_nand_config_flash(struct pxa3xx_nand_info *info,
+-- 
+1.6.0.4
+

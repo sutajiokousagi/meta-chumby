@@ -1,0 +1,167 @@
+From 9a1e6369ccc39977b7df96aa9b52b4ed7058014c Mon Sep 17 00:00:00 2001
+From: Mingliang Hu <mingliang.hu@marvell.com>
+Date: Wed, 13 Jan 2010 15:35:21 +0800
+Subject: [PATCH] pxa688: add Bonnell eMMC support with bootstrap workaround
+
+Signed-off-by: Mingliang Hu <mingliang.hu@marvell.com>
+---
+ drivers/mmc/mmc.c                  |   38 ++++++++++++++++++++++++++++++++++++
+ drivers/mmc/pxa9xx_sdh.c           |   25 +++++++++++++++++++++++
+ include/configs/mmp2_jasper_emmc.h |    1 +
+ include/mmc.h                      |    5 ++++
+ 4 files changed, 69 insertions(+), 0 deletions(-)
+ mode change 100755 => 100644 drivers/mmc/mmc.c
+
+diff --git a/drivers/mmc/mmc.c b/drivers/mmc/mmc.c
+old mode 100755
+new mode 100644
+index f6745ba..aad0c68
+--- a/drivers/mmc/mmc.c
++++ b/drivers/mmc/mmc.c
+@@ -33,12 +33,21 @@
+ #include <mmc.h>
+ #include <div64.h>
+ 
++#if defined(CONFIG_CPU_PXA688) && defined(CONFIG_PXA688_EMMC_WORKAROUND)
++#include <asm/arch/hardware.h>
++#endif
++
+ #define MMC_RETRY_TIME	3
+ #define BLKS_PER_READ	0x40
+ #define BLKS_PER_WRITE	0x40
+ static struct list_head mmc_devices;
+ static int cur_dev_num = -1;
+ 
++#if defined(CONFIG_CPU_PXA688) && defined(CONFIG_PXA688_EMMC_WORKAROUND)
++static int emmc_init = 0;
++static int go_idle_num = 0;
++#endif
++
+ int mmc_send_cmd(struct mmc *mmc, struct mmc_cmd *cmd, struct mmc_data *data)
+ {
+ 	int retry = 0, res;
+@@ -452,6 +461,14 @@ int mmc_go_idle(struct mmc* mmc)
+ 	struct mmc_cmd cmd;
+ 	int err;
+ 
++#if defined(CONFIG_CPU_PXA688) && defined(CONFIG_PXA688_EMMC_WORKAROUND)
++	if(mmc->is_emmc == 1)
++		if(go_idle_num != 0)
++			return 0;
++		else
++			go_idle_num = 1;
++#endif
++
+ 	udelay(1000);
+ 
+ 	cmd.cmdidx = MMC_CMD_GO_IDLE_STATE;
+@@ -459,8 +476,21 @@ int mmc_go_idle(struct mmc* mmc)
+ 	cmd.resp_type = MMC_RSP_NONE;
+ 	cmd.flags = 0;
+ 
++#if defined(CONFIG_CPU_PXA688) && defined(CONFIG_PXA688_EMMC_WORKAROUND)
++	if(mmc->is_emmc == 1){
++		__REG(0xd401e1e4) = 0x9b41;	//MMC3_DAT3
++		__REG(0xd4019108+0x54) = __REG(0xd4019108+0x54) | (1<<7);
++		__REG(0xd4019108+0x18) = __REG(0xd4019108+0x18) | (1<<7);
++	}
++#endif
++
+ 	err = mmc_send_cmd(mmc, &cmd, NULL);
+ 
++#if defined(CONFIG_CPU_PXA688) && defined(CONFIG_PXA688_EMMC_WORKAROUND)
++	if(mmc->is_emmc == 1)
++		__REG(0xd401e1e4) = 0xd8c2;	//MMC3_DAT3
++#endif
++
+ 	if (err)
+ 		return err;
+ 
+@@ -1322,6 +1352,14 @@ int mmc_init(struct mmc *mmc)
+ {
+ 	int err, loop=10;
+ 
++#if defined(CONFIG_CPU_PXA688) && defined(CONFIG_PXA688_EMMC_WORKAROUND)
++	if(mmc->is_emmc == 1)
++		if(emmc_init != 0)
++			return 0;
++		else
++			emmc_init = 1;
++#endif
++
+ 	err = mmc->init(mmc);
+ 
+ 	if (err)
+diff --git a/drivers/mmc/pxa9xx_sdh.c b/drivers/mmc/pxa9xx_sdh.c
+index 70b05da..d09dd0a 100644
+--- a/drivers/mmc/pxa9xx_sdh.c
++++ b/drivers/mmc/pxa9xx_sdh.c
+@@ -357,6 +357,13 @@ static int sdh_add_mmc(u32 sdh_id)
+ 	else
+ 		return -1;
+ 
++#if defined(CONFIG_CPU_PXA688) && defined(CONFIG_PXA688_EMMC_WORKAROUND)
++	if(sdh_id == 11)
++		mmc->is_emmc = 1;
++	else
++		mmc->is_emmc = 0;
++#endif
++
+ 	host->clk_rate = MMC4_MAX_SPEED;
+ 	mmc->priv = host;
+ 
+@@ -423,6 +430,24 @@ int pxa9xx_mmc_init(bd_t *bis)
+ 		return ret;
+ 	} else if (bis->bi_arch_number == 2382){ //MMP2
+ 		int ret = 0;
++
++		/* MMC3 */
++#define MMP2_MMC3_PIN_VAL	0xd8c2
++		__REG(0xd401e244) = MMP2_MMC3_PIN_VAL;	//MMC3_CMD
++		__REG(0xd401e240) = 0x10c2;	//MMC3_CLK
++		__REG(0xd401e200) = MMP2_MMC3_PIN_VAL;	//MMC3_DAT0
++		__REG(0xd401e1e0) = MMP2_MMC3_PIN_VAL;	//MMC3_DAT1
++		__REG(0xd401e204) = MMP2_MMC3_PIN_VAL;	//MMC3_DAT2
++		__REG(0xd401e1e4) = MMP2_MMC3_PIN_VAL;	//MMC3_DAT3
++		__REG(0xd401e208) = MMP2_MMC3_PIN_VAL;	//MMC3_DAT4
++		__REG(0xd401e1e8) = MMP2_MMC3_PIN_VAL;	//MMC3_DAT5
++		__REG(0xd401e20c) = MMP2_MMC3_PIN_VAL;	//MMC3_DAT6
++		__REG(0xd401e1ec) = MMP2_MMC3_PIN_VAL;	//MMC3_DAT7
++
++		ret = sdh_add_mmc(11);
++		if (ret)
++			return ret;
++
+ 		/* MMC1 */
+ #define MMP2_MMC1_PIN_VAL	0xd8c1
+ 		__REG(0xd401e04c) = 0x1881;	//MMC1_CD
+diff --git a/include/configs/mmp2_jasper_emmc.h b/include/configs/mmp2_jasper_emmc.h
+index 4c2b7b0..4d6e8bd 100644
+--- a/include/configs/mmp2_jasper_emmc.h
++++ b/include/configs/mmp2_jasper_emmc.h
+@@ -36,5 +36,6 @@
+ #define CONFIG_MMCBOOT			"mmc read 0x4c00 0x1800 0x1100000"
+ #define CONFIG_MBR_SECTOR		0x4800
+ 
++#define CONFIG_PXA688_EMMC_WORKAROUND
+ #endif
+ /* __CONFIG_MMP2_JASPER_EMMC_H */
+diff --git a/include/mmc.h b/include/mmc.h
+index a795881..ccd07d3 100644
+--- a/include/mmc.h
++++ b/include/mmc.h
+@@ -299,6 +299,11 @@ struct mmc {
+ 	char ext_csd_boot_bus_width;
+ 	u32  erase_grp_size; //sectors
+ 	char ext_csd_erase_mem_content;
++
++	/*MMP2 eMMC workaround*/
++#if defined(CONFIG_CPU_PXA688) && defined(CONFIG_PXA688_EMMC_WORKAROUND)
++	char is_emmc;
++#endif
+ };
+ 
+ int mmc_register(struct mmc *mmc);
+-- 
+1.6.0.4
+

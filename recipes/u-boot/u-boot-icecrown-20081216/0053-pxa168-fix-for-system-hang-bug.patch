@@ -1,0 +1,35 @@
+From e68b2ace1f0ca2a7f1a829f2b487799a7c502857 Mon Sep 17 00:00:00 2001
+From: Lei Wen <leiwen@marvell.com>
+Date: Tue, 12 May 2009 19:56:33 +0800
+Subject: [PATCH] pxa168: fix for system hang bug
+
+Signed-off-by: Lei Wen <leiwen@marvell.com>
+---
+ board/pxa/avengers/aspen_init.S |    4 ++--
+ 1 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/board/pxa/avengers/aspen_init.S b/board/pxa/avengers/aspen_init.S
+index 45325e7..7ca7503 100644
+--- a/board/pxa/avengers/aspen_init.S
++++ b/board/pxa/avengers/aspen_init.S
+@@ -68,7 +68,7 @@
+ .globl aspen_init
+        .type   aspen_init, %function
+ aspen_init:
+-	stmfd   sp!,    {r1-r2, lr}             @ Save r1, r2 and link register on the stack
++	stmfd   sp!,    {r1-r4, lr}             @ Save r1, r2 and link register on the stack
+ 
+ 	@ Ensure L2 cache is not mapped as SRAM
+ 	ldr	r0, =0xD4282C08
+@@ -80,7 +80,7 @@ aspen_init:
+ 	bl	xlli_MFPR_init
+ 
+ 	mov	r2, #0
+-	ldmfd   sp!,    {r1-r2, pc} @ Restore r1, r2 and return to caller
++	ldmfd   sp!,    {r1-r4, pc} @ Restore r1, r2 and return to caller
+ 	mov     pc, lr
+ 
+ @@@@ - JMC - End
+-- 
+1.6.0.4
+

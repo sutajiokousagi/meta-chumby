@@ -1,0 +1,80 @@
+From 0f7b18775ab29aaa626e898456be94411d062806 Mon Sep 17 00:00:00 2001
+From: Lei Wen <leiwen@marvell.com>
+Date: Fri, 10 Jul 2009 14:15:31 +0800
+Subject: [PATCH] pxa168: fix unknown nand crash error and add 0xd3ec of Samsung
+
+---
+ drivers/mtd/nand/pxa3xx_nand.c               |    4 +++-
+ include/asm-arm/arch-pxa168/nand_supported.h |   26 ++++++++++++++++++++++++++
+ 2 files changed, 29 insertions(+), 1 deletions(-)
+
+diff --git a/drivers/mtd/nand/pxa3xx_nand.c b/drivers/mtd/nand/pxa3xx_nand.c
+index ab53e7e..410e688 100644
+--- a/drivers/mtd/nand/pxa3xx_nand.c
++++ b/drivers/mtd/nand/pxa3xx_nand.c
+@@ -1087,8 +1087,10 @@ static int pxa3xx_nand_detect_flash(struct pxa3xx_nand *nand)
+ 		}
+ 
+ 		if (i == ARRAY_SIZE(builtin_flash_types)) {
++			kfree(mtd);
++			nand->mtd[chip_select] = NULL;
+ 			printk(KERN_ERR "ERROR!! flash not defined!!!\n");
+-			return -1;
++			continue;
+ 		}
+ 	}
+ 
+diff --git a/include/asm-arm/arch-pxa168/nand_supported.h b/include/asm-arm/arch-pxa168/nand_supported.h
+index c284cb1..4a4dc78 100644
+--- a/include/asm-arm/arch-pxa168/nand_supported.h
++++ b/include/asm-arm/arch-pxa168/nand_supported.h
+@@ -63,6 +63,18 @@ static struct pxa3xx_nand_timing samsung2GbX8_timing = {
+ 	.tAR = 10,
+ };
+ 
++static struct pxa3xx_nand_timing samsung8GbX8_timing = {
++	.tCH = 10,
++	.tCS = 35,
++	.tWH = 15,
++	.tWP = 25,
++	.tRH = 20,
++	.tRP = 25,
++	.tR = 25000,
++	.tWHR = 60,
++	.tAR = 10,
++};
++
+ static struct pxa3xx_nand_timing samsung32GbX8_timing = {
+ 	.tCH = 5,
+ 	.tCS = 20,
+@@ -135,6 +147,19 @@ static struct pxa3xx_nand_flash samsung2GbX8 = {
+ 	.ecc_type	= ECC_HAMMIN,
+ };
+ 
++static struct pxa3xx_nand_flash samsung8GbX8 = {
++	.timing		= &samsung8GbX8_timing,
++	.cmdset         = &largepage_cmdset,
++	.name		= "Samsung 8Gibx8",
++	.page_per_block	= 128,
++	.page_size	= 2048,
++	.flash_width	= 8,
++	.dfc_width	= 8,
++	.num_blocks	= 4096,
++	.chip_id	= 0xd3ec,
++	.ecc_type	= ECC_BCH,
++};
++
+ static struct pxa3xx_nand_flash samsung32GbX8 = {
+ 	.timing		= &common_timing,
+ 	.cmdset         = &largepage_cmdset,
+@@ -217,6 +242,7 @@ static struct pxa3xx_nand_flash *builtin_flash_types[] = {
+ 	&nand_common,
+ 	&samsung512MbX16,
+ 	&samsung2GbX8,
++	&samsung8GbX8,
+ 	&samsung32GbX8,
+ 	&micron1GbX8,
+ 	&micron4GbX8,
+-- 
+1.6.0.4
+

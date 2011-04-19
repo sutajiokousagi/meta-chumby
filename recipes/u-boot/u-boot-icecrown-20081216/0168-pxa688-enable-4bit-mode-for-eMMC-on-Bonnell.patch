@@ -1,0 +1,53 @@
+From f6188ceeca903b531128041ed1cb730eb43e7215 Mon Sep 17 00:00:00 2001
+From: Mingliang Hu <mingliang.hu@marvell.com>
+Date: Fri, 15 Jan 2010 13:52:06 +0800
+Subject: [PATCH] pxa688: enable 4bit mode for eMMC on Bonnell
+
+Signed-off-by: Mingliang Hu <mingliang.hu@marvell.com>
+---
+ drivers/mmc/mmc.c        |    5 +++++
+ drivers/mmc/pxa9xx_sdh.c |    5 +++++
+ 2 files changed, 10 insertions(+), 0 deletions(-)
+
+diff --git a/drivers/mmc/mmc.c b/drivers/mmc/mmc.c
+index aad0c68..d6603ee 100644
+--- a/drivers/mmc/mmc.c
++++ b/drivers/mmc/mmc.c
+@@ -83,6 +83,10 @@ static int mmc_bus_test(struct mmc *mmc, int bus_width)
+ 	data.dest = bus_test_buf;
+ 	data.blocks = 1;
+ 	data.blocksize = bus_width;
++#if defined(CONFIG_CPU_PXA688) && defined(CONFIG_PXA688_EMMC_WORKAROUND)
++	if(mmc->is_emmc == 1)
++		data.blocksize = 8;
++#endif
+ 	data.flags = MMC_DATA_WRITE;
+ 	err = mmc_send_cmd(mmc, &cmd, &data);
+ 	if (err)
+@@ -99,6 +103,7 @@ static int mmc_bus_test(struct mmc *mmc, int bus_width)
+ 	data.blocksize = bus_width;
+ 	data.flags = MMC_DATA_READ;
+ 	err = mmc_send_cmd(mmc, &cmd, &data);
++
+ 	if (err)
+ 		return err;
+ 
+diff --git a/drivers/mmc/pxa9xx_sdh.c b/drivers/mmc/pxa9xx_sdh.c
+index d09dd0a..40f1119 100644
+--- a/drivers/mmc/pxa9xx_sdh.c
++++ b/drivers/mmc/pxa9xx_sdh.c
+@@ -377,6 +377,11 @@ static int sdh_add_mmc(u32 sdh_id)
+ 	mmc->voltages = MMC_VDD_32_33 | MMC_VDD_33_34;
+ #ifdef CONFIG_CPU_PXA688
+ 	mmc->host_caps = MMC_MODE_HS | MMC_MODE_HS_52MHz;
++#ifdef CONFIG_PXA688_EMMC_WORKAROUND
++	if(mmc->is_emmc == 1)
++		mmc->host_caps = MMC_MODE_HS | MMC_MODE_HS_52MHz
++			| MMC_MODE_4BIT;
++#endif
+ #else
+ 	mmc->host_caps = MMC_MODE_HS | MMC_MODE_HS_52MHz
+ 		| MMC_MODE_4BIT;// | MMC_MODE_8BIT;
+-- 
+1.6.0.4
+

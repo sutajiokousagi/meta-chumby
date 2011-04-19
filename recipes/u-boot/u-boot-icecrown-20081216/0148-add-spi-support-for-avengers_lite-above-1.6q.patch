@@ -1,0 +1,102 @@
+From 761cb18bc7f1d27f88026f612aad881b977d34d1 Mon Sep 17 00:00:00 2001
+From: Lei Wen <leiwen@marvell.com>
+Date: Tue, 13 Oct 2009 14:26:36 +0800
+Subject: [PATCH] add spi support for avengers_lite above 1.6q
+
+---
+ board/pxa/avengers/avenger_pxa168.c |   14 ++++++++++++++
+ include/configs/avengers.h          |   24 ++++++++++++++++++++++++
+ 2 files changed, 38 insertions(+), 0 deletions(-)
+
+diff --git a/board/pxa/avengers/avenger_pxa168.c b/board/pxa/avengers/avenger_pxa168.c
+index 58a4203..a57d445 100644
+--- a/board/pxa/avengers/avenger_pxa168.c
++++ b/board/pxa/avengers/avenger_pxa168.c
+@@ -65,6 +65,20 @@ int board_init (void)
+     /* Enable clocks */
+     *(volatile unsigned int *)0xD4051024 = 0xffffffff;
+ 
++#ifdef CONFIG_PXA3XX_SPI
++    *(volatile unsigned int *)0xd401e1ac = 0x844;//MFP107
++    *(volatile unsigned int *)0xd401e1b0 = 0x844;//MFP108
++    *(volatile unsigned int *)0xd401e1b4 = 0x844;//MFP109
++    *(volatile unsigned int *)0xd401e1b8 = 0x840;//MFP110
++    *(volatile unsigned int *)0xd401e1bc = 0x844;//MFP111
++
++    /* Enable SSP1 clock */
++    *(unsigned int *)0xD4015820 = 0x3;
++    /* configure GPIO110 as output (slave reset out) */
++    *(volatile unsigned int *)(0xd4019100 + 0x54)=1<<14;
++    *(volatile unsigned int *)(0xd4019100 + 0x18)=1<<14;
++#endif
++
+     /* enable apbc UART1 clock */
+     *(volatile unsigned int *)0xD4015000 = 0x13;
+     /* enable apbc UART2 clock */
+diff --git a/include/configs/avengers.h b/include/configs/avengers.h
+index c8d7e57..92036ef 100644
+--- a/include/configs/avengers.h
++++ b/include/configs/avengers.h
+@@ -38,6 +38,7 @@
+ #define CONFIG_CPU_PXA910_168		1 /* pxa168 SOC */
+ #define CONFIG_PXAXXX      		1 /*  pxa family */
+ #define CONFIG_AVENGERS			1
++#define AVENGERS_BOARD_ABOVE_1P6F	/* default version is above 1p6f */
+ 
+ #define CONFIG_SYS_BOARD_NAME		"88SV331xV5 based PXAxxx"
+ #define CONFIG_SYS_VENDOR_NAME     	"MARVELL"
+@@ -48,6 +49,7 @@
+ #define CONFIG_SYS_HZ   		(3250000)      /* KV - Timer 0 is clocked at 3.25 MHz */
+ #define CONFIG_SYS_TIMERBASE 		0xD4014000 
+ #define CONFIG_DISPLAY_BOARDINFO
++#define CONFIG_CMD_MEMORY
+ 
+ #define CONFIG_MISC_INIT_R         	1   /* call misc_init_r during start up */
+ 
+@@ -61,7 +63,12 @@
+  *  Configuration
+  */
+ #define CONFIG_AUTO_COMPLETE
++#ifdef AVENGERS_BOARD_ABOVE_1P6F
++#define CONFIG_CONS_INDEX     		2
++#else
+ #define CONFIG_CONS_INDEX     		1
++#endif
++
+ #undef  CONFIG_SERIAL_SOFTWARE_FIFO
+ #define CONFIG_SYS_NS16550
+ #define CONFIG_SYS_NS16550_SERIAL
+@@ -70,6 +77,7 @@
+ #define CONFIG_BAUDRATE        		115200
+ #define CONFIG_SYS_BAUDRATE_TABLE     	{ 9600, 19200, 38400, 57600, 115200 }
+ #define CONFIG_SYS_NS16550_COM1       	0xD4017000
++#define CONFIG_SYS_NS16550_COM2       	0xD4018000
+ 
+ #define CONFIG_SHOW_BOOT_PROGRESS
+ 
+@@ -173,6 +181,22 @@
+ #define CONFIG_SYS_NO_FLASH		1
+ #define CONFIG_BBM			1
+ 
++/*---------------------------------------------
++ * SPI NOR configuration
++ */
++#ifdef AVENGERS_BOARD_ABOVE_1P6F
++#define CONFIG_PXA3XX_SPI
++#if defined(CONFIG_PXA3XX_SPI)
++#define CONFIG_SSP_CLK                 6500000
++#define CONFIG_SYS_SSP_BASE            0xD401C000
++#define CONFIG_SPI_CS_PIN              110
++#define CONFIG_CMD_SF
++#define CONFIG_SPI_FLASH
++#define CONFIG_PROBE_FLASH_INIT
++#define CONFIG_SPI_FLASH_STMICRO
++#endif /*CONFIG_PXA3XX_SPI*/
++#endif /*AVENGERS_BOARD_ABOVE_1P6F*/
++
+ /*-----------------------------------------------------------------------
+  * NAND and DFC configuration
+  */
+-- 
+1.6.0.4
+

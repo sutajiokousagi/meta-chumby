@@ -1,0 +1,27 @@
+From 09e06e1045dc99d6f1b208c9f5cfbba3ffc28023 Mon Sep 17 00:00:00 2001
+From: Jack Ren <jack.ren@marvell.com>
+Date: Mon, 29 Jun 2009 21:17:22 +0800
+Subject: [PATCH] pxa: change the usb rx timeot count back
+
+Signed-off-by: Jack Ren <jack.ren@marvell.com>
+Signed-off-by: Bin Yang <bin.yang@marvell.com>
+---
+ board/pxa/common/usbeth/ether-mvu2o.c |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/board/pxa/common/usbeth/ether-mvu2o.c b/board/pxa/common/usbeth/ether-mvu2o.c
+index 9f7108e..e75cccf 100644
+--- a/board/pxa/common/usbeth/ether-mvu2o.c
++++ b/board/pxa/common/usbeth/ether-mvu2o.c
+@@ -269,7 +269,7 @@ void dump_buffer(char *buf, unsigned length);
+ 
+ static int usb_eth_rx(struct eth_device *dev)
+ {
+-	int i=10000;
++	int i=1000000;
+ 
+ 	if(!usb_connected)
+ 		return 0;//check_usb_connection();
+-- 
+1.6.0.4
+

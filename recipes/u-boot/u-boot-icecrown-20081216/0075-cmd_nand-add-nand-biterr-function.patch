@@ -1,0 +1,189 @@
+From 6069b201ecbcd802034fe829009560552ef9314a Mon Sep 17 00:00:00 2001
+From: Lei Wen <leiwen@marvell.com>
+Date: Thu, 4 Jun 2009 18:10:48 +0800
+Subject: [PATCH] cmd_nand: add nand biterr function
+
+Signed-off-by: Lei Wen <leiwen@marvell.com>
+---
+ common/cmd_nand.c              |  109 +++++++++++++++++++++++++++++++++++++---
+ drivers/mtd/nand/pxa3xx_nand.c |    6 ++-
+ 2 files changed, 106 insertions(+), 9 deletions(-)
+
+diff --git a/common/cmd_nand.c b/common/cmd_nand.c
+index 50c8a7e..ba509e2 100644
+--- a/common/cmd_nand.c
++++ b/common/cmd_nand.c
+@@ -49,17 +49,46 @@ static int nand_dump(nand_info_t *nand, ulong off, int only_oob)
+ {
+ 	int i;
+ 	u_char *datbuf, *oobbuf, *p;
++	struct nand_chip *chip = nand->priv;
+ 
+-	datbuf = malloc(nand->writesize + nand->oobsize);
++	datbuf = malloc(nand->writesize);
+ 	oobbuf = malloc(nand->oobsize);
+ 	if (!datbuf || !oobbuf) {
+ 		puts("No memory for page buffer\n");
+ 		return 1;
+ 	}
++
+ 	off &= ~(nand->writesize - 1);
+ 	loff_t addr = (loff_t) off;
+ 	struct mtd_oob_ops ops;
+ 
++	if (only_oob) {
++		/* Read the data area without ECC */
++		chip->ecc.mode = NAND_ECC_NONE;
++		nand->read(nand, addr, nand->writesize, &i, datbuf);
++		chip->ecc.mode = NAND_ECC_HW;
++
++		if (i < 0) {
++			printf("Error (%d) reading page %08lx\n", i, off);
++			free(datbuf);
++			free(oobbuf);
++			return 1;
++		}
++
++		printf("\n Original Page %08lx dump:\n", off);
++		i = nand->writesize >> 4;
++		p = datbuf;
++
++		while (i--) {
++			printf("\t%02x %02x %02x %02x %02x %02x %02x %02x"
++					"  %02x %02x %02x %02x %02x %02x %02x %02x\n",
++					p[0], p[1], p[2], p[3], p[4], p[5], p[6], p[7],
++					p[8], p[9], p[10], p[11], p[12], p[13], p[14],
++					p[15]);
++			p += 16;
++		}
++	}
++
+ 	/* read the main data */
+ 	nand->read(nand, addr, nand->writesize, &i, datbuf);
+ 	if (i < 0) {
+@@ -88,12 +117,11 @@ static int nand_dump(nand_info_t *nand, ulong off, int only_oob)
+ 	p = datbuf;
+ 
+ 	while (i--) {
+-		if (!only_oob)
+-			printf("\t%02x %02x %02x %02x %02x %02x %02x %02x"
+-			       "  %02x %02x %02x %02x %02x %02x %02x %02x\n",
+-			       p[0], p[1], p[2], p[3], p[4], p[5], p[6], p[7],
+-			       p[8], p[9], p[10], p[11], p[12], p[13], p[14],
+-			       p[15]);
++		printf("\t%02x %02x %02x %02x %02x %02x %02x %02x"
++				"  %02x %02x %02x %02x %02x %02x %02x %02x\n",
++				p[0], p[1], p[2], p[3], p[4], p[5], p[6], p[7],
++				p[8], p[9], p[10], p[11], p[12], p[13], p[14],
++				p[15]);
+ 		p += 16;
+ 	}
+ 	puts("OOB:\n");
+@@ -110,6 +138,58 @@ static int nand_dump(nand_info_t *nand, ulong off, int only_oob)
+ 	return 0;
+ }
+ 
++static int nand_biterr(nand_info_t *nand, loff_t off)
++{
++	int _off, ret, i;
++	loff_t buf_off;
++	u_char *datbuf;
++	size_t size;
++	struct nand_chip * n_chip = (struct nand_chip *)(nand->priv);
++	int original_mode;
++
++	size = nand->writesize;
++	datbuf = malloc(nand->writesize);
++
++	buf_off = off / 8;
++	_off = off - buf_off * 8;
++	off = off & ~((loff_t)nand->writesize -1);
++
++	original_mode		= n_chip->ops.mode;
++	n_chip->ops.datbuf	= (uint8_t *)datbuf;
++	n_chip->ops.len		= nand->writesize;
++	n_chip->ops.mode	= MTD_OOB_RAW;
++	n_chip->ops.oobbuf	= NULL;
++
++	/* Read the data area without ECC */
++	n_chip->ecc.mode = NAND_ECC_NONE;
++	nand->read(nand, off, nand->writesize, &i, datbuf);
++	n_chip->ecc.mode = NAND_ECC_HW;
++
++	if (i < 0) {
++		printf("Error (%d) reading page %08lx\n", i, off);
++		free(datbuf);
++		return 1;
++	}
++
++	ret = 0;
++	if (datbuf[buf_off] & (1 << _off)) {
++		memset(datbuf, 0xff, nand->writesize);
++		datbuf[buf_off] &= ~(1 << _off);
++	}
++	else {
++		n_chip->ops.mode = original_mode;
++		printf("The bit you specify is ZERO. NAND cannot turn 0 to 1 !!!\n");
++		ret = 1;
++	}
++
++	if (!ret)
++		ret = nand_write_skip_bad(nand, off, &size, (u_char *)datbuf);
++
++	n_chip->ops.mode = original_mode;
++
++	return ret;
++}
++
+ /* ------------------------------------------------------------------------- */
+ 
+ static inline int str2long(char *p, ulong *num)
+@@ -422,7 +502,20 @@ int do_nand(cmd_tbl_t * cmdtp, int flag, int argc, char *argv[])
+ 	}
+ 
+ 	if (strcmp(cmd, "biterr") == 0) {
+-		/* todo */
++		if (argc < 3)
++			goto usage;
++
++		addr = (ulong)simple_strtoul(argv[2], NULL, 16);
++
++		int ret = nand_biterr(nand, addr);
++		if(ret == 0) {
++			printf("\noffset 0x%x has been injected error successfully!\n", addr);
++			return 0;
++		}
++		else {
++			printf("Inject error to offset 0x%x failed!!\n", addr);
++		}
++
+ 		return 1;
+ 	}
+ 
+diff --git a/drivers/mtd/nand/pxa3xx_nand.c b/drivers/mtd/nand/pxa3xx_nand.c
+index 30cd823..092e446 100644
+--- a/drivers/mtd/nand/pxa3xx_nand.c
++++ b/drivers/mtd/nand/pxa3xx_nand.c
+@@ -403,6 +403,7 @@ static int prepare_command_poll(struct pxa3xx_nand *nand, int command,
+ 	int addr_cycle = 0, exec_cmd = 1, ndcb0_csel,  i;
+ 	struct mtd_info *mtd = nand->mtd[nand->chip_select];
+ 	struct pxa3xx_nand_info *info = mtd->priv;
++	struct nand_chip *chip = mtd->priv;
+ 	const struct pxa3xx_nand_flash *flash_info = info->flash_info;
+ 
+ 	/* how many command is to be executed in one cycle */
+@@ -445,7 +446,10 @@ static int prepare_command_poll(struct pxa3xx_nand *nand, int command,
+ 		}
+ 		else {
+ 			info->buf_start = column;
+-			info->use_ecc = flash_info->ecc_type;
++			if (chip->ecc.mode == NAND_ECC_HW)
++				info->use_ecc = flash_info->ecc_type;
++			else
++				info->use_ecc = ECC_NONE;
+ 		}
+ 
+ 		pxa3xx_set_datasize(info);
+-- 
+1.6.0.4
+

@@ -1,0 +1,40 @@
+From 07f1e1257fe5dc1d641b86a89ce66d665e1eb850 Mon Sep 17 00:00:00 2001
+From: Mingliang Hu <mhu4@marvell.com>
+Date: Tue, 13 Apr 2010 18:25:28 +0800
+Subject: [PATCH] pxa688: add ext2load and fatload from external SD card support
+
+Signed-off-by: Mingliang Hu <mhu4@marvell.com>
+---
+ include/configs/mmp2_jasper_emmc.h        |    2 ++
+ include/configs/mmp2_jasper_epd512_emmc.h |    2 ++
+ 2 files changed, 4 insertions(+), 0 deletions(-)
+
+diff --git a/include/configs/mmp2_jasper_emmc.h b/include/configs/mmp2_jasper_emmc.h
+index 4d6e8bd..b725ffa 100644
+--- a/include/configs/mmp2_jasper_emmc.h
++++ b/include/configs/mmp2_jasper_emmc.h
+@@ -31,6 +31,8 @@
+ #define CONFIG_GENERIC_MMC
+ #define CONFIG_PXA9XX_SDH
+ #define CONFIG_DOS_PARTITION
++#define CONFIG_CMD_FAT
++#define CONFIG_CMD_EXT2
+ 
+ #define BOOT_FROM_EMMC
+ #define CONFIG_MMCBOOT			"mmc read 0x4c00 0x1800 0x1100000"
+diff --git a/include/configs/mmp2_jasper_epd512_emmc.h b/include/configs/mmp2_jasper_epd512_emmc.h
+index a4ada9d..18a2902 100644
+--- a/include/configs/mmp2_jasper_epd512_emmc.h
++++ b/include/configs/mmp2_jasper_epd512_emmc.h
+@@ -31,6 +31,8 @@
+ #define CONFIG_GENERIC_MMC
+ #define CONFIG_PXA9XX_SDH
+ #define CONFIG_DOS_PARTITION
++#define CONFIG_CMD_FAT
++#define CONFIG_CMD_EXT2
+ 
+ #define BOOT_FROM_EMMC
+ #define CONFIG_MMCBOOT			"mmc read 0x4c00 0x1800 0x1100000"
+-- 
+1.6.0.4
+

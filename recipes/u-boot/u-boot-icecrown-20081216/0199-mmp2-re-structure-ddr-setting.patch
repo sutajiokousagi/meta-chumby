@@ -1,0 +1,618 @@
+From a0500c47ca3797a0011b7ad3e737fe2d7df773da Mon Sep 17 00:00:00 2001
+From: Mingliang Hu <mhu4@marvell.com>
+Date: Mon, 7 Jun 2010 13:45:54 +0800
+Subject: [PATCH] mmp2: re-structure ddr setting
+
+Signed-off-by: Ning Jiang <ning.jiang@marvell.com>
+Signed-off-by: Mingliang Hu <mhu4@marvell.com>
+---
+ board/pxa/common/freq_ll.S |  586 +++++++++++++++++++++-----------------------
+ 1 files changed, 283 insertions(+), 303 deletions(-)
+
+diff --git a/board/pxa/common/freq_ll.S b/board/pxa/common/freq_ll.S
+index 40a7770..029d62f 100644
+--- a/board/pxa/common/freq_ll.S
++++ b/board/pxa/common/freq_ll.S
+@@ -218,310 +218,62 @@ freq_sram_start:
+ 	@ ddr re-calibration after frequency change
+ 	@
+ 
+-#if (defined(CONFIG_MMP2_JASPER))
+-
+-	@ CONFIG_DECODE_ADDR
+-	ldr	r7, =0xD0004D56
+-	str	r7, [r4, #0x010]
+-
+-	#if (defined(CONFIG_DDR_EPD_512M))
+-	@ MMAP
+-	ldr	r7, =0x000C0001
+-	str	r7, [r4, #0x100]
+-	ldr	r7, =0x100C0001
+-	str	r7, [r4, #0x110]
+-
+-	@ CONFIG_TYPE
+-	ldr	r7, =0x00006420
+-	str	r7, [r4, #0x020]
+-	ldr	r7, =0x00006420
+-	str	r7, [r4, #0x030]
+-	ldr	r7, =0x00000000
+-	str	r7, [r4, #0xB40]
+-	ldr	r7, =0x00000000
+-	str	r7, [r4, #0xB50]
+-
+-	@ TIMING
+-	ldr	r7, =0x4CDA00C5
+-	str	r7, [r4, #0x050]
+-	ldr	r7, =0x94860342
+-	str	r7, [r4, #0x060]
+-	ldr	r7, =0x2000381B
+-	str	r7, [r4, #0x190]
+-	ldr	r7, =0x3023009D
+-	str	r7, [r4, #0x1C0]
+-	ldr	r7, =0x00110142
+-	str	r7, [r4, #0x650]
+-	ldr	r7, =0x02424190
+-	str	r7, [r4, #0x660]
+-	#endif
+-
+-	#if (defined(CONFIG_DDR_MICRON_256M))
+-	@ MMAP
+-	ldr	r7, =0x000B0001
+-	str	r7, [r4, #0x100]
+-	ldr	r7, =0x080B0001
+-	str	r7, [r4, #0x110]
+-
+-	@ CONFIG_TYPE
+-	ldr	r7, =0x00006320
+-	str	r7, [r4, #0x020]
+-	ldr	r7, =0x00006320
+-	str	r7, [r4, #0x030]
+-	ldr	r7, =0x00000000
+-	str	r7, [r4, #0xB40]
+-	ldr	r7, =0x00000000
+-	str	r7, [r4, #0xB50]
+-
+-	@ TIMING
+-	ldr	r7, =0x4CD800C5
+-	str	r7, [r4, #0x050]
+-	ldr	r7, =0x84660342
+-	str	r7, [r4, #0x060]
+-	ldr	r7, =0x2000381B
+-	str	r7, [r4, #0x190]
+-	ldr	r7, =0x3023009D
+-	str	r7, [r4, #0x1C0]
+-	ldr	r7, =0x00110142
+-	str	r7, [r4, #0x650]
+-	ldr	r7, =0x02424190
+-	str	r7, [r4, #0x660]
+-	#endif
+-
+-	@ CTRL
+-	ldr	r7, =0x00005000
+-	str	r7, [r4, #0x080]
+-	ldr	r7, =0x00080010
+-	str	r7, [r4, #0x090]
+-	ldr	r7, =0xC0000000
+-	str	r7, [r4, #0x0F0]
+-	ldr	r7, =0x20C08115
+-	str	r7, [r4, #0x1A0]
+-	ldr	r7, =0x01010101
+-	str	r7, [r4, #0x280]
+-	ldr	r7, =0x00000000
+-	str	r7, [r4, #0x760]
+-	ldr	r7, =0x03000000
+-	str	r7, [r4, #0x770]
+-	ldr	r7, =0x00000133
+-	str	r7, [r4, #0x780]
+-	ldr	r7, =0x01010101
+-	str	r7, [r4, #0x7B0]
+-	ldr	r7, =0x0000000F
+-	str	r7, [r4, #0x7D0]
+-	ldr	r7, =0x00000000
+-	str	r7, [r4, #0x7E0]
+-
+-	@ MCB
+-	ldr	r7, =0x00000000
+-	str	r7, [r4, #0x540]
+-	ldr	r7, =0x00000001
+-	str	r7, [r4, #0x570]
+-	ldr	r7, =0x00000000
+-	str	r7, [r4, #0x580]
+-	ldr	r7, =0x00000000
+-	str	r7, [r4, #0x590]
+-	ldr	r7, =0x00000000
+-	str	r7, [r4, #0x5A0]
+-	ldr	r7, =0x00000000
+-	str	r7, [r4, #0x5B0]
+-
+-	@ WRITE_PROTECTION
+-	ldr	r7, =0x00000000
+-	str	r7, [r4, #0x180]
+-
+-	@ __PHY Deskew PLL config and PHY initialization
+-	ldr	r7, =0x00000000
+-	str	r7, [r4, #0x210]
+-	ldr	r7, =0x80000000
+-	str	r7, [r4, #0x240]
+-
+-	@ DLL reset, Need this after any DCLK freq change
+-	ldr	r8, =0x20000000
+-	ldr	r7, [r4, #0x240]
+-	orr	r7, r7, r8
+-	str	r7, [r4, #0x240]
+-	ldr	r8, =0xdFFFFFFF
+-	ldr	r7, [r4, #0x240]
+-	and	r7, r7, r8
+-	str	r7, [r4, #0x240]
+-
+-	@ Pad drive strength auto calibration
+-	ldr	r8, =0x00110000
+-	ldr	r7, [r4, #0x200]
+-	orr	r7, r7, r8
+-	str	r7, [r4, #0x200]
+-	ldr	r7, [r4, #0x240]
+-	ldr	r8, =0xFFFeFFFF
+-	ldr	r7, [r4, #0x200]
+-	and	r7, r7, r8
+-	str	r7, [r4, #0x200]
+-
+-	#if (defined(CONFIG_DDR_EPD_512M))
+-	ldr	r7, =0x20004433
+-	str	r7, [r4, #0x140]
+-	ldr	r7, =0x13300559
+-	str	r7, [r4, #0x1D0]
+-	ldr	r7, =0x03300990
+-	str	r7, [r4, #0x1E0]
+-	ldr	r7, =0x00000077
+-	str	r7, [r4, #0x1F0]
+-	#endif
+-
+-	#if (defined(CONFIG_DDR_MICRON_256M))
+-	ldr	r7, =0x20004455
+-	str	r7, [r4, #0x140]
+-	ldr	r7, =0x13300559
+-	str	r7, [r4, #0x1D0]
+-	ldr	r7, =0x03300770
+-	str	r7, [r4, #0x1E0]
+-	ldr	r7, =0x00000077
+-	str	r7, [r4, #0x1F0]
+-	#endif
+-
+-	ldr	r7, =0x20000088
+-	str	r7, [r4, #0x230]
+-	ldr	r7, =0x00000080
+-	str	r7, [r4, #0xE10]
+-	ldr	r7, =0x00000080
+-	str	r7, [r4, #0xE20]
+-	ldr	r7, =0x00000080
+-	str	r7, [r4, #0xE30]
+-
+-	ldr	r7, =0x00000000
+-	str	r7, [r4, #0xE40]
+-	ldr	r7, =0x00000000
+-	str	r7, [r4, #0xE50]
+-
+-	@ initialize LPDDR2
+-	ldr	r7, =0x03000001
+-	str	r7, [r4, #0x120]
+-	ldr	r7, [r4, #0x1B0]
+-	ldr	r7, =0x0302003F
+-	str	r7, [r4, #0x410]
+-	ldr	r7, =0x01001000
+-	str	r7, [r4, #0x120]
+-	ldr	r7, =0x02001000
+-	str	r7, [r4, #0x120]
+-	ldr	r7, =0x03020001
+-	str	r7, [r4, #0x410]
+-	ldr	r7, =0x03020002
+-	str	r7, [r4, #0x410]
+-	ldr	r7, =0x03020003
+-	str	r7, [r4, #0x410]
+-#endif
+-
+-#if (defined(CONFIG_MMP2_FLINT))
+-
+-	@ CONFIG_DECODE_ADDR
+-	ldr     r7, =0xD0004D56
+-	str	r7, [r4, #0x0]
+-
+-	@ MMAP
+-	ldr	r7, =0x000b0001
+-	str	r7, [r4, #0x100]
+-	ldr	r7, =0x080B0001
+-	str	r7, [r4, #0x110]
+-
+-	@ CONFIG_TYPE
+-	ldr	r7, =0x00006320
+-	str	r7, [r4, #0x20]
+-	ldr	r7, =0x00006320
+-	str	r7, [r4, #0x30]
+-
+-	@ TIMING
+-	ldr	r7, =0x4cd800c5
+-	str	r7, [r4, #0x50]
+-	ldr	r7, =0x84660342
+-	str	r7, [r4, #0x60]
+-	ldr	r7, =0x2000381B
+-	str	r7, [r4, #0x190]
+-	ldr	r7, =0x3023009D
+-	str	r7, [r4, #0x1C0]
+-	ldr	r7, =0x00110142
+-	str	r7, [r4, #0x650]
+-	ldr	r7, =0x02424190
+-	str	r7, [r4, #0x660]
+-
+-	@ CTRL
+-	ldr	r7, =0xc0000000
+-	str	r7, [r4, #0xf0]
+-	ldr	r7, =0x20c08115
+-	str	r7, [r4, #0x1a0]
+-	ldr	r7, =0x0
+-	str	r7, [r4, #0x760]
+-	ldr	r7, =0x0
+-	str	r7, [r4, #0x770]
+-
+-	@ __PHY Deskew PLL config and PHY initialization
+-	ldr	r7, =0x00000000
+-	str	r7, [r4, #0x210]
+-	ldr	r7, =0x80000000
+-	str	r7, [r4, #0x240]
+-
+-	@ DLL reset, Need this after any DCLK freq change
+-	ldr	r8, =0x20000000
+-	ldr	r7, [r4, #0x240]
+-	orr	r7, r7, r8
+-	str	r7, [r4, #0x240]
+-	ldr	r8, =0xdFFFFFFF
+-	ldr	r7, [r4, #0x240]
+-	and	r7, r7, r8
+-	str	r7, [r4, #0x240]
+-
+-	@ Pad drive strength auto calibration
+-	ldr	r8, =0x00110000
+-	ldr	r7, [r4, #0x200]
+-	orr	r7, r7, r8
+-	str	r7, [r4, #0x200]
+-	ldr	r7, [r4, #0x240]
+-	ldr	r8, =0xFFFEFFFF
+-	ldr	r7, [r4, #0x200]
+-	and	r7, r7, r8
+-	str	r7, [r4, #0x200]
+-
+-	ldr	r7, =0x20004433
+-	str	r7, [r4, #0x140]
+-	ldr	r7, =0x177C2779
+-	str	r7, [r4, #0x1D0]
+-	ldr	r7, =0x0aa00770
+-	str	r7, [r4, #0x1e0]
+-	ldr	r7, =0xc0000077
+-	str	r7, [r4, #0x1f0]
+-
+-	ldr	r7, =0x20000108
+-	str	r7, [r4, #0x230]
+-	ldr	r7, =0x00000100
+-	str	r7, [r4, #0xE10]
+-	ldr	r7, =0x00000100
+-	str	r7, [r4, #0xE20]
+-	ldr	r7, =0x00000100
+-	str	r7, [r4, #0xE30]
+-
+-	ldr	r7, =0x205c7d00
+-	str	r7, [r4, #0xE10]
+-	ldr	r7, =0x205c7d00
+-	str	r7, [r4, #0xE20]
+-	ldr	r7, =0x205c7d00
+-	str	r7, [r4, #0xE30]
+-
+-	@ initialize LPDDR2
+-	ldr	r7, =0x03000001
+-	str	r7, [r4, #0x120]
+-	ldr	r7, [r4, #0x1B0]
+-	ldr	r7, =0x0302003f
+-	str	r7, [r4, #0x410]
+-	ldr	r7, =0x01001000
+-	str	r7, [r4, #0x120]
+-	ldr	r7, =0x02001000
+-	str	r7, [r4, #0x120]
+-	ldr	r7, =0x03020001
+-	str	r7, [r4, #0x410]
+-	ldr	r7, =0x03020002
+-	str	r7, [r4, #0x410]
+-	ldr	r7, =0x03020003
+-	str	r7, [r4, #0x410]
++	ldr	r7, =freq_sram_start
++#if (defined(CONFIG_DDR_MICRON_256M))
++	ldr	r8, =mmp2_micron256_ddr
++#elif (defined(CONFIG_DDR_EPD_512M))
++	ldr	r8, =mmp2_epd512_ddr
++#elif (defined(CONFIG_MMP2_FLINT))
++	ldr	r8, =mmp2_epd256_ddr
++#else
++	#error	"please define ddr table"
+ #endif
++	sub	r8, r8, r7
++
++loop:
++	ldr	r3, [r0, r8]
++	cmp	r3, #0x80000000
++	beq	finished
++	cmp	r3, #0x40000000
++	bne	200f
++	add	r8, r8, #0x8
++	ldr	r7, [r0, r8]
++	ldr	r12, [r4, r7]
++	add	r8, r8, #0x8
++	b	loop
++200:
++	cmp	r3, #0x20000000
++	bne	300f
++	add	r8, r8, #0x8
++	ldr	r7, [r0, r8]
++	ldr	r12, [r4, r7]
++	add	r8, r8, #0x4
++	ldr	r9, [r0, r8]
++	and	r9, r9, r12
++	str	r9, [r4, r7]
++	add	r8, r8, #0x4
++	b	loop
++300:
++	cmp	r3, #0x10000000
++	bne	400f
++	add	r8, r8, #0x8
++	ldr	r7, [r0, r8]
++	ldr	r12, [r4, r7]
++	add	r8, r8, #0x4
++	ldr	r9, [r0, r8]
++	orr	r9, r9, r12
++	str	r9, [r4, r7]
++	add	r8, r8, #0x4
++	b	loop
++400:
++	ldr	r7, [r0, r8]
++	add	r8, r8, #0x4
++	ldr	r9, [r0, r8]
++	str	r9, [r4, r7]
++	add	r8, r8, #0x4
++	b	loop
++
++finished:
+ 
+ 	@dummy reads for PHY DQ byte read DLLs to update
+ 	mov	r8, #131
+@@ -550,5 +302,233 @@ freq_sram_start:
+ 
+         ldmfd   sp!, {r3 - r12, pc}
+ 
++
++	/*
++	 * special translation for offset:
++	 *	0x10000000	or
++	 *	0x20000000	and
++	 *	0x40000000	read
++	 *	0x80000000	end
++	 */
++#if (defined(CONFIG_DDR_MICRON_256M))
++mmp2_micron256_ddr:
++	.long	0x010, 	0xD0004D56	@ CONFIG_DECODE_ADDR
++	.long	0x100, 	0x000B0001	@ MMAP
++	.long	0x110, 	0x080B0001
++
++	.long	0x020, 	0x00006320	@ CONFIG_TYPE
++	.long	0x030, 	0x00006320
++	.long	0xB40, 	0x00000000
++	.long	0xB50, 	0x00000000
++
++	.long	0x050, 	0x4CD800C5	@ TIMING
++	.long	0x060, 	0x84660342
++	.long	0x190, 	0x2000381B
++	.long	0x1C0, 	0x3023009D
++	.long	0x650, 	0x00110142
++	.long	0x660, 	0x02424190
++
++	.long	0x080, 	0x00005000	@ CTRL
++	.long	0x090, 	0x00080010
++	.long	0x0F0, 	0xC0000000
++	.long	0x1A0, 	0x20C08115
++	.long	0x280, 	0x01010101
++	.long	0x760, 	0x00000000
++	.long	0x770, 	0x03000000
++	.long	0x780, 	0x00000133
++	.long	0x7B0, 	0x01010101
++	.long	0x7D0, 	0x0000000F
++	.long	0x7E0, 	0x00000000
++
++	.long	0x540, 	0x00000000	@ MCB
++	.long	0x570, 	0x00000001
++	.long	0x580, 	0x00000000
++	.long	0x590, 	0x00000000
++	.long	0x5A0, 	0x00000000
++	.long	0x5B0, 	0x00000000
++
++	.long	0x180, 	0x00000000	@ WRITE_PROTECTION
++
++	.long	0x210, 	0x00000000	@ __PHY Deskew PLL config and PHY initialization
++	.long	0x240, 	0x80000000
++
++	.long	0x10000000, 0x0		@ DLL reset, Need this after any DCLK freq change
++	.long	0x240,	0x20000000
++	.long	0x20000000, 0x0
++	.long	0x240,	0xdfffffff
++
++	.long	0x10000000, 0x0		@ Pad drive strength auto calibration
++	.long	0x200,	0x00110000
++	.long	0x40000000, 0x0
++	.long	0x240,	0x0
++	.long	0x20000000, 0x0
++	.long	0x200,	0xfffeffff
++
++	.long	0x140, 	0x20004455
++	.long	0x1D0, 	0x13300559
++	.long	0x1E0, 	0x03300770
++	.long	0x1F0, 	0x00000077
++
++	.long	0x230, 	0x20000088
++	.long	0xE10, 	0x00000080
++	.long	0xE20, 	0x00000080
++	.long	0xE30, 	0x00000080
++
++	.long	0xE40, 	0x00000000
++	.long	0xE50, 	0x00000000
++
++	.long	0x120, 	0x03000001	@ initialize LPDDR2
++	.long	0x40000000, 0x0
++	.long	0x1b0,	0x0
++	.long	0x410, 	0x0302003F
++	.long	0x120, 	0x01001000
++	.long	0x120, 	0x02001000
++	.long	0x410, 	0x03020001
++	.long	0x410, 	0x03020002
++	.long	0x410, 	0x03020003
++	.long	0x80000000, 0x0
++#elif (defined(CONFIG_DDR_EPD_512M))
++mmp2_epd512_ddr:
++	.long	0x010, 	0xD0004D56	@ CONFIG_DECODE_ADDR
++	.long	0x100, 	0x000C0001	@ MMAP
++	.long	0x110, 	0x100C0001
++
++	.long	0x020, 	0x00006420	@ CONFIG_TYPE
++	.long	0x030, 	0x00006420
++	.long	0xB40, 	0x00000000
++	.long	0xB50, 	0x00000000
++
++	.long	0x050, 	0x4CDA00C5	@ TIMING
++	.long	0x060, 	0x94860342
++	.long	0x190, 	0x2000381B
++	.long	0x1C0, 	0x3023009D
++	.long	0x650, 	0x00110142
++	.long	0x660, 	0x02424190
++
++	.long	0x080, 	0x00005000	@ CTRL
++	.long	0x090, 	0x00080010
++	.long	0x0F0, 	0xC0000000
++	.long	0x1A0, 	0x20C08115
++	.long	0x280, 	0x01010101
++	.long	0x760, 	0x00000000
++	.long	0x770, 	0x03000000
++	.long	0x780, 	0x00000133
++	.long	0x7B0, 	0x01010101
++	.long	0x7D0, 	0x0000000F
++	.long	0x7E0, 	0x00000000
++
++	.long	0x540, 	0x00000000	@ MCB
++	.long	0x570, 	0x00000001
++	.long	0x580, 	0x00000000
++	.long	0x590, 	0x00000000
++	.long	0x5A0, 	0x00000000
++	.long	0x5B0, 	0x00000000
++
++	.long	0x180, 	0x00000000	@ WRITE_PROTECTION
++
++	.long	0x210, 	0x00000000	@ __PHY Deskew PLL config and PHY initialization
++	.long	0x240, 	0x80000000
++
++	.long	0x10000000, 0x0		@ DLL reset, Need this after any DCLK freq change
++	.long	0x240,	0x20000000
++	.long	0x20000000, 0x0
++	.long	0x240,	0xdfffffff
++
++	.long	0x10000000, 0x0		@ Pad drive strength auto calibration
++	.long	0x200,	0x00110000
++	.long	0x40000000, 0x0
++	.long	0x240,	0x0
++	.long	0x20000000, 0x0
++	.long	0x200,	0xfffeffff
++
++	.long	0x140, 	0x20004433
++	.long	0x1D0, 	0x13300559
++	.long	0x1E0, 	0x03300990
++	.long	0x1F0, 	0x00000077
++
++	.long	0x230, 	0x20000088
++	.long	0xE10, 	0x00000080
++	.long	0xE20, 	0x00000080
++	.long	0xE30, 	0x00000080
++
++	.long	0xE40, 	0x00000000
++	.long	0xE50, 	0x00000000
++
++	.long	0x120, 	0x03000001	@ initialize LPDDR2
++	.long	0x40000000, 0x0
++	.long	0x1b0,	0x0
++	.long	0x410, 	0x0302003F
++	.long	0x120, 	0x01001000
++	.long	0x120, 	0x02001000
++	.long	0x410, 	0x03020001
++	.long	0x410, 	0x03020002
++	.long	0x410, 	0x03020003
++	.long	0x80000000, 0x0
++#elif (defined(CONFIG_MMP2_FLINT))
++mmp2_epd256_ddr:
++	/*	offset	value	*/
++	.long	0x0,	0xD0004D56	@ CONFIG_DECODE_ADDR
++
++	.long	0x100, 	0x000B0001	@ MMAP
++	.long	0x110, 	0x080B0001
++
++	.long	0x20, 	0x00006320	@ CONFIG_TYPE
++	.long	0x30, 	0x00006320
++
++	.long	0x50, 	0x4cd800c5	@ TIMING
++	.long	0x60, 	0x84660342
++	.long	0x190, 	0x2000381B
++	.long	0x1C0, 	0x3023009D
++	.long	0x650, 	0x00110142
++	.long	0x660, 	0x02424190
++
++	.long	0xf0, 	0xc0000000	@ CTRL
++	.long	0x1a0, 	0x20c08115
++	.long	0x760, 	0x0
++	.long	0x770, 	0x0
++
++	.long	0x210, 	0x00000000	@ __PHY Deskew PLL config and PHY initialization
++	.long	0x240, 	0x80000000
++
++	.long	0x10000000, 0x0		@ DLL reset, Need this after any DCLK freq change
++	.long	0x240,	0x20000000
++	.long	0x20000000, 0x0
++	.long	0x240,	0xdfffffff
++
++	.long	0x10000000, 0x0		@ Pad drive strength auto calibration
++	.long	0x200,	0x00110000
++	.long	0x40000000, 0x0
++	.long	0x240,	0x0
++	.long	0x20000000, 0x0
++	.long	0x200,	0xfffeffff
++
++	.long	0x140, 	0x20004433
++	.long	0x1D0, 	0x177C2779
++	.long	0x1e0, 	0x0aa00770
++	.long	0x1f0, 	0xc0000077
++
++	.long	0x230, 	0x20000108
++	.long	0xE10, 	0x00000100
++	.long	0xE20, 	0x00000100
++	.long	0xE30, 	0x00000100
++
++	.long	0xE10, 	0x205c7d00
++	.long	0xE20, 	0x205c7d00
++	.long	0xE30, 	0x205c7d00
++
++	.long	0x120, 	0x03000001	@ initialize LPDDR2
++	.long	0x40000000, 0x0
++	.long	0x1b0,	0x0
++	.long	0x410, 	0x0302003f
++	.long	0x120, 	0x01001000
++	.long	0x120, 	0x02001000
++	.long	0x410, 	0x03020001
++	.long	0x410, 	0x03020002
++	.long	0x410, 	0x03020003
++	.long	0x80000000, 0x0
++#else
++	#error	"please define ddr table"
++#endif
++
+ freq_sram_end:
+ 	nop
+-- 
+1.6.0.4
+

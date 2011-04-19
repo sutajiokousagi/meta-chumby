@@ -1,0 +1,51 @@
+From fa7abb03db51b7dc7d7b4b8655119e20d2791ddc Mon Sep 17 00:00:00 2001
+From: Kiran Vedere <kvedere@marvell.com>
+Date: Tue, 17 Feb 2009 13:13:30 -0500
+Subject: [PATCH] pxa168: Modified the aspen_init.S to make it EABI Complaint
+
+Signed-off-by: Kiran Vedere <kvedere@marvell.com>
+---
+ board/pxa/aspenite/aspen_init.S |    6 ++++--
+ 1 files changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/board/pxa/aspenite/aspen_init.S b/board/pxa/aspenite/aspen_init.S
+index 16aa31b..e06c25a 100644
+--- a/board/pxa/aspenite/aspen_init.S
++++ b/board/pxa/aspenite/aspen_init.S
+@@ -65,7 +65,7 @@
+ .globl aspen_init
+        .type   aspen_init, %function
+ aspen_init:
+-	stmfd   sp!,    {r1-r2, lr}             @ Save r1, r2 and link register on the stack
++	stmfd   sp!,    {r0-r12, lr}             @ Save registers and link register on the stack
+ 
+ 	@ =========================================
+ 	@ Init the Power I2C interface - set up clocks
+@@ -201,7 +201,7 @@ aspen_init:
+ #endif
+ 
+ 	mov	r2, #0
+-	ldmfd   sp!,    {r1-r2, pc} @ Restore r1, r2 and return to caller
++	ldmfd   sp!,    {r0-r12, pc} @ Restore registers and return to caller
+ 	mov     pc, lr
+ 
+ @@@@ - JMC - End
+@@ -215,6 +215,7 @@ xlli_MFPR_init:
+ @ is used. An entry of 0xFF indicated an unused MFPR offset and a value of 0xF
+ @ marks the end of the table.
+ @
++	stmfd   sp!,    {r0-r12, lr}        @ Save registers and link register on the stack
+         ldr     r0, =0xD401E000             @ MFPR base address
+         add	r2, pc, #(xlli_MFPR_offset-(.+8)) @ Address of MFPR offset table
+         add     r4, pc, #(xlli_MFPR_data-(.+8))   @ Address of data for MFPR settings 
+@@ -240,6 +241,7 @@ xlli_m0:
+ @       Exit Path
+ @
+ xlli_m1:
++	ldmfd   sp!,    {r0-r12, pc} @ Restore registers and return to caller
+ 	mov	pc, lr
+ .ltorg
+ 
+-- 
+1.6.0.4
+

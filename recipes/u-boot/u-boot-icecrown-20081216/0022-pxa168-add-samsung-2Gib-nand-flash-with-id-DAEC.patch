@@ -1,0 +1,143 @@
+From a72a20e2f6c458070adcbbcf5e6a9ebc7c68e6b8 Mon Sep 17 00:00:00 2001
+From: Wen Lei <leiwen@marvell.com>
+Date: Fri, 27 Feb 2009 15:14:11 +0800
+Subject: [PATCH] pxa168: add samsung 2Gib nand flash with id DAEC
+
+Signed-off-by: Wen Lei <leiwen@marvell.com>
+---
+ drivers/mtd/nand/pxa3xx_nand.c |  105 ++++++++++++++++++++++++++++++++++++----
+ 1 files changed, 96 insertions(+), 9 deletions(-)
+
+diff --git a/drivers/mtd/nand/pxa3xx_nand.c b/drivers/mtd/nand/pxa3xx_nand.c
+index 7f1360f..bf16976 100644
+--- a/drivers/mtd/nand/pxa3xx_nand.c
++++ b/drivers/mtd/nand/pxa3xx_nand.c
+@@ -165,15 +165,16 @@ struct dfc_flash_info {
+ enum {
+ 	DFC_FLASH_NULL = 0 ,
+ 	DFC_FLASH_Samsung_512Mb_X_16 = 1,
+-	DFC_FLASH_Samsung_2Gb_X_8 = 2,
+-	DFC_FLASH_Micron_1Gb_X_8 = 3,
+-	DFC_FLASH_Micron_1Gb_X_16 = 4,
+-	DFC_FLASH_STM_1Gb_X_16 = 5,
+-	DFC_FLASH_STM_2Gb_X_16 = 6,
+-	DFC_FLASH_STM_MCP_1Gb_X_16 = 7,
+-	DFC_FLASH_Toshiba2GbX16 = 8,
+-	DFC_FLASH_Micron_4Gb_X_8 = 9,
+-	DFC_FLASH_Micron_2Gb_X_16 = 10,
++	DFC_FLASH_Samsung_2Gb_X_8_1 = 2,
++	DFC_FLASH_Samsung_2Gb_X_8 = 3,
++	DFC_FLASH_Micron_1Gb_X_8 = 4,
++	DFC_FLASH_Micron_1Gb_X_16 = 5,
++	DFC_FLASH_STM_1Gb_X_16 = 6,
++	DFC_FLASH_STM_2Gb_X_16 = 7,
++	DFC_FLASH_STM_MCP_1Gb_X_16 = 8,
++	DFC_FLASH_Toshiba2GbX16 = 9,
++	DFC_FLASH_Micron_4Gb_X_8 = 10,
++	DFC_FLASH_Micron_2Gb_X_16 = 11,
+ 	DFC_FLASH_END,
+ };
+ 
+@@ -492,6 +493,91 @@ static int Samsung512MbX16NDBBR2Addr(uint16_t cmd, uint32_t ndbbr, uint32_t *p)
+ }
+ 
+ 
++static int Samsung2GbX8_1_Addr2NDCB1(uint16_t cmd, uint32_t addr, uint32_t *p);
++static int Samsung2GbX8_1_NDBBR2Addr(uint16_t cmd, uint32_t ndbbr, uint32_t *p);
++
++static struct dfc_flash_info samsung2GbX8_1 =
++{
++	.timing = {
++		.tCH = 10,	/* tCH, Enable signal hold time */
++		.tCS = 35,	/* tCS, Enable signal setup time */
++		.tWH = 15,	/* tWH, ND_nWE high duration */
++		.tWP = 25,	/* tWP, ND_nWE pulse time */
++		.tRH = 20,	/* tRH, ND_nRE high duration */
++		.tRP = 25,	/* tRP, ND_nRE pulse width */
++		/* tR = tR+tRR+tWB+1, ND_nWE high to ND_nRE low for read */
++		.tR = 25000,
++		/* tWHR, ND_nWE high to ND_nRE low delay for status read */
++		.tWHR = 60,
++		.tAR = 10,	/* tAR, ND_ALE low to ND_nRE low delay */
++	},
++	.enable_arbiter = 1,	/* Data flash bus arbiter enable */
++	.page_per_block = 64,	/* Pages per block */
++	.row_addr_start = 1,	/* Second cycle start, Row address start position */
++	.read_id_bytes = 4,	/* Returned ID bytes */
++	.dfc_mode = 0,		/* NAND mode */
++	.ncsx = 0,
++	.page_size = 2048,	/* Page size in bytes */
++	.oob_size = 64,		/* OOB size in bytes */
++	.flash_width = 8,	/* Width of Flash memory */
++	.dfc_width = 8,		/* Width of flash controller */
++	.num_blocks = 2048,	/* Number of physical blocks in Flash */
++	.chip_id =  0xdaec,
++	.read_prog_cycles = 5,	/* Read, Program Cycles */
++#ifdef CONFIG_MTD_NAND_PXA3xx_UNLOCK
++	.unlock_block_cycles = 0,	/* Unlock Block address cycles */
++#endif
++
++	/* command codes */
++	.read1 = 0x3000,	/* Read */
++	.read2 = 0x0050,	/* Read1 unused, current DFC don't support */
++	.program = 0x1080,	/* Write, two cycle command */
++	.read_status = 0x0070,	/* Read status */
++	.read_id = 0x0090,	/* Read ID */
++	.erase =  0xD060,	/* Erase, two cycle command */
++	.reset = 0x00FF,	/* Reset */
++	.lock = 0x002A,		/* Lock whole flash */
++	.unlock = 0x2423,	/* Unlock, two cycle command, supporting partial unlock */
++	.lock_status = 0x007A,	/* Read block lock status */
++	.addr2ndcb1 = Samsung2GbX8_1_Addr2NDCB1,
++	.ndbbr2addr = Samsung2GbX8_1_NDBBR2Addr,
++};
++
++static int Samsung2GbX8_1_Addr2NDCB1(uint16_t cmd, uint32_t addr, uint32_t *p)
++{
++	uint32_t ndcb1 = 0;
++	uint32_t page;
++
++	if (addr >= 0x10000000)
++		return -EINVAL;
++	page = addr / samsung2GbX8.page_size;
++	addr =  (page / samsung2GbX8.page_per_block) << 18 |
++		(page % samsung2GbX8.page_per_block) << 12;
++
++	if (cmd == samsung2GbX8.read1 || cmd == samsung2GbX8.program) {
++		ndcb1 = (addr & 0xFFF) | ((addr << 4) & 0xFFFF0000);
++	}
++	else if (cmd == samsung2GbX8.erase || cmd == (samsung2GbX8.unlock & 0xff) ||
++			cmd == (samsung2GbX8.unlock & 0xff00) >> 8) {
++		ndcb1 = ((addr >> 18) << 6) & 0x1FFFF;
++	}
++
++	*p = ndcb1;
++	return 0;
++}
++
++static int Samsung2GbX8_1_NDBBR2Addr(uint16_t cmd, uint32_t ndbbr, uint32_t *p)
++{
++	if (cmd == samsung2GbX8.read1 || cmd == samsung2GbX8.program) {
++		*p = ((ndbbr & 0xF) << 8) | ((ndbbr >> 8) << 16);
++	}
++	else if (cmd == samsung2GbX8.erase) {
++		*p = (ndbbr >> 6) << 18;
++	}
++
++	return 0;
++}
++
+ static int Samsung2GbX8Addr2NDCB1(uint16_t cmd, uint32_t addr, uint32_t *p);
+ static int Samsung2GbX8NDBBR2Addr(uint16_t cmd, uint32_t ndbbr, uint32_t *p);
+ 
+@@ -1260,6 +1346,7 @@ static struct {
+ 	struct dfc_flash_info *flash_info;
+ } type_info[] = {
+ 	{ DFC_FLASH_Samsung_512Mb_X_16, &samsung512MbX16},
++	{ DFC_FLASH_Samsung_2Gb_X_8_1, &samsung2GbX8_1},
+ 	{ DFC_FLASH_Samsung_2Gb_X_8, &samsung2GbX8},
+ 	{ DFC_FLASH_Micron_1Gb_X_8, &micron1GbX8},
+ 	{ DFC_FLASH_Micron_1Gb_X_16, &micron1GbX16},
+-- 
+1.6.0.4
+

@@ -1,0 +1,237 @@
+From 73a84f2f7c061d5f3365b154d7fc62215677bfcc Mon Sep 17 00:00:00 2001
+From: Wen Lei <leiwen@marvell.com>
+Date: Fri, 27 Feb 2009 10:27:45 +0800
+Subject: [PATCH] pxa910: add yaffs img write for nand
+
+---
+ common/cmd_nand.c            |   29 +++++++++++++++-
+ drivers/mtd/nand/nand_base.c |    9 +++++
+ drivers/mtd/nand/nand_util.c |   77 +++++++++++++++++++++++++++++++++++++----
+ include/nand.h               |    6 +++
+ 4 files changed, 112 insertions(+), 9 deletions(-)
+
+diff --git a/common/cmd_nand.c b/common/cmd_nand.c
+index 3403b6a..782748e 100644
+--- a/common/cmd_nand.c
++++ b/common/cmd_nand.c
+@@ -38,6 +38,13 @@ int find_dev_and_part(const char *id, struct mtd_device **dev,
+ 		      u8 *part_num, struct part_info **part);
+ #endif
+ 
++struct yaffs_oob_desc {
++	int     offset;
++	int     size;
++};
++
++static struct yaffs_oob_desc yaffs_oob = {2, 38};
++
+ static int nand_dump(nand_info_t *nand, ulong off, int only_oob)
+ {
+ 	int i;
+@@ -340,6 +347,26 @@ int do_nand(cmd_tbl_t * cmdtp, int flag, int argc, char *argv[])
+ 			else
+ 				ret = nand_write_skip_bad(nand, off, &size,
+ 							  (u_char *)addr);
++		} else if (!strcmp(s, ".yaffs")) {
++			struct nand_chip * n_chip = (struct nand_chip *)(nand->priv);
++		
++			n_chip->ops.datbuf = (uint8_t *)addr;
++			n_chip->ops.len = size;
++			n_chip->ops.oobbuf = (uint8_t *)addr;
++			n_chip->ops.ooboffs = yaffs_oob.offset; 
++			n_chip->ops.ooblen = yaffs_oob.size;
++			n_chip->ops.mode = MTD_OOB_RAW;
++
++			if (read)
++				ret = nand_read_skip_bad(nand, off, &size,
++							 (u_char *)addr);
++			else
++				ret = nand_write_skip_bad(nand, off, &size,
++							  (u_char *)addr);
++
++			/* clear tmp buf */
++			n_chip->ops.datbuf = NULL;
++			n_chip->ops.oobbuf = NULL;
+ 		} else if (s != NULL && !strcmp(s, ".oob")) {
+ 			/* out-of-band data */
+ 			mtd_oob_ops_t ops = {
+@@ -473,7 +500,7 @@ U_BOOT_CMD(nand, 5, 1, do_nand,
+ 	   "info - show available NAND devices\n"
+ 	   "nand device [dev] - show or set current device\n"
+ 	   "nand read - addr off|partition size\n"
+-	   "nand write - addr off|partition size\n"
++	   "nand write[.yaffs] - addr off|partition size\n"
+ 	   "    read/write 'size' bytes starting at offset 'off'\n"
+ 	   "    to/from memory address 'addr', skipping bad blocks.\n"
+ 	   "nand erase [clean] [off size] - erase 'size' bytes from\n"
+diff --git a/drivers/mtd/nand/nand_base.c b/drivers/mtd/nand/nand_base.c
+index ba05b76..8387eac 100644
+--- a/drivers/mtd/nand/nand_base.c
++++ b/drivers/mtd/nand/nand_base.c
+@@ -1838,6 +1838,10 @@ static int nand_do_write_ops(struct mtd_info *mtd, loff_t to,
+ 	uint8_t *oob = ops->oobbuf;
+ 	uint8_t *buf = ops->datbuf;
+ 	int ret, subpage;
++	int is_yaffs = ((oob != NULL) && (oob == buf)) ? 1 : 0;
++
++	if (is_yaffs)
++		oob = NULL;
+ 
+ 	ops->retlen = 0;
+ 	if (!writelen)
+@@ -1893,6 +1897,11 @@ static int nand_do_write_ops(struct mtd_info *mtd, loff_t to,
+ 			wbuf = chip->buffers->databuf;
+ 		}
+ 
++		if (is_yaffs) {
++			memcpy(chip->oob_poi + ops->ooboffs, buf + bytes, ops->ooblen);
++			buf += mtd->oobsize;
++		}
++
+ 		if (unlikely(oob))
+ 			oob = nand_fill_oob(chip, oob, ops);
+ 
+diff --git a/drivers/mtd/nand/nand_util.c b/drivers/mtd/nand/nand_util.c
+index d86c987..c2b571c 100644
+--- a/drivers/mtd/nand/nand_util.c
++++ b/drivers/mtd/nand/nand_util.c
+@@ -449,6 +449,16 @@ static size_t get_len_incl_bad (nand_info_t *nand, size_t offset,
+ 	return len_incl_bad;
+ }
+ 
++static inline int judge_not_aligned(int x, int len, int is_yaffs)
++{
++	if (is_yaffs) {
++		return ((x / len) * len) != x;
++	}
++	else {
++		return (x & (len - 1)) != 0;
++	}
++}
++
+ /**
+  * nand_write_skip_bad:
+  *
+@@ -470,23 +480,47 @@ int nand_write_skip_bad(nand_info_t *nand, size_t offset, size_t *length,
+ 	size_t left_to_write = *length;
+ 	size_t len_incl_bad;
+ 	u_char *p_buffer = buffer;
++	struct nand_chip * n_chip = (struct nand_chip *)(nand->priv);
++	int is_yaffs = 0;
++	u_char *tmp_buf;
+ 
+ 	/* Reject writes, which are not page aligned */
+-	if ((offset & (nand->writesize - 1)) != 0 ||
+-	    (*length & (nand->writesize - 1)) != 0) {
+-		printf ("Attempt to write non page aligned data\n");
+-		return -EINVAL;
++	if ( unlikely(n_chip->ops.oobbuf != NULL && \
++				n_chip->ops.oobbuf == n_chip->ops.datbuf)) {
++		if (judge_not_aligned(offset, nand->writesize, 1)			\
++				|| judge_not_aligned(*length, nand->writesize + nand->oobsize, 1)) {
++			printf ("YAFFS: Attempt to write non page aligned data\n");
++			return -EINVAL;
++		}
++
++		is_yaffs = 1;
++		tmp_buf = n_chip->ops.datbuf;
++	}
++	else {
++		if ((offset & (nand->writesize - 1)) != 0 ||
++				(*length & (nand->writesize - 1)) != 0) {
++			printf ("Attempt to write non page aligned data\n");
++			return -EINVAL;
++		}
+ 	}
+ 
+ 	len_incl_bad = get_len_incl_bad (nand, offset, *length);
+ 
++	if (is_yaffs) {
++		n_chip->ops.datbuf = tmp_buf;
++		n_chip->ops.oobbuf = tmp_buf;
++	}
++
+ 	if ((offset + len_incl_bad) >= nand->size) {
+ 		printf ("Attempt to write outside the flash area\n");
+ 		return -EINVAL;
+ 	}
+ 
+ 	if (len_incl_bad == *length) {
+-		rval = nand_write (nand, offset, length, buffer);
++		if ( unlikely(is_yaffs == 1))
++ 			rval = nand_write_oob (nand, offset, &(n_chip->ops));
++		else
++			rval = nand_write (nand, offset, length, buffer);
+ 		if (rval != 0)
+ 			printf ("NAND write to offset %x failed %d\n",
+ 				offset, rval);
+@@ -505,12 +539,26 @@ int nand_write_skip_bad(nand_info_t *nand, size_t offset, size_t *length,
+ 			continue;
+ 		}
+ 
+-		if (left_to_write < (nand->erasesize - block_offset))
+-			write_size = left_to_write;
++		if (left_to_write < (nand->erasesize - block_offset)) {
++			if ( unlikely(is_yaffs == 1)){
++				write_size = (left_to_write / (nand->writesize + nand->oobsize)) \
++					     * nand->writesize;
++
++			}
++			else
++				write_size = left_to_write;
++		}
+ 		else
+ 			write_size = nand->erasesize - block_offset;
+ 
+-		rval = nand_write (nand, offset, &write_size, p_buffer);
++		if ( unlikely(is_yaffs == 1)) {
++			n_chip->ops.len = write_size;
++			rval = nand_write_oob (nand, offset, &(n_chip->ops));
++		}
++		else {
++			rval = nand_write (nand, offset, &write_size, p_buffer);
++		}
++
+ 		if (rval != 0) {
+ 			printf ("NAND write to offset %x failed %d\n",
+ 				offset, rval);
+@@ -518,6 +566,19 @@ int nand_write_skip_bad(nand_info_t *nand, size_t offset, size_t *length,
+ 			return rval;
+ 		}
+ 
++		/* Correct the real write bytes for YAFFS*/
++		if ( unlikely(is_yaffs == 1)) {
++			if (left_to_write < (nand->erasesize - block_offset)) 
++				write_size = left_to_write;
++			else {
++				left_to_write -= nand->oobsize * (nand->erasesize	\
++						/ nand->writesize);
++				n_chip->ops.datbuf += (write_size + nand->oobsize * (nand->erasesize       \
++							/ nand->writesize));
++				n_chip->ops.oobbuf = n_chip->ops.datbuf;
++			}
++		}	
++
+ 		left_to_write -= write_size;
+ 		offset        += write_size;
+ 		p_buffer      += write_size;
+diff --git a/include/nand.h b/include/nand.h
+index b4f316f..230aa62 100644
+--- a/include/nand.h
++++ b/include/nand.h
+@@ -46,6 +46,12 @@ static inline int nand_write(nand_info_t *info, off_t ofs, size_t *len, u_char *
+ 	return info->write(info, ofs, *len, (size_t *)len, buf);
+ }
+ 
++static inline int nand_write_oob(nand_info_t *info, off_t ofs,
++			  struct mtd_oob_ops *ops)
++{
++	return info->write_oob(info, ofs, ops);
++}
++
+ static inline int nand_block_isbad(nand_info_t *info, off_t ofs)
+ {
+ 	return info->block_isbad(info, ofs);
+-- 
+1.6.0.4
+

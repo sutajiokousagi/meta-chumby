@@ -1,0 +1,3156 @@
+From 6ee10d8d260a8e6a528640f45370f2e8312e8107 Mon Sep 17 00:00:00 2001
+From: Mingliang Hu <mingliang.hu@marvell.com>
+Date: Mon, 11 Jan 2010 17:36:46 +0800
+Subject: [PATCH] pxa688: add Bonnell mmc3 support
+
+Signed-off-by: Mingliang Hu <mingliang.hu@marvell.com>
+---
+ Makefile                                 |    3 +
+ board/pxa/common/boot.c                  |   16 +-
+ board/pxa/jasper/jasper.c                |  150 +++++--
+ common/cmd_mmc.c                         |  303 +++++++++++----
+ disk/part_dos.c                          |    8 +-
+ drivers/mmc/Makefile                     |    2 +
+ drivers/mmc/mmc.c                        |  636 ++++++++++++++++++++++++++----
+ drivers/mmc/pxa9xx_sdh.c                 |  448 +++++++++++++++++++++
+ drivers/mmc/pxa9xx_sdh.h                 |  164 ++++++++
+ drivers/mmc/pxa_sdh.c                    |  589 +++++++++++++++++++++++++++
+ drivers/mmc/pxa_sdh.h                    |  189 +++++++++
+ include/asm-arm/arch-pxa688/mfp-pxa688.h |    3 +
+ include/configs/mmp2_jasper_emmc.h       |   40 ++
+ include/mmc.h                            |   37 ++-
+ include/part.h                           |   10 +
+ 15 files changed, 2384 insertions(+), 214 deletions(-)
+ mode change 100644 => 100755 drivers/mmc/mmc.c
+ create mode 100644 drivers/mmc/pxa9xx_sdh.c
+ create mode 100644 drivers/mmc/pxa9xx_sdh.h
+ create mode 100644 drivers/mmc/pxa_sdh.c
+ create mode 100644 drivers/mmc/pxa_sdh.h
+ create mode 100644 include/configs/mmp2_jasper_emmc.h
+
+diff --git a/Makefile b/Makefile
+index c280f34..8c94042 100644
+--- a/Makefile
++++ b/Makefile
+@@ -2992,6 +2992,9 @@ mmp2_flint_config	:	unconfig
+ mmp2_jasper_config	:	unconfig
+ 	@$(MKCONFIG) $(@:_config=) arm 88SV581xV6 jasper pxa pxa688
+ 
++mmp2_jasper_emmc_config	:	unconfig
++	@$(MKCONFIG) $(@:_config=) arm 88SV581xV6 jasper pxa pxa688
++
+ #========================================================================
+ # i386
+ #========================================================================
+diff --git a/board/pxa/common/boot.c b/board/pxa/common/boot.c
+index 8631c0f..6cfc1b9 100644
+--- a/board/pxa/common/boot.c
++++ b/board/pxa/common/boot.c
+@@ -10,6 +10,7 @@
+ #include <linux/ctype.h>
+ #include <nand.h>
+ #include <onenand_uboot.h>
++#include <mmc.h>
+ 
+ extern int do_reset (cmd_tbl_t *cmdtp, int flag, int argc, char *argv[]);
+ DECLARE_GLOBAL_DATA_PTR;
+@@ -71,6 +72,8 @@ int do_bootz (cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
+ 
+ 	/* Autoboot sequence is NAND, OneNAND .. */
+ 	if (is_autoboot) {
++#if !defined (BOOT_FROM_EMMC)
++#ifdef CONFIG_CMD_NAND
+ 		if (nand_curr_device >= 0) {
+ 			/* NAND Device Exist, try to boot from NAND */
+ 			printf("read zImage from NAND\n");
+@@ -81,9 +84,18 @@ int do_bootz (cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
+ 			printf("read zImage from OneNAND\n");
+ 			run_command(CONFIG_ONENANDBOOT, 0);
+ #endif
+-		} else {
++		} else
++#endif
+ 			printf("No flash device, fail to AUTOBOOT!!!\n\n");
+-		}
++#else
++		printf("read zImage from eMMC\n");
++#ifdef CONFIG_CMD_MMC
++		if (find_mmc_device(0))
++			run_command(CONFIG_MMCBOOT, 0);
++		else
++#endif
++			printf("No eMMC device, fail to AUTOBOOT!!!\n\n");
++#endif
+ 	}
+ 
+ 	is_zImage = (((ulong *)images.ep)[9] == 0x016f2818) ? 1 : 0;
+diff --git a/board/pxa/jasper/jasper.c b/board/pxa/jasper/jasper.c
+index aa25345..2142ec6 100644
+--- a/board/pxa/jasper/jasper.c
++++ b/board/pxa/jasper/jasper.c
+@@ -24,6 +24,10 @@
+ #include <asm/arch/mfp-pxa688.h>
+ 
+ static mfp_cfg_t jasper_pin_config[] __initdata = {
++	/*TWSI1*/
++	TWSI1_SCL,
++	TWSI1_SDA,
++
+ 	/* UART3 */
+ 	GPIO51_UART3_RXD,
+ 	GPIO52_UART3_TXD,
+@@ -117,6 +121,58 @@ dummy_delay(unsigned  int delay)
+     for(i = 0; i < delay; i++);
+ }
+ 
++
++void twsi1_ldo11_enable()
++{
++	/*Set TWSI pins Alternate function*/
++	*(unsigned long *)0xD401E140=*(unsigned long *)0xD401E140 & 0xFFFFFFF8;
++	*(unsigned long *)0xD401E144=*(unsigned long *)0xD401E144 & 0xFFFFFFF8;
++
++	/*Setup TWSI unit clocks - reset the unit*/
++	*(unsigned long *)0xD4015004=0x4;
++	*(unsigned long *)0xD4015004=0x7;
++	*(unsigned long *)0xD4015004=0x3;
++	dummy_delay(10000);
++	
++	/*Initialize the TWSI interface - reset the controller*/
++	*(unsigned long *)0xD4011010=0x4060;
++	*(unsigned long *)0xD4011010=0x0060;
++	*(unsigned long *)0xD4011020=0x0000;
++	dummy_delay(10000);
++
++	//Send PMIC Slave Address with start bit. \n"
++	*(unsigned long *)0xD4011008=0x78;
++	*(unsigned long *)0xD4011010=0x69;
++	dummy_delay(10000);
++
++	//Send LDO11 Register Address. \n"
++	*(unsigned long *)0xD4011008=0x42;
++	*(unsigned long *)0xD4011010=0x68;
++	dummy_delay(10000);
++
++	//Send Value for 2.8V \n"
++	*(unsigned long *)0xD4011008=0x29;
++	*(unsigned long *)0xD4011010=0x68;
++	dummy_delay(10000);
++
++	//Send LDO11CTRL Register Address. \n"
++	*(unsigned long *)0xD4011008=0x40;
++	*(unsigned long *)0xD4011010=0x68;
++	dummy_delay(10000);
++
++	//Enable LDO11 and send stop bit \n"
++	*(unsigned long *)0xD4011008=0x1f;
++	*(unsigned long *)0xD4011010=0x6A;
++
++}
++
++#ifdef CONFIG_PXA9XX_SDH
++int board_mmc_init(bd_t *bd)
++{
++	return pxa9xx_mmc_init(bd);
++}
++#endif
++
+ unsigned long initdram (int board_type)
+ {
+     return (PHYS_SDRAM_SIZE_DEC*1024*1024);
+@@ -199,6 +255,10 @@ int board_init (void)
+     //*(volatile unsigned int *)0xd42820c=0x1710;
+     //*(volatile unsigned int *)0xd42820c=0x1712;
+ 
++    /* SDHC clk*/
++    *(volatile unsigned int *)0xd4282854 = 0x1b; 
++    *(volatile unsigned int *)0xd42828e8 = 0x1b; 
++
+     /* vmeta clock*/
+     reg = *(volatile unsigned int *)0xd42828a4;
+ 	reg |= (3<<9);
+@@ -290,56 +350,58 @@ int board_init (void)
+ 
+     *(volatile unsigned int *)0xd4283024=0;
+ 
++	twsi1_ldo11_enable();
++
+     return 0;
+ }
+ 
+ int misc_init_r (void)
+ {
+-        char *env;
+-                                                                                                                                               
+-        /* primary network interface */
+-        env = getenv("ethprime");
+-        if(!env)
+-               setenv("ethprime","eth0");
+-
+-        /* default usb mode */
++	char *env;
++
++	/* primary network interface */
++	env = getenv("ethprime");
++	if(!env)
++		setenv("ethprime","eth0");
++
++	/* default usb mode */
+ 	env = getenv("usbMode");
+-        if(!env)
+-               setenv("usbMode","host");
+-
+-        /* linux boot arguments */
+-   	env = getenv("default_load_addr");
+-   	if(!env)
+-      		setenv("default_load_addr",CONFIG_SYS_DEF_LOAD_ADDR);
+-
+-        env = getenv("image_name");
+-        if(!env)
+-                setenv("image_name",CONFIG_SYS_IMG_NAME);
+-
+-        env = getenv("bootfile");
+-        if(!env)
+-                setenv("bootfile",CONFIG_SYS_IMG_NAME);
+-                
+-   	env = getenv("initrd_name");
+-       	if(!env)
+-                setenv("initrd_name",CONFIG_SYS_INITRD_NAME);
+- 
+-   	env = getenv("initrd_load_addr");
+-       	if(!env)
+-               	setenv("initrd_load_addr",CONFIG_SYS_INITRD_LOAD_ADDR);
+-
+-   	env = getenv("initrd_size");
+-        if(!env)
+-                setenv("initrd_size",CONFIG_SYS_INITRD_SIZE);
+- 
+-        env = getenv("standalone_mtd");
+-        if(!env)
+-                setenv("standalone_mtd","fsload $(default_load_addr) $(image_name);setenv bootargs $(bootargs) root=/dev/mtdblock0 rw rootfstype=jffs2 ip=$(ipaddr):$(serverip)$(bootargs_end);bootm $(default_load_addr);");
+-
+-        env = getenv("standalone_initrd");
+-        if(!env)
+-                setenv("standalone_initrd","fsload $(default_load_addr) $(image_name);fsload $(initrd_load_addr) $(initrd_name);setenv bootargs $(bootargs) root=/dev/ram0 rw initrd=0x$(initrd_load_addr),0x$(initrd_size) ip=$(ipaddr):$(serverip)$(bootargs_end); bootm $(default_load_addr);");
+-        
++	if(!env)
++		setenv("usbMode","host");
++
++	/* linux boot arguments */
++	env = getenv("default_load_addr");
++	if(!env)
++		setenv("default_load_addr",CONFIG_SYS_DEF_LOAD_ADDR);
++
++	env = getenv("image_name");
++	if(!env)
++		setenv("image_name",CONFIG_SYS_IMG_NAME);
++
++	env = getenv("bootfile");
++	if(!env)
++		setenv("bootfile",CONFIG_SYS_IMG_NAME);
++	        
++	env = getenv("initrd_name");
++	if(!env)
++	setenv("initrd_name",CONFIG_SYS_INITRD_NAME);
++
++	env = getenv("initrd_load_addr");
++	if(!env)
++		setenv("initrd_load_addr",CONFIG_SYS_INITRD_LOAD_ADDR);
++
++	env = getenv("initrd_size");
++	if(!env)
++		setenv("initrd_size",CONFIG_SYS_INITRD_SIZE);
++
++	env = getenv("standalone_mtd");
++	if(!env)
++		setenv("standalone_mtd","fsload $(default_load_addr) $(image_name);setenv bootargs $(bootargs) root=/dev/mtdblock0 rw rootfstype=jffs2 ip=$(ipaddr):$(serverip)$(bootargs_end);bootm $(default_load_addr);");
++
++	env = getenv("standalone_initrd");
++	if(!env)
++		setenv("standalone_initrd","fsload $(default_load_addr) $(image_name);fsload $(initrd_load_addr) $(initrd_name);setenv bootargs $(bootargs) root=/dev/ram0 rw initrd=0x$(initrd_load_addr),0x$(initrd_size) ip=$(ipaddr):$(serverip)$(bootargs_end); bootm $(default_load_addr);");
++
+ 	return 0;
+ }
+ 
+diff --git a/common/cmd_mmc.c b/common/cmd_mmc.c
+index 0e3393b..21c57db 100644
+--- a/common/cmd_mmc.c
++++ b/common/cmd_mmc.c
+@@ -87,31 +87,44 @@ int do_mmc (cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
+ 
+ U_BOOT_CMD(
+ 	mmc, 3, 1, do_mmc,
+-	"MMC sub-system",
++	"MMC sub-system\n",
+ 	"init [dev] - init MMC sub system\n"
+ 	"mmc device [dev] - show or set current device"
+ );
+ #else /* !CONFIG_GENERIC_MMC */
+ 
++static int cur_dev = 0;
+ static void print_mmcinfo(struct mmc *mmc)
+ {
+-	printf("Device: %s\n", mmc->name);
+-	printf("Manufacturer ID: %x\n", mmc->cid[0] >> 24);
+-	printf("OEM: %x\n", (mmc->cid[0] >> 8) & 0xffff);
+-	printf("Name: %c%c%c%c%c \n", mmc->cid[0] & 0xff,
+-			(mmc->cid[1] >> 24), (mmc->cid[1] >> 16) & 0xff,
+-			(mmc->cid[1] >> 8) & 0xff, mmc->cid[1] & 0xff);
++	printf("\tDevice Name: %s\n", mmc->name);
++	printf("\tManufacturer ID: %x\n", mmc->bcid.manu_id);
++	printf("\tOEM ID: %x\n", mmc->bcid.oem_id);
++	printf("\tName: %s\n", mmc->bcid.prod_name);
++	printf("\tManu Date: %02d,%04d\n\n", mmc->bcid.month, mmc->bcid.year + 1997);
+ 
+-	printf("Tran Speed: %d\n", mmc->tran_speed);
+-	printf("Rd Block Len: %d\n", mmc->read_bl_len);
++	printf("\tTran Speed: %d MHZ\n", mmc->tran_speed / 1000000);
++	printf("\tRd Block Len: %d\n", mmc->read_bl_len);
++	printf("\tMax Rd Block Len: %d\n", mmc->max_read_bl_len);
+ 
+-	printf("%s version %d.%d\n", IS_SD(mmc) ? "SD" : "MMC",
++	printf("\t%s version: %d.%d\n", IS_SD(mmc) ? "SD" : "MMC",
+ 			(mmc->version >> 4) & 0xf, mmc->version & 0xf);
+ 
+-	printf("High Capacity: %s\n", mmc->high_capacity ? "Yes" : "No");
+-	printf("Capacity: %lld\n", mmc->capacity);
+-
+-	printf("Bus Width: %d-bit\n", mmc->bus_width);
++	printf("\tHigh Capacity: %s\n", mmc->high_capacity ? "Yes" : "No");
++	printf("\tCapacity: %d MB\n", (int)(mmc->capacity / 1024 / 1024));
++	printf("\tSectors: 0x%x\n", mmc->sectors);
++
++	printf("\tBus Width: %d-bit\n", mmc->bus_width);
++	printf("\tErase group: 0x%x\n", mmc->erase_grp_size);
++
++	if(!IS_SD(mmc)) {
++		printf("\n\tMulti-partitions: %s\n",
++			(mmc->ext_csd_part_support & 0x1) ? "Yes" : "No");
++		printf("\tBoot_part_size: %d KB\n", mmc->ext_csd_boot_size / 1024);
++		printf("\tPartition_config: 0x%x\n", mmc->ext_csd_part_config);
++		printf("\tBoot_config_prot: 0x%x\n", mmc->ext_csd_boot_config_prot);
++		printf("\tBoot_bus_width: 0x%x\n", mmc->ext_csd_boot_bus_width);
++		printf("\tErase mem content: %d\n", mmc->ext_csd_erase_mem_content);
++	}
+ }
+ 
+ int do_mmcinfo (cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
+@@ -120,117 +133,247 @@ int do_mmcinfo (cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
+ 	int dev_num;
+ 
+ 	if (argc < 2)
+-		dev_num = 0;
++		dev_num = cur_dev;
+ 	else
+ 		dev_num = simple_strtoul(argv[1], NULL, 0);
+ 
++	printf("\nSelected device: #%d\n", cur_dev);
++
+ 	mmc = find_mmc_device(dev_num);
+ 
+ 	if (mmc) {
+-		mmc_init(mmc);
++		if (!mmc->block_dev.initialized && mmc_init(mmc)) {
++			return 1;
++		} else
++			mmc->block_dev.initialized = 1;
+ 
++		if (!IS_SD(mmc))
++			printf("\tActive partition: %d\n", mmc->ext_csd_part_config & 0x7);
+ 		print_mmcinfo(mmc);
++		printf("\n");
++		print_part_dos(&mmc->block_dev);
++		printf("\n");
+ 	}
+ 
+ 	return 0;
+ }
+ 
+ U_BOOT_CMD(mmcinfo, 2, 0, do_mmcinfo,
+-	"mmcinfo <dev num>-- display MMC info\n",
+-	""
++	"mmcinfo - display MMC info\n",
++	"mmcinfo <dev num>\n"
+ );
+ 
++static int test_mem_range(struct mmc *mmc, u32 end_sct)
++{
++	char part_access = mmc->ext_csd_part_config & 0x7;
++
++	if(!part_access) {
++		if (mmc->sectors && (end_sct >= mmc->sectors)) {
++			printf("Error, out of sector range(0x0, 0x%x)\n",
++				mmc->sectors - 1);
++			return 1;
++		}
++	} else if(part_access == 1 || part_access == 2) {
++		u32 sectors = mmc->ext_csd_boot_size / 512;
++		if (end_sct >= sectors) {
++			printf("Error, out of sector range(0x0, 0x%x)\n",
++				sectors);
++			return 1;
++		}
++	}
++
++	/* just have a try */
++	return 0;
++}
++
+ int do_mmcops(cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
+ {
+-	int rc = 0;
++	u32 blk, cnt, num, ret;
++	void *addr;
++
++	struct mmc *mmc = find_mmc_device(cur_dev);
++	if (!mmc) {
++		printf("Error, no MMC device\n");
++		return 1;
++	}
++
++	switch (argc) {
++	case 2:
++		if (!strcmp(argv[1], "list")) {
++			print_mmc_devices('\n');
++		} else if (strcmp(argv[1], "rescan") == 0) {
++			if (mmc_init(mmc))
++				goto err_mmc_init;
++			else
++				mmc->block_dev.initialized = 1;
++		} else
++			goto err_param;
++		return 0;
++	case 3:
++		if (strcmp(argv[1], "sw_dev") == 0) {
++			num = simple_strtoul(argv[2], NULL, 0);
++			mmc = find_mmc_device(num);
++			if (mmc)
++				cur_dev = num;
++
++			printf("switch to device #%d, %s\n",
++				num, (mmc) ? "OK" : "ERROR");
++			return (mmc) ? 0 : 1;
++		}
++	}
++
++	if (!mmc->block_dev.initialized && mmc_init(mmc))
++		goto err_mmc_init;
++	else
++		mmc->block_dev.initialized = 1;
+ 
+ 	switch (argc) {
+ 	case 3:
+-		if (strcmp(argv[1], "rescan") == 0) {
+-			int dev = simple_strtoul(argv[2], NULL, 10);
+-			struct mmc *mmc = find_mmc_device(dev);
++		num = simple_strtoul(argv[2], NULL, 0);
++
++		if (strcmp(argv[1], "sw_part") == 0) {
++			if (num > 3) {
++				printf("#part_num should less than 4\n\n");
++				goto err_param;
++			}
++
++			if (!mmc->block_dev.switch_part) {
++				printf("Error, no part_switch func!\n");
++				return 1;
++			}
++
++			if (!(mmc->ext_csd_part_support & 0x1)) {
++				printf("Card doesn't support part_switch\n");
++				printf("boot_config has been diabled permanently\n");
++				return -1;
++			}
+ 
+-			if (!mmc)
++			ret = mmc->block_dev.switch_part(cur_dev, num);
++
++			printf("switch to partions #%d, %s\n",
++				num, (!ret) ? "OK" : "ERROR");
++			return (!ret) ? 0 : 1;
++		} else if (strcmp(argv[1], "sw_boot") == 0) {
++			if (strcmp(argv[2], "-1") == 0)
++				num = 0;
++			else if (num > 2) {
++				printf("#part_num should less than 3\n\n");
++				goto err_param;
++			}
++
++			if (!mmc->block_dev.switch_boot) {
++				printf("Error, no switch_boot func!\n");
+ 				return 1;
++			}
++
++			if (mmc->ext_csd_boot_config_prot & 0x10) {
++				printf("boot_config has been diabled permanently\n");
++				return -1;
++			}
+ 
+-			mmc_init(mmc);
++			ret = mmc->block_dev.switch_boot(cur_dev, num);
+ 
+-			return 0;
+-		}
++			printf("switch boot from partion #%d, %s\n",
++				num, (!ret) ? "OK" : "ERROR");
++			return (!ret) ? 0 : 1;
++		} else
++			goto err_param;
++		break;
+ 
+-	case 0:
+-	case 1:
+ 	case 4:
+-		printf("Usage:\n%s\n", cmdtp->usage);
+-		return 1;
++	case 5:
++		blk = simple_strtoul(argv[2], NULL, 0);
++		cnt = simple_strtoul(argv[3], NULL, 0);
++
++		addr = (void *)simple_strtoul(argv[4], NULL, 0);
++#ifdef CONFIG_SYS_LOAD_ADDR
++		if (argc == 4)
++			addr = CONFIG_SYS_LOAD_ADDR;
++#endif
+ 
+-	case 2:
+-		if (!strcmp(argv[1], "list")) {
+-			print_mmc_devices('\n');
+-			return 0;
+-		}
+-		return 1;
+-	default: /* at least 5 args */
+-		if (strcmp(argv[1], "read") == 0) {
+-			int dev = simple_strtoul(argv[2], NULL, 10);
+-			void *addr = (void *)simple_strtoul(argv[3], NULL, 16);
+-			u32 cnt = simple_strtoul(argv[5], NULL, 16);
+-			u32 n;
+-			u32 blk = simple_strtoul(argv[4], NULL, 16);
+-			struct mmc *mmc = find_mmc_device(dev);
+-
+-			if (!mmc)
++		if (strcmp(argv[1], "erase") != 0
++			&& strcmp(argv[1], "read") != 0
++			&& strcmp(argv[1], "write") != 0)
++			goto err_param;
++
++		if (test_mem_range(mmc, blk + cnt - 1))
++			return 1;
++
++		if (strcmp(argv[1], "erase") == 0) {
++			if (argc != 4)
++				goto err_param;
++
++			printf("\nMMC erase: dev #%d, block #0x%x, count #0x%x :\n",
++				cur_dev, blk, cnt);
++
++			if ((blk % mmc->erase_grp_size) || (cnt % mmc->erase_grp_size)) {
++				printf("Error, the range is not erase_group_size(%d) aligned\n",
++					mmc->erase_grp_size);
+ 				return 1;
++			}
+ 
+-			printf("\nMMC read: dev # %d, block # %d, count %d ... ",
+-				dev, blk, cnt);
++			num = mmc->block_dev.block_erase(cur_dev, blk, cnt);
+ 
+-			mmc_init(mmc);
++			printf("\n\t0x%x sectors erased, %s\n",
++				num, (num == cnt) ? "OK" : "ERROR");
++			return (num == cnt) ? 0 : 1;
++		} else if (strcmp(argv[1], "read") == 0) {
++#if !defined(CONFIG_SYS_LOAD_ADDR)
++			if (argc != 5)
++				goto err_param;
++#endif
++			printf("\nMMC read: dev #%d, block #0x%x, count #0x%x :\n",
++				cur_dev, blk, cnt);
+ 
+-			n = mmc->block_dev.block_read(dev, blk, cnt, addr);
++			num = mmc->block_dev.block_read(cur_dev, blk, cnt, addr);
+ 
+ 			/* flush cache after read */
+ 			flush_cache((ulong)addr, cnt * 512); /* FIXME */
+ 
+-			printf("%d blocks read: %s\n",
+-				n, (n==cnt) ? "OK" : "ERROR");
+-			return (n == cnt) ? 0 : 1;
++			printf("\n\t0x%x sectors read to 0x%x, %s\n",
++				num, addr, (num == cnt) ? "OK" : "ERROR");
++			return (num == cnt) ? 0 : 1;
+ 		} else if (strcmp(argv[1], "write") == 0) {
+-			int dev = simple_strtoul(argv[2], NULL, 10);
+-			void *addr = (void *)simple_strtoul(argv[3], NULL, 16);
+-			u32 cnt = simple_strtoul(argv[5], NULL, 16);
+-			u32 n;
+-			struct mmc *mmc = find_mmc_device(dev);
+-
+-			int blk = simple_strtoul(argv[4], NULL, 16);
++#if !defined(CONFIG_SYS_LOAD_ADDR)
++			if (argc != 5)
++				goto err_param;
++#endif
++			printf("\nMMC write: dev # %d, block # 0x%x, count 0x%x :\n",
++				cur_dev, blk, cnt);
+ 
+-			if (!mmc)
+-				return 1;
++			num = mmc->block_dev.block_write(cur_dev, blk, cnt, addr);
+ 
+-			printf("\nMMC write: dev # %d, block # %d, count %d ... ",
+-				dev, blk, cnt);
++			printf("\n\t0x%x sectors written from 0x%x, %s\n",
++				num, addr, (num == cnt) ? "OK" : "ERROR");
++			return (num == cnt) ? 0 : 1;
++		} else
++			goto err_param;
++		break;
+ 
+-			mmc_init(mmc);
++	default:
++		goto err_param;
++	}
+ 
+-			n = mmc->block_dev.block_write(dev, blk, cnt, addr);
++	return 0;
+ 
+-			printf("%d blocks written: %s\n",
+-				n, (n == cnt) ? "OK" : "ERROR");
+-			return (n == cnt) ? 0 : 1;
+-		} else {
+-			printf("Usage:\n%s\n", cmdtp->usage);
+-			rc = 1;
+-		}
++err_mmc_init:
++	mmc->block_dev.initialized = 0;
++	return 1;
+ 
+-		return rc;
+-	}
++err_param:
++	printf("Usage:\n%s\n", cmdtp->help);
++	return 1;
+ }
+ 
+ U_BOOT_CMD(
+ 	mmc, 6, 1, do_mmcops,
+-	"MMC sub system",
+-	"read <device num> addr blk# cnt\n"
+-	"mmc write <device num> addr blk# cnt\n"
+-	"mmc rescan <device num>\n"
+-	"mmc list - lists available devices");
++	"mmc     - MMC sub system\n",
++	"mmc read #start_sct #sct_cnt [#addr]\n"
++	"mmc write #start_sct #sct_cnt [#addr]\n"
++	"mmc erase #start_sct #sct_cnt\n"
++	"mmc rescan - rescan the current mmc device\n"
++	"mmc sw_part #part_num - switch to another eMMC partition\n"
++	"mmc sw_boot #part_num - boot from another eMMC partition\n"
++	"mmc sw_dev #dev_num - switch to another eMMC device\n"
++	"mmc list - lists available devices\n");
+ #endif
+diff --git a/disk/part_dos.c b/disk/part_dos.c
+index 4d778ec..13fdeca 100644
+--- a/disk/part_dos.c
++++ b/disk/part_dos.c
+@@ -110,7 +110,7 @@ static void print_partition_extended (block_dev_desc_t *dev_desc, int ext_part_s
+ 	}
+ 	i=test_block_type(buffer);
+ 	if(i==-1) {
+-		printf ("bad MBR sector signature 0x%02x%02x\n",
++		printf ("\tbad MBR sector signature 0x%02x%02x\n",
+ 			buffer[DOS_PART_MAGIC_OFFSET],
+ 			buffer[DOS_PART_MAGIC_OFFSET + 1]);
+ 		return;
+@@ -240,8 +240,14 @@ static int get_partition_info_extended (block_dev_desc_t *dev_desc, int ext_part
+ 
+ void print_part_dos (block_dev_desc_t *dev_desc)
+ {
++#if defined (CONFIG_MBR_SECTOR)
++	printf ("\tRead MBR at 0x%x\n", CONFIG_MBR_SECTOR);
++	printf ("\tPartition     Start Sector     Num Sectors     Type\n");
++	print_partition_extended (dev_desc, CONFIG_MBR_SECTOR, 0, 1);
++#else
+ 	printf ("Partition     Start Sector     Num Sectors     Type\n");
+ 	print_partition_extended (dev_desc, 0, 0, 1);
++#endif
+ }
+ 
+ int get_partition_info_dos (block_dev_desc_t *dev_desc, int part, disk_partition_t * info)
+diff --git a/drivers/mmc/Makefile b/drivers/mmc/Makefile
+index d9fa461..170e522 100644
+--- a/drivers/mmc/Makefile
++++ b/drivers/mmc/Makefile
+@@ -28,6 +28,8 @@ LIB	:= $(obj)libmmc.a
+ COBJS-$(CONFIG_ATMEL_MCI) += atmel_mci.o
+ COBJS-$(CONFIG_GENERIC_MMC) += mmc.o
+ COBJS-$(CONFIG_PXAMCI) += pxamci.o
++COBJS-$(CONFIG_PXASDH) += pxa_sdh.o
++COBJS-$(CONFIG_PXA9XX_SDH) += pxa9xx_sdh.o
+ 
+ COBJS	:= $(COBJS-y)
+ SRCS	:= $(COBJS:.o=.c)
+diff --git a/drivers/mmc/mmc.c b/drivers/mmc/mmc.c
+old mode 100644
+new mode 100755
+index f00e022..f6745ba
+--- a/drivers/mmc/mmc.c
++++ b/drivers/mmc/mmc.c
+@@ -34,6 +34,8 @@
+ #include <div64.h>
+ 
+ #define MMC_RETRY_TIME	3
++#define BLKS_PER_READ	0x40
++#define BLKS_PER_WRITE	0x40
+ static struct list_head mmc_devices;
+ static int cur_dev_num = -1;
+ 
+@@ -48,6 +50,66 @@ int mmc_send_cmd(struct mmc *mmc, struct mmc_cmd *cmd, struct mmc_data *data)
+ 	return res;
+ }
+ 
++static int mmc_bus_test(struct mmc *mmc, int bus_width)
++{
++	struct mmc_cmd cmd;
++	struct mmc_data data;
++	char bus_test_buf[8], bus_test_ret[8];
++	ushort result = 0;
++	int err;
++
++	cmd.cmdidx = MMC_CMD_BUSTEST_W;
++	cmd.resp_type = MMC_RSP_R1;
++	cmd.cmdarg = 0;
++	cmd.flags = 0;
++	memset(bus_test_buf, 0, bus_width);
++	if (bus_width == 4) {
++		bus_test_buf[0] = 0x5A;
++	} else if (bus_width == 8) {
++		bus_test_buf[0] = 0x55;
++		bus_test_buf[1] = 0xAA;
++	} else {
++		return -1;
++	}
++	data.dest = bus_test_buf;
++	data.blocks = 1;
++	data.blocksize = bus_width;
++	data.flags = MMC_DATA_WRITE;
++	err = mmc_send_cmd(mmc, &cmd, &data);
++	if (err)
++		return err;
++
++	udelay(1000);
++	cmd.cmdidx = MMC_CMD_BUSTEST_R;
++	cmd.resp_type = MMC_RSP_R1;
++	cmd.cmdarg = 0;
++	cmd.flags = 0;
++	memset(bus_test_ret, 0, bus_width);
++	data.dest = bus_test_ret;
++	data.blocks = 1;
++	data.blocksize = bus_width;
++	data.flags = MMC_DATA_READ;
++	err = mmc_send_cmd(mmc, &cmd, &data);
++	if (err)
++		return err;
++
++	if (bus_width == 4) {
++		result = ~(bus_test_buf[0] ^ bus_test_ret[0]);
++		result &= 0xF;
++	} else if (bus_width == 8) {
++		result = ~(bus_test_buf[0] ^ bus_test_ret[0]);
++		result &= 0xF;
++		result |= ~(bus_test_buf[1] ^ bus_test_ret[1]) << 8;
++	}
++	if (result) {
++		printf("mmc bus error: in %d-bit-mode bus_test returns: 0x%04x\n",
++			bus_width, result);
++		return -1;
++	}
++
++	return 0;
++}
++
+ int mmc_set_blocklen(struct mmc *mmc, int len)
+ {
+ 	struct mmc_cmd cmd;
+@@ -77,27 +139,12 @@ struct mmc *find_mmc_device(int dev_num)
+ 	return NULL;
+ }
+ 
+-static ulong
+-mmc_bwrite(int dev_num, ulong start, lbaint_t blkcnt, const void*src)
++static ulong mmc_write_t(struct mmc *mmc, ulong start, lbaint_t blkcnt, const void *src)
+ {
+ 	struct mmc_cmd cmd;
+ 	struct mmc_data data;
+ 	int err;
+-	int stoperr = 0;
+-	struct mmc *mmc = find_mmc_device(dev_num);
+-	int blklen;
+-
+-	if (!mmc)
+-		return -1;
+-
+-	blklen = mmc->write_bl_len;
+-
+-	err = mmc_set_blocklen(mmc, mmc->write_bl_len);
+-
+-	if (err) {
+-		printf("set write bl len failed\n\r");
+-		return err;
+-	}
++	lbaint_t blklen = mmc->read_bl_len;
+ 
+ 	if (blkcnt > 1)
+ 		cmd.cmdidx = MMC_CMD_WRITE_MULTIPLE_BLOCK;
+@@ -124,15 +171,120 @@ mmc_bwrite(int dev_num, ulong start, lbaint_t blkcnt, const void*src)
+ 		return err;
+ 	}
+ 
+-	if (blkcnt > 1) {
+-		cmd.cmdidx = MMC_CMD_STOP_TRANSMISSION;
+-		cmd.cmdarg = 0;
+-		cmd.resp_type = MMC_RSP_R1b;
+-		cmd.flags = 0;
+-		stoperr = mmc_send_cmd(mmc, &cmd, NULL);
++	return 0;
++}
++
++static ulong
++mmc_bwrite(int dev_num, ulong start, lbaint_t blkcnt, const void *src)
++{
++	struct mmc_cmd cmd;
++	int err, stoperr = 0;
++	struct mmc *mmc = find_mmc_device(dev_num);
++	lbaint_t blklen, blk = 0, blk_r = 0;
++
++	if (!mmc)
++		return -1;
++
++	blklen = mmc->write_bl_len;
++	cmd.cmdidx = MMC_CMD_STOP_TRANSMISSION;
++	cmd.cmdarg = 0;
++	cmd.resp_type = MMC_RSP_R1b;
++	cmd.flags = 0;
++
++	err = mmc_set_blocklen(mmc, mmc->write_bl_len);
++
++	if (err) {
++		printf("set write bl len failed\n\r");
++		return err;
+ 	}
+ 
+-	return blkcnt;
++	while (blk < blkcnt) {
++		blk_r = ((blkcnt - blk) > BLKS_PER_WRITE) ? BLKS_PER_WRITE : (blkcnt - blk);
++		err = mmc_write_t(mmc, start + blk,
++			blk_r, src + blk * blklen);
++		if (err)
++			break;
++
++		if (blk_r > 1) {
++			stoperr = mmc_send_cmd(mmc, &cmd, NULL);
++		}
++
++		if (blk % (64 * BLKS_PER_WRITE))
++			printf(".");
++		else {
++			if (blk)
++				printf("\n.");
++			printf("\t.");
++		}
++		blk += blk_r;
++	}
++
++	return blk;
++}
++
++static ulong mmc_erase_t(struct mmc *mmc, ulong start, lbaint_t blkcnt)
++{
++	struct mmc_cmd cmd;
++	int err;
++
++	cmd.cmdidx = MMC_CMD_ERASE_GRP_START;
++	cmd.cmdarg = start;
++	cmd.resp_type = MMC_RSP_R1;
++	cmd.flags = 0;
++
++	err = mmc_send_cmd(mmc, &cmd, NULL);
++	if (err)
++		goto err_out;
++
++	cmd.cmdidx = MMC_CMD_ERASE_GRP_END;
++	cmd.cmdarg = start + blkcnt - 1;
++
++	err = mmc_send_cmd(mmc, &cmd, NULL);
++	if (err)
++		goto err_out;
++
++	cmd.cmdidx = MMC_CMD_ERASE;
++	cmd.cmdarg = 0x80000000; //Secure erase
++	cmd.resp_type = MMC_RSP_R1b;
++
++	err = mmc_send_cmd(mmc, &cmd, NULL);
++	if (err)
++		goto err_out;
++
++	return 0;
++
++err_out:
++	printf("mmc erase failed\n\r");
++	return err;
++}
++
++static unsigned long mmc_berase(int dev_num, ulong start, lbaint_t blkcnt)
++{
++	int err = 0;
++	struct mmc *mmc = find_mmc_device(dev_num);
++	lbaint_t blk = 0, blk_r = 0;
++
++	if (!mmc)
++		return -1;
++
++	while (blk < blkcnt) {
++		blk_r = ((blkcnt - blk) > mmc->erase_grp_size) ?
++			mmc->erase_grp_size : (blkcnt - blk);
++		err = mmc_erase_t(mmc, start + blk, blk_r);
++		if (err)
++			break;
++
++		if (blk % (64 * mmc->erase_grp_size))
++			printf(".");
++		else {
++			if (blk)
++				printf("\n");
++			printf("\t.");
++		}
++		blk += blk_r;
++	}
++
++	return blk;
+ }
+ 
+ int mmc_read_block(struct mmc *mmc, void *dst, uint blocknum)
+@@ -170,7 +322,7 @@ int mmc_read(struct mmc *mmc, u64 src, uchar *dst, int size)
+ 	/* Make a buffer big enough to hold all the blocks we might read */
+ 	buffer = malloc(blklen);
+ 
+-	printf("@@@@@@@@buffer %x\n\n", buffer);
++	printf("@@@@@@@@buffer %x\n\n", (unsigned int) buffer);
+ 	while(1);
+ 	if (!buffer) {
+ 		printf("Could not allocate buffer for MMC read!\n");
+@@ -212,32 +364,87 @@ free_buffer:
+ 	return err;
+ }
+ 
+-static ulong mmc_bread(int dev_num, ulong start, lbaint_t blkcnt, void *dst)
++static ulong mmc_read_t(struct mmc *mmc, ulong start, lbaint_t blkcnt, void *dst)
+ {
++	struct mmc_cmd cmd;
++	struct mmc_data data;
+ 	int err;
+-	int i;
++	lbaint_t blklen = mmc->read_bl_len;
++
++	if (blkcnt > 1)
++		cmd.cmdidx = MMC_CMD_READ_MULTIPLE_BLOCK;
++	else
++		cmd.cmdidx = MMC_CMD_READ_SINGLE_BLOCK;
++
++	if (mmc->high_capacity)
++		cmd.cmdarg = start;
++	else
++		cmd.cmdarg = start * blklen;
++
++	cmd.resp_type = MMC_RSP_R1;
++	cmd.flags = 0;
++
++	data.dest = dst;
++	data.blocks = blkcnt;
++	data.blocksize = blklen;
++	data.flags = MMC_DATA_READ;
++
++	err = mmc_send_cmd(mmc, &cmd, &data);
++
++	if (err) {
++		printf("mmc read failed\n\r");
++		return err;
++	}
++
++	return 0;
++}
++
++static ulong mmc_bread(int dev_num, ulong start, lbaint_t blkcnt, void *dst)
++{
++	struct mmc_cmd cmd;
++	int err, stoperr = 0;
+ 	struct mmc *mmc = find_mmc_device(dev_num);
++	lbaint_t blklen, blk = 0, blk_r = 8;
+ 
+ 	if (!mmc)
+-		return 0;
++		return -1;
++
++	blklen = mmc->read_bl_len;
++	cmd.cmdidx = MMC_CMD_STOP_TRANSMISSION;
++	cmd.cmdarg = 0;
++	cmd.resp_type = MMC_RSP_R1b;
++	cmd.flags = 0;
+ 
+-	/* We always do full block reads from the card */
+ 	err = mmc_set_blocklen(mmc, mmc->read_bl_len);
+ 
+ 	if (err) {
+-		return 0;
++		printf("set read bl len failed\n\r");
++		return err;
+ 	}
+ 
+-	for (i = start; i < start + blkcnt; i++, dst += mmc->read_bl_len) {
+-		err = mmc_read_block(mmc, dst, i);
++	while (blk < blkcnt) {
++		blk_r = ((blkcnt - blk) > BLKS_PER_READ) ? BLKS_PER_READ : (blkcnt - blk);
++		err = mmc_read_t(mmc, start + blk,
++			blk_r, dst + blk * blklen);
++		if (err)
++			break;
+ 
+-		if (err) {
+-			printf("block read failed: %d\n", err);
+-			return i - start;
++		if (blk_r > 1) {
++			stoperr = mmc_send_cmd(mmc, &cmd, NULL);
+ 		}
++
++		if (blk % (64 * BLKS_PER_READ))
++			printf(".");
++		else if (blk_r > 1) {
++			if (blk)
++				printf("\n");
++			printf("\t.");
++		}
++
++		blk += blk_r;
+ 	}
+ 
+-	return blkcnt;
++	return blk;
+ }
+ 
+ int mmc_go_idle(struct mmc* mmc)
+@@ -282,7 +489,7 @@ sd_send_op_cond(struct mmc *mmc)
+ 
+ 		cmd.cmdidx = SD_CMD_APP_SEND_OP_COND;
+ 		cmd.resp_type = MMC_RSP_R3;
+-		cmd.cmdarg = mmc->voltages;
++		cmd.cmdarg = MMC_VDD_32_33 | MMC_VDD_33_34;
+ 
+ 		if (mmc->version == SD_VERSION_2)
+ 			cmd.cmdarg |= OCR_HCS;
+@@ -367,10 +574,31 @@ int mmc_send_ext_csd(struct mmc *mmc, char *ext_csd)
+ 	return err;
+ }
+ 
++/* for debugging */
++static int mmc_send_status(struct mmc *mmc, u32 *status)
++{
++	struct mmc_cmd cmd;
++	int err;
++
++	cmd.cmdidx = MMC_CMD_SEND_STATUS;
++	cmd.resp_type = MMC_RSP_R1;
++	cmd.cmdarg = mmc->rca << 16;
++	cmd.flags = 0;
++
++	err = mmc_send_cmd(mmc, &cmd, NULL);
++
++	if (err)
++		return 1;
++
++	*status = cmd.response[0];
++	return 0;
++}
+ 
+ int mmc_switch(struct mmc *mmc, u8 set, u8 index, u8 value)
+ {
+ 	struct mmc_cmd cmd;
++	u32 status;
++	int ret;
+ 
+ 	cmd.cmdidx = MMC_CMD_SWITCH;
+ 	cmd.resp_type = MMC_RSP_R1b;
+@@ -379,7 +607,9 @@ int mmc_switch(struct mmc *mmc, u8 set, u8 index, u8 value)
+ 		(value << 8);
+ 	cmd.flags = 0;
+ 
+-	return mmc_send_cmd(mmc, &cmd, NULL);
++	ret = mmc_send_cmd(mmc, &cmd, NULL);
++
++	return ret;
+ }
+ 
+ int mmc_change_freq(struct mmc *mmc)
+@@ -394,15 +624,23 @@ int mmc_change_freq(struct mmc *mmc)
+ 	if (mmc->version < MMC_VERSION_4)
+ 		return 0;
+ 
+-	mmc->card_caps |= MMC_MODE_4BIT;
++	/* MMC 4.x (MMC Plus) Cards support both 4 Bit and 8 Bit
++	 * bus-width based on Host Controller Capability
++	 */
++	mmc->card_caps |= (MMC_MODE_4BIT | MMC_MODE_8BIT);
+ 
+ 	err = mmc_send_ext_csd(mmc, ext_csd);
+ 
+ 	if (err)
+ 		return err;
+ 
+-	if (ext_csd[212] || ext_csd[213] || ext_csd[214] || ext_csd[215])
++	if (ext_csd[212] || ext_csd[213] || ext_csd[214] || ext_csd[215]) {
+ 		mmc->high_capacity = 1;
++		mmc->sectors = ext_csd[212] | (ext_csd[213] << 8)
++			| (ext_csd[214] << 16) | (ext_csd[215] << 24);
++		mmc->capacity = mmc->sectors * 512;
++	} else
++		mmc->high_capacity = 0;
+ 
+ 	cardtype = ext_csd[196] & 0xf;
+ 
+@@ -430,6 +668,36 @@ int mmc_change_freq(struct mmc *mmc)
+ 	return 0;
+ }
+ 
++static int mmc_get_info(struct mmc *mmc)
++{
++	char ext_csd[512];
++	int err;
++	char erase_grp_def, erase_grp_size, erase_grp_mult;
++
++	err = mmc_send_ext_csd(mmc, ext_csd);
++	if (err)
++		return err;
++
++	mmc->ext_csd_part_support = ext_csd[160];
++	mmc->ext_csd_part_config = ext_csd[179];
++	mmc->ext_csd_boot_config_prot = ext_csd[178];
++	mmc->ext_csd_boot_size = ext_csd[226] * 128 * 1024; // * 128 KB
++	mmc->ext_csd_boot_bus_width = ext_csd[177];
++
++	erase_grp_def = ext_csd[176];
++	if (erase_grp_def) {
++		mmc->erase_grp_size = ext_csd[224] * 512 * 1024;
++	 } else {
++		erase_grp_size = mmc->bcsd.erase_grp_size;
++		erase_grp_mult = mmc->bcsd.erase_grp_mult;
++		mmc->erase_grp_size = (erase_grp_size + 1) * (erase_grp_mult + 1);
++	}
++
++	mmc->ext_csd_erase_mem_content = ext_csd[181];
++
++	return 0;
++}
++
+ int sd_switch(struct mmc *mmc, int mode, int group, u8 value, u8 *resp)
+ {
+ 	struct mmc_cmd cmd;
+@@ -514,6 +782,9 @@ retry_scr:
+ 			break;
+ 	}
+ 
++	if (mmc->scr[0] & SD_DATA_4BIT)
++		mmc->card_caps |= MMC_MODE_4BIT;
++
+ 	/* Version 1.0 doesn't support switching */
+ 	if (mmc->version == SD_VERSION_1_0)
+ 		return 0;
+@@ -531,9 +802,6 @@ retry_scr:
+ 			break;
+ 	}
+ 
+-	if (mmc->scr[0] & SD_DATA_4BIT)
+-		mmc->card_caps |= MMC_MODE_4BIT;
+-
+ 	/* If high-speed isn't supported, we return */
+ 	if (!(__be32_to_cpu(switch_status[3]) & SD_HIGHSPEED_SUPPORTED))
+ 		return 0;
+@@ -605,6 +873,140 @@ void mmc_set_bus_width(struct mmc *mmc, uint width)
+ 	mmc_set_ios(mmc);
+ }
+ 
++#define UNSTUFF_BITS(resp,start,size)					\
++	({								\
++		const int __size = size;				\
++		const u32 __mask = (__size < 32 ? 1 << __size : 0) - 1;	\
++		const int __off = 3 - ((start) / 32);			\
++		const int __shft = (start) & 31;			\
++		u32 __res;						\
++									\
++		__res = resp[__off] >> __shft;				\
++		if (__size + __shft > 32)				\
++			__res |= resp[__off-1] << ((32 - __shft) % 32);	\
++		__res & __mask;						\
++	})
++
++static int mmc_decode_cid(struct mmc *mmc)
++{
++	u32 *resp = &mmc->cid[0];
++
++	/*
++	 * The selection of the format here is based upon published
++	 * specs from sandisk and from what people have reported.
++	 */
++	switch (mmc->bcsd.spec_vers) {
++	case 0: /* MMC v1.0 - v1.2 */
++	case 1: /* MMC v1.4 */
++		mmc->bcid.manu_id = UNSTUFF_BITS(resp, 104, 24);
++		mmc->bcid.prod_name[0]	= UNSTUFF_BITS(resp, 96, 8);
++		mmc->bcid.prod_name[1]	= UNSTUFF_BITS(resp, 88, 8);
++		mmc->bcid.prod_name[2]	= UNSTUFF_BITS(resp, 80, 8);
++		mmc->bcid.prod_name[3]	= UNSTUFF_BITS(resp, 72, 8);
++		mmc->bcid.prod_name[4]	= UNSTUFF_BITS(resp, 64, 8);
++		mmc->bcid.prod_name[5]	= UNSTUFF_BITS(resp, 56, 8);
++		mmc->bcid.prod_name[6]	= UNSTUFF_BITS(resp, 48, 8);
++		mmc->bcid.prod_ver	= UNSTUFF_BITS(resp, 40, 4);
++		mmc->bcid.prod_sn	= UNSTUFF_BITS(resp, 16, 24);
++		mmc->bcid.month		= UNSTUFF_BITS(resp, 12, 4);
++		mmc->bcid.year		= UNSTUFF_BITS(resp, 8, 4) + 1997;
++		break;
++
++	case 2: /* MMC v2.0 - v2.2 */
++	case 3: /* MMC v3.1 - v3.3 */
++	case 4: /* MMC v4 */
++		mmc->bcid.manu_id	= UNSTUFF_BITS(resp, 120, 8);
++		mmc->bcid.oem_id	= UNSTUFF_BITS(resp, 104, 16);
++		mmc->bcid.prod_name[0]	= UNSTUFF_BITS(resp, 96, 8);
++		mmc->bcid.prod_name[1]	= UNSTUFF_BITS(resp, 88, 8);
++		mmc->bcid.prod_name[2]	= UNSTUFF_BITS(resp, 80, 8);
++		mmc->bcid.prod_name[3]	= UNSTUFF_BITS(resp, 72, 8);
++		mmc->bcid.prod_name[4]	= UNSTUFF_BITS(resp, 64, 8);
++		mmc->bcid.prod_name[5]	= UNSTUFF_BITS(resp, 56, 8);
++		mmc->bcid.prod_ver	= UNSTUFF_BITS(resp, 40, 4);
++		mmc->bcid.prod_sn	= UNSTUFF_BITS(resp, 16, 32);
++		mmc->bcid.month		= UNSTUFF_BITS(resp, 12, 4);
++		mmc->bcid.year		= UNSTUFF_BITS(resp, 8, 4) + 1997;
++		break;
++
++	default:
++		printf("card has unknown MMCA version %d\n",
++			mmc->bcsd.spec_vers);
++		return -1;
++	}
++
++	return 0;
++}
++
++
++/*
++ * Given a 128-bit response, decode to our card CSD structure.
++ */
++static int mmc_decode_csd(struct mmc *mmc)
++{
++	struct mmc_csd *csd = &mmc->bcsd;
++	u32 *resp = &mmc->csd[0];
++
++	memset(csd, 0x0, sizeof(struct mmc_csd));
++	csd->csd_structure = UNSTUFF_BITS(resp, 126, 2);
++
++	if (IS_SD(mmc)) {
++		unsigned int e, m;
++		unsigned int eb_en, es_size;
++
++		switch (csd->csd_structure) {
++		case 0:
++			e = UNSTUFF_BITS(resp, 47, 3);
++			m = UNSTUFF_BITS(resp, 62, 12);
++			mmc->capacity = (1 + m) << (e + 2);
++			mmc->capacity *= csd->read_bl_len;
++			eb_en = UNSTUFF_BITS(resp, 45, 1);
++			es_size = UNSTUFF_BITS(resp, 39, 7);
++			if (eb_en)
++				mmc->erase_grp_size = 1;
++			else
++				mmc->erase_grp_size = es_size;
++			break;
++		case 1:
++			m = UNSTUFF_BITS(resp, 48, 22);
++			mmc->capacity = (1 + m);
++			mmc->capacity  = mmc->capacity << 19;
++			eb_en = UNSTUFF_BITS(resp, 45, 1);
++			mmc->erase_grp_size = 1;
++			if (!eb_en)
++				printf("Warning: erase_grp_size %d may wrong\n", mmc->erase_grp_size);
++			break;
++		default:
++			printf("unrecognised SD CSD structure version %d\n",
++				csd->csd_structure);
++			return -1;
++		}
++		mmc->sectors = mmc->capacity / 512;
++	} else {
++		/*
++		 * We only understand MMC CSD structure v1.1 and v1.2.
++		 * v1.2 has extra information in bits 15, 11 and 10.
++		 */
++		if (csd->csd_structure != 1 && csd->csd_structure != 2) {
++			printf("unrecognised MMC CSD structure version %d\n",
++				csd->csd_structure);
++			return -1;
++		}
++
++		csd->spec_vers = UNSTUFF_BITS(resp, 122, 4);
++		csd->c_size = UNSTUFF_BITS(resp, 62, 12);
++		csd->c_size_mult = UNSTUFF_BITS(resp, 47, 3);
++		csd->erase_grp_size = UNSTUFF_BITS(resp, 42, 5);
++		csd->erase_grp_mult = UNSTUFF_BITS(resp, 37, 5);
++	}
++
++	csd->tran_speed = UNSTUFF_BITS(resp, 96, 8);
++	csd->read_bl_len = UNSTUFF_BITS(resp, 80, 4);
++	csd->write_bl_len = UNSTUFF_BITS(resp, 22, 4);
++
++	return 0;
++}
++
+ int mmc_startup(struct mmc *mmc)
+ {
+ 	int err;
+@@ -658,11 +1060,11 @@ int mmc_startup(struct mmc *mmc)
+ 	mmc->csd[1] = cmd.response[1];
+ 	mmc->csd[2] = cmd.response[2];
+ 	mmc->csd[3] = cmd.response[3];
++	mmc_decode_csd(mmc);
++	mmc_decode_cid(mmc);
+ 
+ 	if (mmc->version == MMC_VERSION_UNKNOWN) {
+-		int version = (cmd.response[0] >> 26) & 0xf;
+-
+-		switch (version) {
++		switch (mmc->bcsd.spec_vers) {
+ 			case 0:
+ 				mmc->version = MMC_VERSION_1_2;
+ 				break;
+@@ -685,30 +1087,17 @@ int mmc_startup(struct mmc *mmc)
+ 	}
+ 
+ 	/* divide frequency by 10, since the mults are 10x bigger */
+-	freq = fbase[(cmd.response[0] & 0x7)];
+-	mult = multipliers[((cmd.response[0] >> 3) & 0xf)];
+-
++	freq = fbase[mmc->bcsd.tran_speed & 0x7];
++	mult = multipliers[(mmc->bcsd.tran_speed >> 3) & 0xf];
+ 	mmc->tran_speed = freq * mult;
+ 
+-	mmc->read_bl_len = 1 << ((cmd.response[1] >> 16) & 0xf);
++	mmc->max_read_bl_len = 1 << mmc->bcsd.read_bl_len;
++	mmc->read_bl_len = 1 << mmc->bcsd.read_bl_len;
+ 
+ 	if (IS_SD(mmc))
+ 		mmc->write_bl_len = mmc->read_bl_len;
+ 	else
+-		mmc->write_bl_len = 1 << ((cmd.response[3] >> 22) & 0xf);
+-
+-	if (mmc->high_capacity) {
+-		csize = (mmc->csd[1] & 0x3f) << 16
+-			| (mmc->csd[2] & 0xffff0000) >> 16;
+-		cmult = 8;
+-	} else {
+-		csize = (mmc->csd[1] & 0x3ff) << 2
+-			| (mmc->csd[2] & 0xc0000000) >> 30;
+-		cmult = (mmc->csd[2] & 0x00038000) >> 15;
+-	}
+-
+-	mmc->capacity = (csize + 1) << (cmult + 2);
+-	mmc->capacity *= mmc->read_bl_len;
++		mmc->write_bl_len = 1 << (mmc->bcsd.write_bl_len & 0xf);
+ 
+ 	if (mmc->read_bl_len > 512)
+ 		mmc->read_bl_len = 512;
+@@ -728,8 +1117,18 @@ int mmc_startup(struct mmc *mmc)
+ 
+ 	if (IS_SD(mmc))
+ 		err = sd_change_freq(mmc);
+-	else
++	else {
+ 		err = mmc_change_freq(mmc);
++		if (!mmc->high_capacity) {
++			csize = mmc->bcsd.c_size;
++			cmult = mmc->bcsd.c_size_mult;
++
++			mmc->sectors =  (csize + 1) << (cmult + 2)
++				* (mmc->read_bl_len / 512);
++			mmc->capacity = (csize + 1) << (cmult + 2);
++			mmc->capacity *= mmc->read_bl_len;
++		}
++	}
+ 
+ 	if (err)
+ 		return err;
+@@ -764,26 +1163,26 @@ int mmc_startup(struct mmc *mmc)
+ 		else
+ 			mmc_set_clock(mmc, 25000000);
+ 	} else {
+-		if (mmc->card_caps & MMC_MODE_4BIT) {
+-			/* Set the card to use 4 bit*/
++		if (mmc->card_caps & MMC_MODE_8BIT) {
++			/* Set the card to use 8 bit*/
+ 			err = mmc_switch(mmc, EXT_CSD_CMD_SET_NORMAL,
+ 					EXT_CSD_BUS_WIDTH,
+-					EXT_CSD_BUS_WIDTH_4);
++					EXT_CSD_BUS_WIDTH_8);
+ 
+ 			if (err)
+ 				return err;
+ 
+-			mmc_set_bus_width(mmc, 4);
+-		} else if (mmc->card_caps & MMC_MODE_8BIT) {
+-			/* Set the card to use 8 bit*/
++			mmc_set_bus_width(mmc, 8);
++		} else if (mmc->card_caps & MMC_MODE_4BIT) {
++			/* Set the card to use 4 bit*/
+ 			err = mmc_switch(mmc, EXT_CSD_CMD_SET_NORMAL,
+ 					EXT_CSD_BUS_WIDTH,
+-					EXT_CSD_BUS_WIDTH_8);
++					EXT_CSD_BUS_WIDTH_4);
+ 
+ 			if (err)
+ 				return err;
+ 
+-			mmc_set_bus_width(mmc, 8);
++			mmc_set_bus_width(mmc, 4);
+ 		}
+ 
+ 		if (mmc->card_caps & MMC_MODE_HS) {
+@@ -793,20 +1192,34 @@ int mmc_startup(struct mmc *mmc)
+ 				mmc_set_clock(mmc, 26000000);
+ 		} else
+ 			mmc_set_clock(mmc, 20000000);
++
++		if (mmc->card_caps & MMC_MODE_8BIT) {
++			err = mmc_bus_test(mmc, 8);
++			if (err)
++				return err;
++		} else if (mmc->card_caps & MMC_MODE_4BIT) {
++			err = mmc_bus_test(mmc, 4);
++			if (err)
++				return err;
++		}
++
++		err = mmc_get_info(mmc);
++		if (err)
++			return err;
+ 	}
+ 
+ 	/* fill in device description */
+ 	mmc->block_dev.lun = 0;
+ 	mmc->block_dev.type = 0;
+ 	mmc->block_dev.blksz = mmc->read_bl_len;
+-	mmc->block_dev.lba = lldiv(mmc->capacity, mmc->read_bl_len);
+-	sprintf(mmc->block_dev.vendor, "Man %06x Snr %08x", mmc->cid[0] >> 8,
+-			(mmc->cid[2] << 8) | (mmc->cid[3] >> 24));
+-	sprintf(mmc->block_dev.product, "%c%c%c%c%c", mmc->cid[0] & 0xff,
+-			(mmc->cid[1] >> 24), (mmc->cid[1] >> 16) & 0xff,
+-			(mmc->cid[1] >> 8) & 0xff, mmc->cid[1] & 0xff);
+-	sprintf(mmc->block_dev.revision, "%d.%d", mmc->cid[2] >> 28,
+-			(mmc->cid[2] >> 24) & 0xf);
++	//lldiv seems to has problem
++	//mmc->block_dev.lba = lldiv(mmc->capacity, mmc->read_bl_len);
++	mmc->block_dev.lba = (mmc->sectors / (mmc->read_bl_len / 512));
++	sprintf(mmc->block_dev.vendor, "Man %06x Snr %08x", mmc->bcid.manu_id,
++			mmc->bcid.prod_sn);
++	sprintf(mmc->block_dev.product, "%s", mmc->bcid.prod_name);
++	sprintf(mmc->block_dev.revision, "%d.%d", (mmc->bcid.prod_ver >> 4) & 0xf,
++			mmc->bcid.prod_ver & 0xf);
+ 	init_part(&mmc->block_dev);
+ 
+ 	return 0;
+@@ -836,6 +1249,49 @@ int mmc_send_if_cond(struct mmc *mmc)
+ 	return 0;
+ }
+ 
++static unsigned long mmc_switch_part(int dev_num, unsigned int part_num)
++{
++	int err;
++	struct mmc *mmc = find_mmc_device(dev_num);
++
++	if (!mmc)
++		return -1;
++
++	err = mmc_switch(mmc, EXT_CSD_CMD_SET_NORMAL, EXT_CSD_PART_CONF,
++		(mmc->ext_csd_part_config & ~0x7) | (part_num & 0x7));
++	if (err)
++		return err;
++
++	err = mmc_get_info(mmc);
++	if (err)
++		return err;
++
++	return 0;
++}
++
++static unsigned long mmc_switch_boot(int dev_num, unsigned int part_num)
++{
++	int err, boot_sel;
++	struct mmc *mmc = find_mmc_device(dev_num);
++
++	if (!mmc)
++		return -1;
++
++	part_num &= 0x7;
++	boot_sel = (part_num ? part_num : 0x7) << 3;
++	err = mmc_switch(mmc, EXT_CSD_CMD_SET_NORMAL, EXT_CSD_PART_CONF,
++		(mmc->ext_csd_part_config & ~0x38) | boot_sel);
++	if (err)
++		return err;
++
++	err = mmc_get_info(mmc);
++	if (err)
++		return err;
++
++	return 0;
++}
++
++
+ int mmc_register(struct mmc *mmc)
+ {
+ 	/* Setup the universal parts of the block interface just once */
+@@ -844,6 +1300,9 @@ int mmc_register(struct mmc *mmc)
+ 	mmc->block_dev.removable = 1;
+ 	mmc->block_dev.block_read = mmc_bread;
+ 	mmc->block_dev.block_write = mmc_bwrite;
++	mmc->block_dev.block_erase = mmc_berase;
++	mmc->block_dev.switch_part = mmc_switch_part;
++	mmc->block_dev.switch_boot = mmc_switch_boot;
+ 
+ 	INIT_LIST_HEAD (&mmc->link);
+ 
+@@ -861,7 +1320,7 @@ block_dev_desc_t *mmc_get_dev(int dev)
+ 
+ int mmc_init(struct mmc *mmc)
+ {
+-	int err;
++	int err, loop=10;
+ 
+ 	err = mmc->init(mmc);
+ 
+@@ -872,7 +1331,8 @@ int mmc_init(struct mmc *mmc)
+ 	mmc_set_clock(mmc, 1);
+ 
+ 	/* Reset the Card */
+-	err = mmc_go_idle(mmc);
++	while(loop--)
++		err = mmc_go_idle(mmc);
+ 
+ 	if (err)
+ 		return err;
+@@ -893,7 +1353,11 @@ int mmc_init(struct mmc *mmc)
+ 		}
+ 	}
+ 
+-	return mmc_startup(mmc);
++	err = mmc_startup(mmc);
++	if (err)
++		printf("Error: failed to init mmc\n");
++
++	return err;
+ }
+ 
+ /*
+@@ -916,10 +1380,10 @@ void print_mmc_devices(char separator)
+ 	list_for_each(entry, &mmc_devices) {
+ 		m = list_entry(entry, struct mmc, link);
+ 
+-		printf("%s: %d", m->name, m->block_dev.dev);
++		printf("%s: %d ", m->name, m->block_dev.dev);
+ 
+ 		if (entry->next != &mmc_devices)
+-			printf("%c ", separator);
++			printf("%c", separator);
+ 	}
+ 
+ 	printf("\n");
+diff --git a/drivers/mmc/pxa9xx_sdh.c b/drivers/mmc/pxa9xx_sdh.c
+new file mode 100644
+index 0000000..70b05da
+--- /dev/null
++++ b/drivers/mmc/pxa9xx_sdh.c
+@@ -0,0 +1,448 @@
++/*
++ * Copyright 2009, Marvell Semiconductor Inc.
++ * Kevin Wang
++ *
++ * Base vaguely on linux kernel driver
++ *  linux/drivers/mmc/host/pxa.c - PXA MMCI driver
++ *
++ *  Copyright (C) 2003 Russell King, All Rights Reserved.
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License version 2 as
++ * published by the Free Software Foundation.
++ *
++ */
++
++#include <common.h>
++#include <malloc.h>
++#include <asm/arch/hardware.h>
++#include <mmc.h>
++
++//#define DEBUG
++#include "pxa9xx_sdh.h"
++#ifdef DEBUG
++#define dprintf(fmt, args...) printf(fmt, ##args)
++#define GPIO_GPLR(x) __REG((x < 3) ? 0x40E00000 + x * 4:0x40E00100 + (x - 3) * 4)
++#define GPIO_GPDR(x) __REG((x < 3) ? 0x40E0000C + x * 4:0x40E0010C + (x - 3) * 4)
++#define GPIO_GSDR(x) __REG(0x40E00400 + x * 4)
++#define GPIO_GCDR(x) __REG(0x40E00420 + x * 4)
++#define GPIO_GPSR(x) __REG((x < 3) ? 0x40E00018 + x * 4:0x40E00118 + (x - 3) * 4)
++#define GPIO_GPCR(x) __REG((x < 3) ? 0x40E00024 + x * 4:0x40E00124 + (x - 3) * 4)
++#else
++#define dprintf(...)
++#endif
++
++#ifdef __GNUC__
++#define likely(x)       __builtin_expect(!!(x), 1)
++#define unlikely(x)     __builtin_expect(!!(x), 0)
++#else
++#define likely(x)	(x)
++#define unlikely(x)	(x)
++#endif
++
++struct sdh_host {
++	void *reg_base;
++	int clk_rate;
++};
++
++inline unsigned int sdh_get_reg(struct mmc *mmc, unsigned int offset) {
++	return __REG(((struct sdh_host *)(mmc->priv))->reg_base + offset);
++}
++
++inline void sdh_set_reg(struct mmc *mmc, unsigned int offset, unsigned int value) {
++	__REG(((struct sdh_host *)(mmc->priv))->reg_base + offset) = value;
++}
++
++static void sdh_reset(struct mmc *mmc, unsigned int rst_mask)
++{
++	unsigned int cntl2 = sdh_get_reg(mmc, MMC4_CNTL2);
++
++	sdh_set_reg(mmc, MMC4_CNTL2, cntl2 | rst_mask);
++	while (1) {
++		udelay(10);
++		cntl2 = sdh_get_reg(mmc, MMC4_CNTL2);
++		if (!(cntl2 & rst_mask))
++			return;
++	}
++}
++
++static unsigned int sdh_wait_istat_bit(struct mmc *mmc, unsigned int bit_val)
++{
++	unsigned int istat = 0;
++	unsigned long ticks = get_ticks();
++
++	while (get_ticks() < (ticks + CONFIG_SYS_HZ * 1)) { /*at most 1 second*/
++		istat = sdh_get_reg(mmc, MMC4_I_STAT);
++		if (istat & ERRINT) {
++			dprintf("Error detected in MMC4_I_STAT(0x%X)!\n", istat);
++			sdh_reset(mmc, CMDSWRST | DATSWRST);
++			return istat;
++		}
++		if (istat & bit_val) {
++			dprintf("!!!! istat 0x%x detected. bit_val=0x%x\n", istat, bit_val);
++			sdh_set_reg(mmc, MMC4_I_STAT, bit_val);
++			return 0;
++		}
++	}
++	dprintf("Timeout while waiting MMC4_I_STAT<0x%X>!, current stat=0x%x\n",
++		bit_val, istat);
++	sdh_reset(mmc, CMDSWRST | DATSWRST);
++	return -1;
++}
++
++int pxasdh_send_cmd(struct mmc *mmc, struct mmc_cmd *cmd, struct mmc_data *data)
++{
++	unsigned int stat = 0;
++	unsigned int xfrmd = 0;
++	unsigned int rsp = 0;
++	unsigned long ticks = get_ticks();
++
++	while (get_ticks() < ticks + CONFIG_SYS_HZ) { /*at most 1 second*/
++		stat = sdh_get_reg(mmc, MMC4_STATE);
++		if ((stat & (CCMDINHBT | DCMDINHBT)) == 0)
++			break;
++	}
++	if (get_ticks() >= ticks + CONFIG_SYS_HZ) {
++		dprintf("bus is still in busy, cannot start the command!\n");
++		sdh_reset(mmc, CMDSWRST | DATSWRST);
++		return TIMEOUT;
++	}
++	sdh_set_reg(mmc, MMC4_I_STAT, sdh_get_reg(mmc, MMC4_I_STAT));
++
++	/*Set Response Type*/
++	switch (cmd->resp_type) {
++	case MMC_RSP_NONE:
++		break;
++
++	case MMC_RSP_R1: /* r1, r5, r6, r7 */
++		rsp = CMD_RSP_48BIT;
++		xfrmd |= CRCCHKEN | IDXCHKEN;
++		break;
++
++	case MMC_RSP_R2: /* r2 */
++		rsp = CMD_RSP_136BIT;
++		xfrmd |= CRCCHKEN;
++		break;
++
++	case MMC_RSP_R3: /* r3, r4*/
++		rsp = CMD_RSP_48BIT;
++		break;
++
++	case MMC_RSP_R1b: /* r1b */
++		rsp = CMD_RSP_48BITB;
++		xfrmd |= CRCCHKEN | IDXCHKEN;
++		break;
++
++	default:
++		BUG_ON(0);
++		break;
++	}
++
++	/*Set Transfer mode regarding to data flag*/
++	if (data)
++	{
++		xfrmd |= DPSEL | BLKCNTEN;
++		if (data->blocks > 1)
++			xfrmd |= MS_BLKSEL;
++
++		if (data->flags == MMC_DATA_READ)
++			xfrmd |= DXFRDIR;
++		else
++			xfrmd &= ~DXFRDIR;
++
++		//if (data->blocks > 1)
++		//	xfrmd |= AUTOCMD12;
++
++		sdh_set_reg(mmc, MMC4_BLK_CNTL,
++			(data->blocks << BLK_CNT_OFFSET) | (0x7 << DMA_BUFSZ_OFFSET)
++			| (data->blocksize & XFR_BLKSZ_MASK));
++	}
++
++	sdh_set_reg(mmc, MMC4_ARG, cmd->cmdarg);
++	xfrmd |= cmd->cmdidx << CMD_IDX_OFFSET | rsp << RES_TYPE_OFFSET;
++	dprintf("Sending CMD%d(%s): xfrmd=0x%x, arg=0x%x\n", cmd->cmdidx,
++		mmc_get_cmdname(cmd->cmdidx), xfrmd, sdh_get_reg(mmc, MMC4_ARG));
++	sdh_set_reg(mmc, MMC4_CMD_XFRMD, xfrmd);
++
++	if (sdh_wait_istat_bit(mmc, CMDCOMP)) {
++		if (sdh_get_reg(mmc, MMC4_I_STAT) && CTO)
++			return TIMEOUT;
++		else
++			return -1;
++	}
++
++	if (cmd->resp_type == MMC_RSP_R2) {
++		cmd->response[0] = sdh_get_reg(mmc, MMC4_RESP3) << 8 |
++				sdh_get_reg(mmc, MMC4_RESP2) >> 24;
++		cmd->response[1] = sdh_get_reg(mmc, MMC4_RESP2) << 8 |
++				sdh_get_reg(mmc, MMC4_RESP1) >> 24;
++		cmd->response[2] = sdh_get_reg(mmc, MMC4_RESP1) << 8 |
++				sdh_get_reg(mmc, MMC4_RESP0) >> 24;
++		cmd->response[3] = sdh_get_reg(mmc, MMC4_RESP0) << 8;
++	} else {
++		cmd->response[0] = sdh_get_reg(mmc, MMC4_RESP0);
++		cmd->response[1] = sdh_get_reg(mmc, MMC4_RESP1);
++		cmd->response[2] = sdh_get_reg(mmc, MMC4_RESP2);
++		cmd->response[3] = sdh_get_reg(mmc, MMC4_RESP3);
++	}
++
++	if (data) {
++		unsigned int i, block = 0;
++		if (data->flags == MMC_DATA_READ) {
++			do {
++				if (sdh_wait_istat_bit(mmc, BUFRDRDY))
++					return -1;
++				for (i = 0; i < data->blocksize; i += 4)
++					*(u32 *)(data->dest + block * data->blocksize + i) =
++						sdh_get_reg(mmc, MMC4_DP);
++				block++;
++			} while (data->blocks >= block + 1);
++		} else {
++			while (data->blocks >= block + 1) {
++				if (sdh_wait_istat_bit(mmc, BUFWRRDY))
++					return -1;
++				for (i = 0; i < data->blocksize; i += 4) {
++					 sdh_set_reg(mmc, MMC4_DP,
++						*(u32 *)(data->src + block * data->blocksize + i));
++				}
++				block++;
++			}
++		}
++
++		if (sdh_wait_istat_bit(mmc, XFRCOMP))
++			return -1;
++
++		//sdh_reset(mmc, CMDSWRST | DATSWRST);
++	}
++
++	return 0;
++}
++
++static int sdh_set_clock(struct mmc *mmc, unsigned int clk_rt)
++{
++	int i = 0;
++
++	sdh_set_reg(mmc, MMC4_CNTL2,
++		(sdh_get_reg(mmc, MMC4_CNTL2) & (~SDFREQ_MASK)) | (clk_rt << SDFREQ_OFFSET));
++	sdh_set_reg(mmc, MMC4_CNTL2,
++		(sdh_get_reg(mmc, MMC4_CNTL2) | MMC4CLKEN));
++	while (!(sdh_get_reg(mmc, MMC4_CNTL2) & MMC4CLKEN)) {
++		if (i++ > 1000) {
++			eprintf("Failed to enable exteral mmc clock\n");
++			return -1;
++		}
++		udelay(100);
++	}
++
++	return 0;
++}
++
++void pxasdh_set_ios(struct mmc *mmc)
++{
++	u32 cntl1 = sdh_get_reg(mmc, MMC4_CNTL1);
++	u32 clk, shift, clkrt;
++	struct sdh_host *host = (struct sdh_host *)mmc->priv;
++
++	dprintf("%s: bus_width=%d, clock=%d\n",
++		__FUNCTION__, mmc->bus_width, mmc->clock);
++	switch (mmc->bus_width) {
++	case 8:
++		dprintf("set as 8-bit bus\n");
++		sdh_set_reg(mmc, MMC4_CNTL1,
++			(cntl1 & ~_4BITMD) | _8BITMD);
++		break;
++	case 4:
++		dprintf("set as 4-bit bus\n");
++		sdh_set_reg(mmc, MMC4_CNTL1,
++			(cntl1 & ~_8BITMD) | _4BITMD);
++		break;
++	default:
++		sdh_set_reg(mmc, MMC4_CNTL1,
++			(cntl1 & ~_8BITMD & ~_4BITMD));
++	}
++
++	if (!mmc->clock)
++		return;
++
++	if (mmc->clock >= host->clk_rate) {
++		clkrt = 0x00;
++	} else {
++		clk = host->clk_rate / mmc->clock;
++		shift = 0;
++		while (clk >= (0x1 << shift))
++			shift++;
++		clkrt = (0x1 << (shift - 2));
++		if ((host->clk_rate / (clkrt * 2)) > mmc->clock)
++			clkrt *= 2;
++	}
++	sdh_set_reg(mmc, MMC4_CNTL2,
++		sdh_get_reg(mmc, MMC4_CNTL2) & ~MMC4CLKEN);
++	if (mmc->clock > 26000000) {
++		dprintf("set as HIGH_SPEED\n");
++		sdh_set_reg(mmc, MMC4_CNTL1,
++			sdh_get_reg(mmc, MMC4_CNTL1) | HISPEED);
++	} else
++		sdh_set_reg(mmc, MMC4_CNTL1,
++			sdh_get_reg(mmc, MMC4_CNTL1) & ~HISPEED);
++
++	dprintf("set clkrt as 0x%x\n", clkrt);
++	if (sdh_set_clock(mmc, clkrt))
++		eprintf("Error while setting clock\n");
++}
++
++int pxasdh_init(struct mmc *mmc)
++{
++	unsigned int i = 0;
++
++	//sdh_reset(mmc, MSWRST);
++
++	// enable internal mmc clock
++	sdh_set_reg(mmc, MMC4_CNTL2, INTCLKEN);
++	while (!(sdh_get_reg(mmc, MMC4_CNTL2) & INTCLKSTB)) {
++		if (i++ > 1000) {
++			eprintf("Failed to enable interal mmc clock\n");
++			return -1;
++		}
++		udelay(100);
++	}
++	// set clock as 187.5kHZ(48MHZ/(0x80 * 2))
++	if (sdh_set_clock(mmc, 0x80))
++		return -1;
++
++	// Eable all state
++	sdh_set_reg(mmc, MMC4_I_STAT_EN, STAT_EN_MASK);
++	sdh_set_reg(mmc, MMC4_I_SIG_EN, 0);
++
++	// set read response timeout
++	sdh_set_reg(mmc, MMC4_CNTL2,
++		(sdh_get_reg(mmc, MMC4_CNTL2) | (0xE << DTOCNTR_OFFSET)));
++
++	// set power
++	//sdh_set_reg(mmc, MMC4_CNTL1,
++	//	sdh_get_reg(mmc, MMC4_CNTL1) | (0x7 << VLTGSEL_OFFSET));
++	sdh_set_reg(mmc, MMC4_CNTL1,
++		sdh_get_reg(mmc, MMC4_CNTL1) | BUSPWR);
++
++	return 0;
++}
++
++static char *PXASDH_NAME = "pxa9xx-sdh";
++static int sdh_add_mmc(u32 sdh_id)
++{
++	struct mmc *mmc;
++	struct sdh_host *host = NULL;
++
++	host = malloc(sizeof(struct sdh_host));
++	if (!host) {
++		eprintf("sdh_host malloc fail!\n");
++		return -1;
++	}
++
++	mmc = malloc(sizeof(struct mmc));
++	if (!mmc) {
++		eprintf("mmc malloc fail!\n");
++		return -1;
++	}
++
++	if (sdh_id == 3)
++		host->reg_base = (void *)MMC4_1_REG_BASE_ADDR;
++	else if (sdh_id == 4)
++		host->reg_base = (void *)MMC4_2_REG_BASE_ADDR;
++	else if (sdh_id == 5)
++		host->reg_base = (void *)MMC4_3_REG_BASE_ADDR;
++	else if (sdh_id == 10)
++		host->reg_base = (void *)ARMADA_MMC4_1_REG_BASE_ADDR;
++	else if (sdh_id == 11)
++		host->reg_base = (void *)ARMADA_MMC4_3_REG_BASE_ADDR;
++	else
++		return -1;
++
++	host->clk_rate = MMC4_MAX_SPEED;
++	mmc->priv = host;
++
++	sprintf(mmc->name, "%s.%d", PXASDH_NAME, sdh_id);
++	mmc->send_cmd = pxasdh_send_cmd;
++	mmc->set_ios = pxasdh_set_ios;
++	mmc->init = pxasdh_init;
++
++	mmc->f_min = host->clk_rate / 0x100;
++	mmc->f_max = host->clk_rate;
++	mmc->voltages = MMC_VDD_32_33 | MMC_VDD_33_34;
++#ifdef CONFIG_CPU_PXA688
++	mmc->host_caps = MMC_MODE_HS | MMC_MODE_HS_52MHz;
++#else
++	mmc->host_caps = MMC_MODE_HS | MMC_MODE_HS_52MHz
++		| MMC_MODE_4BIT;// | MMC_MODE_8BIT;
++#endif
++
++	mmc_register(mmc);
++
++	return mmc_init(mmc);
++}
++
++int pxa9xx_mmc_init(bd_t *bis)
++{
++	if (bis->bi_arch_number == 1828) { //Tavor PV
++		/* MMC4 */
++		__REG(0x40E1029C) = 0x1805; //MMC4_CMD_GPIO55
++		__REG(0x40E102A0) = 0x1805; //MMC4_CLK_GPIO56
++		__REG(0x40E10294) = 0x1804; //MMC4_DAT0_GPIO57
++		__REG(0x40E10298) = 0x1804; //MMC4_DAT1_GPIO58
++		__REG(0x40E102A4) = 0x1801; //MMC4_DAT2_GPIO59
++		__REG(0x40E102A8) = 0x1801; //MMC4_DAT3_GPIO60
++		return sdh_add_mmc(4);
++	} else if (bis->bi_arch_number == 2137){ //Tavor PV2
++		int ret = 0;
++		/* MMC3 */
++#define PV2_MMC3_PIN_VAL	0x0000D0C2
++		__REG(0x40E1024C) = PV2_MMC3_PIN_VAL;	//MMC3_CMD, DF_ADDR0(GPIO177)
++		__REG(0x40E10250) = PV2_MMC3_PIN_VAL;	//MMC3_CLK, DF_ADDR1(GPIO178)
++		__REG(0x40E1025C) = PV2_MMC3_PIN_VAL;	//MMC3_DAT0, DF_ADDR2(GPIO179)
++		__REG(0x40E10260) = PV2_MMC3_PIN_VAL;	//MMC3_DAT1, DF_ADDR3(GPIO180)
++		__REG(0x40E10204) = PV2_MMC3_PIN_VAL;	//MMC3_DAT2, nXCVREN(GPIO181)
++		__REG(0x40E10254) = PV2_MMC3_PIN_VAL;	//MMC3_DAT3, nLUA(GPIO182)
++		__REG(0x40E10234) = 0x0000D0C4;		//MMC3_DAT4, ND_nWE(GPIO172)
++		__REG(0x40E1021C) = PV2_MMC3_PIN_VAL;	//MMC3_DAT5, nBE0(GPIO184)
++		__REG(0x40E10220) = PV2_MMC3_PIN_VAL;	//MMC3_DAT6, nBE1(GPIO185)
++		__REG(0x40E10238) = 0x0000D0C4;		//MMC3_DAT7, ND_nRE(GPIO173)
++
++		ret = sdh_add_mmc(3);
++		if (ret)
++			return ret;
++
++		/* MMC4 */
++#define PV2_MMC4_PIN_VAL	0x0000D0C3
++		__REG(0x40E1029C) = PV2_MMC4_PIN_VAL;	//MMC3_CMD, GPIO55
++		__REG(0x40E102A0) = PV2_MMC4_PIN_VAL;	//MMC3_CLK, GPIO56
++		__REG(0x40E10294) = PV2_MMC4_PIN_VAL;	//MMC3_DAT0, GPIO57
++		__REG(0x40E10298) = PV2_MMC4_PIN_VAL;	//MMC3_DAT1, GPIO58
++		__REG(0x40E102A4) = PV2_MMC4_PIN_VAL;	//MMC3_DAT2, GPIO59
++		__REG(0x40E102A8) = PV2_MMC4_PIN_VAL;	//MMC3_DAT3, GPIO60
++
++		ret = sdh_add_mmc(4);
++		return ret;
++	} else if (bis->bi_arch_number == 2382){ //MMP2
++		int ret = 0;
++		/* MMC1 */
++#define MMP2_MMC1_PIN_VAL	0xd8c1
++		__REG(0xd401e04c) = 0x1881;	//MMC1_CD
++		__REG(0xd401e050) = 0x1881;	//MMC1_WP
++		__REG(0xd401e03c) = MMP2_MMC1_PIN_VAL;	//MMC1_CMD
++		__REG(0xd401e048) = 0x1881;	//MMC1_CLK
++		__REG(0xd401e034) = MMP2_MMC1_PIN_VAL;	//MMC1_DAT0
++		__REG(0xd401e030) = MMP2_MMC1_PIN_VAL;	//MMC1_DAT1
++		__REG(0xd401e02c) = MMP2_MMC1_PIN_VAL;	//MMC1_DAT2
++		__REG(0xd401e028) = MMP2_MMC1_PIN_VAL;	//MMC1_DAT3
++		__REG(0xd401e024) = MMP2_MMC1_PIN_VAL;	//MMC1_DAT4
++		__REG(0xd401e020) = MMP2_MMC1_PIN_VAL;	//MMC1_DAT5
++		__REG(0xd401e010) = MMP2_MMC1_PIN_VAL;	//MMC1_DAT6
++		__REG(0xd401e00c) = MMP2_MMC1_PIN_VAL;	//MMC1_DAT7
++
++		ret = sdh_add_mmc(10);
++		if (ret)
++			return ret;
++	} else {
++		eprintf("no pxa9xx-sdh mmc support on board %lu\n", bis->bi_arch_number);
++		return -1;
++	}
++}
+diff --git a/drivers/mmc/pxa9xx_sdh.h b/drivers/mmc/pxa9xx_sdh.h
+new file mode 100644
+index 0000000..64200b4
+--- /dev/null
++++ b/drivers/mmc/pxa9xx_sdh.h
+@@ -0,0 +1,164 @@
++/*
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License version 2 as
++ * published by the Free Software Foundation.
++ */
++#ifndef __SDMMC_H
++#define __SDMMC_H
++
++/* MMC4 Register definitions */
++#define MMC4_1_REG_BASE_ADDR	0x55000000
++#define MMC4_2_REG_BASE_ADDR	0x55100000
++#define MMC4_3_REG_BASE_ADDR	0x55200000
++#define MMC_REG_BASE_ADDR	MMC4_1_REG_BASE_ADDR
++#define MMC4_MAX_SPEED		48000000
++
++#define ARMADA_MMC4_1_REG_BASE_ADDR	0xd4280000
++#define ARMADA_MMC4_3_REG_BASE_ADDR	0xd4281000
++
++#define MMC4_SYSADDR	0x0000	/* MMC4 DMA system address */
++#define MMC4_BLK_CNTL	0x0004	/* MMC4 block size control register */
++#define MMC4_ARG 	0x0008	/* MMC4 command argument */
++#define MMC4_CMD_XFRMD	0x000c	/* MMC4 command and transfer mode */
++#define MMC4_RESP0	0x0010	/* MMC4 command response 0 */
++#define MMC4_RESP1	0x0014	/* MMC4 command response 1 */
++#define MMC4_RESP2	0x0018	/* MMC4 command response 2 */
++#define MMC4_RESP3	0x001c	/* MMC4 command response 3 */
++#define MMC4_DP		0x0020	/* MMC4 buffer data port */
++#define MMC4_STATE	0x0024	/* MMC4 present state */
++#define MMC4_CNTL1	0x0028	/* MMC4 host control 1 */
++#define MMC4_CNTL2	0x002c	/* MMC4 host control 2 */
++#define MMC4_I_STAT	0x0030	/* MMC4 interrupt status */
++#define MMC4_I_STAT_EN	0x0034	/* MMC4 interrupt status enable */
++#define MMC4_I_SIG_EN	0x0038	/* MMC4 interrupt signal enable */
++#define MMC4_ACMD12_ER	0x003c	/* MMC4 auto CMD12 error status */
++#define MMC4_CAP0	0x0040	/* MMC4 capabilities 0 */
++#define MMC4_CUR_CAP0	0x0048	/* MMC4 maximum current capabilities 0 */
++#define MMC4_AMDA_ERSTS	0x0054	/* MMC4 ADMA Error Status */
++#define MMC4_AMDA_ADDR1	0x0058	/* MMC4 ADMA Address[31:0] */
++#define MMC4_AMDA_ADDR2	0x005C	/* MMC4 ADMA Address[63:32] */
++#define MMC4_VER	0x00FC	/* MMC4 controller version status */
++
++/* MMC4_BLK_CNTL */
++#define BLK_CNT_OFFSET		16
++#define DMA_BUFSZ_OFFSET	12
++#define BLK_CNT_MASK		0xffff0000
++#define XFR_BLKSZ_MASK		0x00000fff
++
++/* MMC4_CMD_XFRMD */
++#define CMD_IDX_OFFSET		24
++#define CMD_TYPE_OFFSET		22
++#define DPSEL			(1 << 21)
++#define IDXCHKEN		(1 << 20)
++#define CRCCHKEN		(1 << 19)
++#define RES_TYPE_OFFSET		16
++#define MS_BLKSEL		(1 << 5)
++#define DXFRDIR			(1 << 4)
++#define AUTOCMD12		(1 << 2)
++#define BLKCNTEN		(1 << 1)
++#define DMA_EN			(1 << 0)
++/* RES_TYPE */
++#define CMD_RSP_NONE	(0x0)
++#define CMD_RSP_136BIT	(0x1)
++#define CMD_RSP_48BIT	(0x2)
++#define CMD_RSP_48BITB 	(0x3)
++
++/* MMC4_STATE */
++#define RDACTV		(9 << 0)
++#define WRACTV		(9 << 0)
++#define DCMDINHBT	(1 << 1)
++#define CCMDINHBT	(1 << 0)
++
++/* MMC4_CNTL1 */
++#define BGIRQEN		(1 << 19)
++#define RDWTCNTL	(1 << 18)
++#define CONTREQ		(1 << 17)
++#define BGREQSTP	(1 << 16)
++#define VLTGSEL_OFFSET	9
++#define BUSPWR		(1 << 8)
++#define _8BITMD		(1 << 5)
++#define DMA_SEL_OFFSET	3
++#define DMA_SEL_MASK	(0x3 << DMA_SEL_OFFSET)
++#define DMA_SEL_SDMA	(0x0 << DMA_SEL_OFFSET)
++#define HISPEED		(1 << 2)
++#define _4BITMD		(1 << 1)
++
++/* MMC4_CNTL2 */
++#define DATSWRST		(1 << 26)
++#define CMDSWRST		(1 << 25)
++#define MSWRST			(1 << 24)
++#define DTOCNTR_OFFSET		16
++#define SDFREQ_OFFSET		8
++#define SDFREQ_MASK		(0xff << 8)
++#define MMC4CLKEN		(1 << 2)
++#define INTCLKSTB		(1 << 1)
++#define INTCLKEN		(1 << 0)
++
++/* MMC4_I_STAT, MMC4_I_STAT_EN, MMC4_I_SIG_EN */
++#define STAT_EN_MASK	0x33ff00ff
++#define AHBT		(1 << 28)
++#define ADMA		(1 << 25)	/* AMDA */
++#define AC12		(1 << 24)	/* Auto CMD12 */
++#define ILMT		(1 << 23)
++#define DEND		(1 << 22)	/* Data End Bit */
++#define DCRC		(1 << 21)	/* Data CRC */
++#define DTO		(1 << 20)	/* Data Timeout */
++#define CIDX		(1 << 19)	/* Command Index */
++#define CEND		(1 << 18)	/* Command End Bit */
++#define CCRC		(1 << 17)	/* Command CRC */
++#define CTO		(1 << 16)	/* Command Timeout */
++#define ERRINT		(1 << 15)
++#define CDINT		(1 << 8)	/* Card Interrupt */
++#define CDREM		(1 << 7)
++#define CDINS		(1 << 6)
++#define BUFRDRDY	(1 << 5)	/* Buffer Read Ready */
++#define BUFWRRDY	(1 << 4)	/* Buffer Write Ready */
++#define DMAINT		(1 << 3)	/* DMA Interrupt */
++#define BGEVNT		(1 << 2)	/* Block Gap Event */
++#define XFRCOMP		(1 << 1)	/* Transfer Complete */
++#define CMDCOMP		(1 << 0)	/* Command Complete */
++
++inline char* mmc_get_cmdname(unsigned int opcode) {
++	switch (opcode) {
++		case 0:
++			return "GO_IDLE";
++		case 1:
++			return "SEND_OP_COND";
++		case 2:
++			return "ALL_SEND_CID";
++		case 3:
++			return "SET_RELATIVE_ADDRESS";
++		case 6:
++			return "SWITCH";
++		case 7:
++			return "SELECT_DESELECT_CARD";
++		case 8:
++			return "SEND_EXT_CSD";
++		case 9:
++			return "SEND_CSD";
++		case 12:
++			return "STOP_TRANSMISSION";
++		case 13:
++			return "SEND_STATUS";
++		case 16:
++			return "SET_BLOCKLEN";
++		case 14:
++			return "BUSTEST_R";
++		case 17:
++			return "READ_SINGLE_BLOCK";
++		case 18:
++			return "READ_MULTI_BLOCK";
++		case 19:
++			return "BUSTEST_W";
++		case 24:
++			return "WRITE_SINGLE_BLOCK";
++		case 25:
++			return "WRITE_MULTI_BLOCK";
++		case 55:
++			return "APP_CMD";
++		default:
++			return "Unknow CMD";
++	}
++}
++
++#endif /* __SDMMC_H */
+diff --git a/drivers/mmc/pxa_sdh.c b/drivers/mmc/pxa_sdh.c
+new file mode 100644
+index 0000000..38f1968
+--- /dev/null
++++ b/drivers/mmc/pxa_sdh.c
+@@ -0,0 +1,589 @@
++/*
++ *  Copyright (C) Marvell International Ltd. (kvedere@marvell.com)
++ *  Code heavily based on Linux driver
++ *  	/driver/mmc/host/pxa_sdh.c
++ *  Copyright (C) 2008-2009 Marvell International Ltd.
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License version 2 as
++ * published by the Free Software Foundation.
++ */
++
++#include <common.h>
++#include <part.h>
++#include <malloc.h>
++#include <mmc.h>
++#include <asm/io.h>
++#include <asm/errno.h>
++#include <linux/mtd/compat.h>
++
++#include "pxa_sdh.h"
++
++#define CLKRT_OFF			(~0)
++#define GET_REG(host, reg) 		readw(host->regbase + reg)
++#define SET_REG(host, val, reg)		writew(val, host->regbase + reg)
++#define DATA_DIRECTION_READ(data) 	(data->flags & MMC_DATA_READ)
++#define SET_REG_BIT(host, bit_mask, reg) \
++		SET_REG(host, \
++			GET_REG(host, reg) | (bit_mask), reg)
++#define CLEAR_REG_BIT(host, bit_mask, reg) \
++		SET_REG(host, \
++			GET_REG(host, reg) & ~(bit_mask), reg)
++#define SET_REG_BITS(host, bits_pos, bits_mask, val, reg) \
++		SET_REG(host, \
++			GET_REG(host, reg) & ~(bits_mask << bits_pos), reg); \
++		SET_REG(host, \
++			GET_REG(host, reg) | (val << bits_pos), reg)
++#define GET_REG_BITS(host, bit_pos, bits_mask, reg) \
++		((GET_REG(host, reg) >> bit_pos) & bits_mask)
++#define mmc_resp_type(cmd) ((cmd)->resp_type & (MMC_RSP_PRESENT|MMC_RSP_136|MMC_RSP_CRC|MMC_RSP_BUSY|MMC_RSP_OPCODE))
++#define MMC_BUS_WIDTH_1		1
++#define MMC_BUS_WIDTH_4		4
++#define MMC_BUS_WIDTH_8		8
++#define CONFIG_MMC_SDMA		1
++
++//#define CONFIG_MMC_DEBUG	1
++
++#ifdef CONFIG_MMC_DEBUG
++#define mmc_dbg printf
++#else
++#define mmc_dbg(arg...)
++#endif
++
++struct pxa_sdh_host {
++	struct mmc_cmd	*cmd;
++	struct mmc_data *data;
++	u32		regbase;
++	u32		bytes_xfered;
++	u32		clkrate;
++	u32		clkrt;
++	u32		data_len;
++	int		error;
++};
++
++static int pxa_sdh_cmd_done(struct pxa_sdh_host *host);
++static void pxa_sdh_dma_data_done(struct pxa_sdh_host *host);
++static void pxa_sdh_data_done(struct pxa_sdh_host *host);
++
++#ifdef CONFIG_MMC_DEBUG
++static void dump_registers(struct pxa_sdh_host *host)
++{
++	unsigned int val;
++	int offset;
++
++	for (offset = 0; offset < 0x60; offset += 4) {
++		if (offset == 0x20)
++			continue;
++		val = readl(host->regbase + offset);
++		printf("%08x: %08x\n", (unsigned int)host->regbase + offset, val);
++	}
++	for (offset = 0xE0; offset < 0xF0; offset += 4) {
++		val = readl(host->regbase + offset);
++		printf("%08x: %08x\n", (unsigned int)host->regbase + offset, val);
++	}
++	val = readl(host->regbase + 0xFC);
++	printf("%08x: %08x\n", (unsigned int)host->regbase + 0xFC, val);
++}
++#endif
++
++static inline int fls(int x)
++{
++	int ret;
++
++	asm("clz\t%0, %1" : "=r" (ret) : "r" (x) : "cc");
++	ret = 32 - ret;
++	return ret;
++}
++
++static int pxa_sdh_wait_reset(struct pxa_sdh_host *host)
++{
++	u32 timeout = 1000;
++	u16 val;
++
++	do {
++		val = GET_REG(host, SD_TO_CTRL_SW_RST);
++		if (!(val & (SW_RST_DAT | SW_RST_CMD | SW_RST_ALL)))
++			break;
++		udelay(1);
++	} while (timeout--);
++	if (timeout)
++		return 0;
++
++	printf("%s: Fatal: Wait RESET timeout.\n",__func__);
++
++	return 1;
++}
++
++static void pxa_sdh_stop_clock(struct pxa_sdh_host *host)
++{
++	CLEAR_REG_BIT(host, EXT_CLK_EN, SD_CLOCK_CNTL);
++}
++
++static void pxa_sdh_start_clock(struct pxa_sdh_host *host)
++{
++	u32 timeout = 1000;
++
++	SET_REG_BIT(host, INT_CLK_EN, SD_CLOCK_CNTL);
++	do {
++		if (GET_REG(host, SD_CLOCK_CNTL) & INT_CLK_STABLE)
++			break;
++		udelay(1);
++	} while (timeout--);
++	if (!timeout)
++		printf("%s: unable to start clock\n",__func__);
++
++	SET_REG_BITS(host, SD_FREQ_SEL_OFFSET, SD_FREQ_SEL_MASK,
++		host->clkrt, SD_CLOCK_CNTL);
++
++	/* set as maximum value for data line timeout*/
++	SET_REG_BITS(host, DAT_TO_VAL_OFFSET, DAT_TO_MASK,
++		(DAT_TO_MASK - 1), SD_TO_CTRL_SW_RST);
++
++	SET_REG_BIT(host, EXT_CLK_EN, SD_CLOCK_CNTL);
++}
++
++static void pxa_sdh_setup_sdma(struct pxa_sdh_host *host)
++{
++	struct mmc_data* data = host->data;
++	if (DATA_DIRECTION_READ(data)) {
++		char* dest = data->dest + host->bytes_xfered;
++		SET_REG(host, (u32) dest & 0xffff, SD_SYS_ADDR_LOW);
++		SET_REG(host, (u32) dest >> 16, SD_SYS_ADDR_HIGH);
++	}
++	else {
++		char* src = (char*) data->src + host->bytes_xfered;
++		SET_REG(host, (u32) src & 0xffff, SD_SYS_ADDR_LOW);
++		SET_REG(host, (u32) src >> 16, SD_SYS_ADDR_HIGH);
++	}
++
++}
++
++static void pxa_sdh_setup_data(struct pxa_sdh_host *host)
++{
++#ifdef CONFIG_MMC_SDMA
++	pxa_sdh_setup_sdma(host);
++	SET_REG_BITS(host, DMA_SEL_OFFSET, DMA_SEL_MASK, DMA_SEL_SDMA, SD_HOST_CTRL);
++#endif
++}
++
++static void pxa_sdh_finish_request(struct pxa_sdh_host *host)
++{
++
++#ifdef CONFIG_MMC_DEBUG
++	struct mmc_cmd* cmd = host->cmd;
++	dump_registers(host);
++#endif
++	if (host->data && host->error)
++		SET_REG_BIT(host, SW_RST_DAT, SD_TO_CTRL_SW_RST);
++
++	mmc_dbg("%s: Finishing CMD%d(%s)\n",__func__, cmd->cmdidx,
++		(host->error ? "failed" : "done"));
++
++	host->data = NULL;
++	host->cmd = NULL;
++	host->error = 0;
++	host->data_len = 0;
++	host->bytes_xfered = 0;
++}
++
++static int pxa_sdh_process_irq(struct pxa_sdh_host *host,u32 intr_type)
++{
++	ulong hz = 3250000; /* 3.25 MHz Timer Clock */
++	ushort done = GET_REG(host, SD_NOR_I_STAT) & intr_type;
++        ulong start, curr, diff;
++#ifdef CONFIG_MMC_DEBUG
++	struct mmc_cmd* cmd = host->cmd;
++#endif
++
++	start = get_ticks();
++        while(!done)
++        {
++                done = GET_REG(host, SD_NOR_I_STAT) & intr_type;
++                if( GET_REG(host, SD_NOR_I_STAT) & 0x8000 )
++                {
++                        mmc_dbg("Error! cmd : %d, err : %04x\n", cmd->cmdidx, GET_REG(host, SD_ERR_I_STAT));
++			host->error = 1;
++			pxa_sdh_finish_request(host);
++			if (GET_REG(host, SD_ERR_I_STAT) & 0x1)
++				return TIMEOUT;      /* error happened */
++			else
++				return COMM_ERR;
++                }
++                curr = get_ticks();
++                diff = (long) curr - (long) start;
++                if (diff > (3*hz))
++                {
++                        printf("cmd timeout, status : %04x\n", GET_REG(host, SD_NOR_I_STAT));
++                        printf("xfer mode : %04x\n", GET_REG(host, SD_TRANS_MODE));
++			host->error = 1;
++			pxa_sdh_finish_request(host);
++                        return -ETIMEDOUT;
++                }
++        }
++
++	if (intr_type == CMD_COMP) {
++                pxa_sdh_cmd_done(host);
++		return 0;
++        }
++
++#ifdef CONFIG_MMC_SDMA
++        if (intr_type == DMA_INT) {
++                pxa_sdh_dma_data_done(host);
++		return 0;
++        }
++#else
++	if ((cmdtype == TX_RDY) || (cmdtype == RX_RDY)) {
++                pxa_sdh_pio_data_done(host);
++		return 0;
++        }
++#endif
++
++        if (intr_type == XFER_COMP) {
++                pxa_sdh_data_done(host);
++		return 0;
++        }
++	return 0;
++}
++
++static int pxa_sdh_start_cmd(struct pxa_sdh_host *host)
++{
++	u16 resp = 0;
++	u16 xfrmd_val = 0;
++	u16 cmd_val = 0;
++	u16 val, mask;
++        struct mmc_data *data = host->data;
++        struct mmc_cmd *cmd = host->cmd;
++	int ret;
++
++	BUG_ON(!cmd);
++
++	/*Set Response Type*/
++	switch (mmc_resp_type(cmd)) {
++	case MMC_RSP_NONE:
++		break;
++
++	case MMC_RSP_R1: /* r1, r5, r6, r7 */
++		resp = CMD_RESP_48BIT;
++		cmd_val |= CMD_CRC_CHK_EN | CMD_IDX_CHK_EN;
++		break;
++
++	case MMC_RSP_R2: /* r2 */
++		resp = CMD_RESP_136BIT;
++		cmd_val |= CMD_CRC_CHK_EN;
++		break;
++
++	case MMC_RSP_R3: /* r3, r4*/
++		resp = CMD_RESP_48BIT;
++		break;
++
++	case MMC_RSP_R1b: /* r1b */
++		resp = CMD_RESP_48BITB;
++		cmd_val |= CMD_CRC_CHK_EN | CMD_IDX_CHK_EN;
++		break;
++
++	default:
++		break;
++	}
++
++	/*Set Transfer mode regarding to data flag*/
++	if (data)
++	{
++		cmd_val |= DATA_PRESENT;
++		xfrmd_val |= BLK_CNT_EN;
++		if (data->blocks > 1)
++			xfrmd_val |= MULTI_BLK_SEL;
++#ifdef CONFIG_MMC_SDMA
++		xfrmd_val |= DMA_EN;
++#else
++		xfrmd_val &= ~DMA_EN;
++#endif
++		if (DATA_DIRECTION_READ(data))
++			xfrmd_val |= TO_HOST_DIR;
++		else
++			xfrmd_val &= ~TO_HOST_DIR;
++	}
++
++	//if (cmd->opcode == 12)
++	//	cmd_val |= host, CMD_TYPE_OFFSET, CMD_TYPE_MASK, CMD_TYPE_ABORT, SD_COMMAND);
++	SET_REG(host, cmd->cmdarg & 0xffff, SD_ARG_LOW);
++	SET_REG(host, cmd->cmdarg >> 16, SD_ARG_HIGH);
++	SET_REG(host, xfrmd_val, SD_TRANS_MODE);
++	cmd_val |= cmd->cmdidx << CMD_IDX_OFFSET | resp << RESP_TYPE_OFFSET;
++	mmc_dbg("%s:Starting CMD%d with ARGUMENT 0x%x\n",__func__, cmd->cmdidx, cmd->cmdarg);
++
++	val = GET_REG(host, SD_PRESENT_STAT_2);
++	mask = CMD_LINE_LEVEL_MASK | DATA_LINE_LEVEL_MASK;
++	if ((val & mask) != mask)
++		mmc_dbg("%s:WARN: CMD/DATA pins are not all high, PRE_STAT=0x%04x\n",__func__,
++			GET_REG(host, SD_PRESENT_STAT_2));
++
++	SET_REG(host, cmd_val, SD_COMMAND);
++
++	ret = pxa_sdh_process_irq(host, CMD_COMP);
++	while(!ret && data) {
++		if (!(((host->bytes_xfered/data->blocksize)+1) == data->blocks))
++			ret = pxa_sdh_process_irq(host, DMA_INT);
++		else {
++			ret = pxa_sdh_process_irq(host, XFER_COMP);
++			break;
++		}
++	}
++	return ret;
++}
++
++
++
++static int pxa_sdh_cmd_done(struct pxa_sdh_host *host)
++{
++	struct mmc_cmd *cmd = host->cmd;
++	u32 resp[8];
++
++	BUG_ON(!cmd);
++
++	/* get cmd response */
++	resp[0] = GET_REG(host, SD_RESP_0);
++	resp[1] = GET_REG(host, SD_RESP_1);
++	resp[2] = GET_REG(host, SD_RESP_2);
++	resp[3] = GET_REG(host, SD_RESP_3);
++	resp[4] = GET_REG(host, SD_RESP_4);
++	resp[5] = GET_REG(host, SD_RESP_5);
++	resp[6] = GET_REG(host, SD_RESP_6);
++	resp[7] = readb(host->regbase + SD_RESP_7);
++
++	if (cmd->resp_type & MMC_RSP_136) {
++		cmd->response[0] = resp[5] >> 8 | resp[6] << 8 | resp[7] << 24;
++		cmd->response[1] = resp[3] >> 8 | resp[4] << 8 | resp[5] << 24;
++		cmd->response[2] = resp[1] >> 8 | resp[2] << 8 | resp[3] << 24;
++		cmd->response[3] = resp[0] << 8 | resp[1] << 24;
++	} else {
++		cmd->response[0] = resp[1] << 16 | resp[0];
++		cmd->response[1] = resp[3] << 16 | resp[2];
++		cmd->response[2] = resp[5] << 16 | resp[4];
++		cmd->response[3] = resp[7] << 16 | resp[6];
++	}
++
++
++	mmc_dbg("%s: resp[0]=0x%x resp[1]=0x%x resp[2]=0x%x resp[3]=0x%x\n",__func__,
++                cmd->response[0], cmd->response[1], cmd->response[2], cmd->response[3]);
++	if (host->error || !host->data) {
++		pxa_sdh_finish_request(host);
++	}
++
++	return 1;
++}
++
++#ifndef CONFIG_MMC_SDMA
++static void pxa_sdh_pio_data_done(struct pxa_sdh_host *host)
++{
++	struct mmc_data *data = host->data;
++	u16 blk_size = data->blocksize;
++	u16 i = 0;
++
++	if (DATA_DIRECTION_READ(data)) {
++		char* dest = data->dest + host->bytes_xfered;
++		for (i = 0; i < blk_size; i += sizeof(u32)) {
++			*(u32*)(dest + i) = readl(host->regbase + SD_BUF_DPORT_0);
++		}
++	} else {
++		char* src = (char*) data->src + host->bytes_xfered;
++		for (i = 0; i < blk_size; i += sizeof(u32)) {
++			writel(*(u32*)(src +  i), host->regbase + SD_BUF_DPORT_0);
++		}
++	}
++
++	if (host->bytes_xfered < host->data_len) {
++		host->bytes_xfered = host->bytes_xfered + blk_size;
++		pxa_sdh_setup_data(host);
++	}
++}
++#endif
++
++static void pxa_sdh_dma_data_done(struct pxa_sdh_host *host)
++{
++	struct mmc_data *data = host->data;
++
++	if (host->bytes_xfered < host->data_len) {
++		host->bytes_xfered = host->bytes_xfered + data->blocksize;
++		pxa_sdh_setup_data(host);
++	}
++}
++
++static void pxa_sdh_data_done(struct pxa_sdh_host *host)
++{
++	pxa_sdh_finish_request(host);
++}
++
++static int pxa_sdh_request(struct mmc *mmc, struct mmc_cmd *cmd,
++                struct mmc_data *data)
++{
++	struct pxa_sdh_host *host = mmc->priv;
++	u16 val;
++	u32 timeout = 1000;
++	int ret = 0;
++
++	host->data = data;
++	host->cmd  = cmd;
++
++	if (pxa_sdh_wait_reset(host)) {
++		host->error = 1;
++		pxa_sdh_finish_request(host);
++		return -ETIMEDOUT;
++	}
++	do {
++		val = GET_REG(host, SD_PRESENT_STAT_1);
++		if (!(val & CMD_INHBT_DAT || val & CMD_INHBT_CMD))
++			break;
++		udelay(1);
++	} while (timeout--);
++	if (!timeout) {
++		printf("%s: In busy, unable to start the request.\n",__func__);
++		host->error = 1;
++                pxa_sdh_finish_request(host);
++		return -EBUSY;
++	}
++
++	/* Clear Interrupt/Error status */
++	SET_REG(host, 0xffff, SD_NOR_I_STAT);
++	SET_REG(host, 0xffff, SD_ERR_I_STAT);
++
++	if (data) {
++		mmc_dbg("%s: setup data, blk_sz=%d, blk_cnt=0x%x\n",__func__,
++			data->blocksize, data->blocks);
++		SET_REG(host, ((u16)HOST_DMA_BDRY_MASK << HOST_DMA_BDRY_OFFSET) | data->blocksize, SD_BLOCK_SIZE);
++		SET_REG(host, data->blocks, SD_BLOCK_COUNT);
++
++		pxa_sdh_setup_data(host);
++	}
++
++	ret = pxa_sdh_start_cmd(host);
++	return ret;
++}
++
++static void pxa_sdh_set_ios(struct mmc *mmc)
++{
++	struct pxa_sdh_host *host = mmc->priv;
++
++	if (pxa_sdh_wait_reset(host))
++		return;
++
++	if (mmc->clock) {
++		unsigned long rate = host->clkrate;
++		unsigned int clk = rate / mmc->clock;
++		unsigned int shift;
++
++		BUG_ON((mmc->clock > mmc->f_max) || (mmc->clock < mmc->f_min));
++		if (mmc->clock >= host->clkrate) {
++			host->clkrt = 0x00;
++		} else {
++			shift = fls(clk);
++			if (rate / clk > mmc->clock)
++				shift++;
++			host->clkrt = 1 << (shift - 2);
++		}
++
++		mmc_dbg("%s: set clkrt = %08x\n",__func__,host->clkrt);
++		pxa_sdh_stop_clock(host);
++		pxa_sdh_start_clock(host);
++
++		if((host->clkrt == 0 && host->clkrate > 25000000)
++			|| (host->clkrt && (host->clkrate/(host->clkrt*2)) > 25000000)) {
++			SET_REG_BIT(host, HI_SPEED_EN, SD_HOST_CTRL);
++			mmc_dbg("%s: set as HIGH_SPEED.\n",__func__);
++		} else
++			CLEAR_REG_BIT(host, HI_SPEED_EN, SD_HOST_CTRL);
++
++	} else {
++		pxa_sdh_stop_clock(host);
++		if (host->clkrt != CLKRT_OFF) {
++			host->clkrt = CLKRT_OFF;
++		}
++	}
++
++	SET_REG_BITS(host, SDCLK_SEL_OFFSET, SDCLK_SEL_MASK, SDCLK_SEL_INIT_VAL, SD_CLK_BURST_SET);
++	SET_REG_BITS(host, SD_BUS_VLT_OFFSET, SD_BUS_VLT_MASK,
++			SD_BUS_VLT_18V, SD_HOST_CTRL);
++	SET_REG_BIT(host, SD_BUS_POWER, SD_HOST_CTRL);
++
++	if (mmc->bus_width == MMC_BUS_WIDTH_8) {
++		SET_REG_BIT(host, MMC_CARD, SD_CE_ATA_2);
++		SET_REG_BIT(host, DATA_WIDTH_8BIT, SD_CE_ATA_2);
++			mmc_dbg("%s: set as 8_BIT_MODE.\n",__func__);
++	} else {
++		CLEAR_REG_BIT(host, MMC_CARD, SD_CE_ATA_2);
++		CLEAR_REG_BIT(host, DATA_WIDTH_8BIT, SD_CE_ATA_2);
++		if (mmc->bus_width == MMC_BUS_WIDTH_4) {
++			SET_REG_BIT(host, DATA_WIDTH_4BIT, SD_HOST_CTRL);
++				mmc_dbg("%s: set as 4_BIT_MODE.\n",__func__);
++		} else {
++			CLEAR_REG_BIT(host, DATA_WIDTH_4BIT, SD_HOST_CTRL);
++		}
++	}
++}
++
++static int sdh_init(struct mmc *mmc)
++{
++	struct pxa_sdh_host* host = mmc->priv;
++#ifndef CONFIG_MMC3
++	/* Setup the MMC/SD(1) Host Controller Clock */
++	*(volatile unsigned short*)(0xd4282854) = 0x18;
++	udelay(10);
++	*(volatile unsigned short*)(0xd4282854) = 0x1b;
++#else
++	/* Setup the MMC/SD(3) Host Controller Clock */
++	*(volatile unsigned short*)(0xd42828e0) = 0x18;
++	udelay(10);
++	*(volatile unsigned short*)(0xd42828e0) = 0x1b;
++#endif
++	/* Enable Interrupt status */
++	SET_REG(host, 0xffff, SD_NOR_I_STAT_EN);
++	SET_REG(host, 0xffff, SD_ERR_I_STAT_EN);
++
++	/* Disable interrupt generation */
++	SET_REG(host, 0, SD_NOR_INT_EN);
++	SET_REG(host, 0, SD_ERR_INT_EN);
++	return 0;
++}
++
++int pxa_sdh_init(bd_t *bis)
++{
++	struct mmc *mmc;
++	struct pxa_sdh_host *host;
++
++	mmc = malloc(sizeof(struct mmc));
++	if (!mmc) {
++		printf("mmc malloc fail!!\n");
++		return -1;
++	}
++
++	host = malloc(sizeof(struct pxa_sdh_host));
++	if (!host) {
++		printf("host malloc fail!!!\n");
++		return -1;
++	}
++
++	host->regbase = CONFIG_SYS_MMC_BASE;
++	host->clkrate = 48000000;
++	host->clkrt = CLKRT_OFF;
++
++	strncpy(mmc->name,"pxa-sdh0",7);
++	mmc->priv = host;
++	mmc->send_cmd = pxa_sdh_request;
++	mmc->set_ios = pxa_sdh_set_ios;
++	mmc->init = sdh_init;
++
++	/*
++	 * Calculate minimum clock rate, rounding up.
++	 */
++	mmc->f_min = (host->clkrate + SD_FREQ_SEL_MASK) / (SD_FREQ_SEL_MASK + 1);
++	mmc->f_max = host->clkrate / 2;
++	mmc->ocr = 0xffffffff;
++	mmc->voltages = MMC_VDD_27_28|MMC_VDD_28_29;
++#ifndef CONFIG_MMC3
++	mmc->host_caps = MMC_MODE_4BIT | MMC_MODE_HS;
++#else
++	mmc->host_caps = MMC_MODE_4BIT | MMC_MODE_8BIT | MMC_MODE_HS;
++#endif
++
++	mmc_register(mmc);
++	return 0;
++}
+diff --git a/drivers/mmc/pxa_sdh.h b/drivers/mmc/pxa_sdh.h
+new file mode 100644
+index 0000000..1f87fda
+--- /dev/null
++++ b/drivers/mmc/pxa_sdh.h
+@@ -0,0 +1,189 @@
++/* register definitions of PXA SD Host Controller*/
++#define SD_SYS_ADDR_LOW		0x0000		/* DMA System Address Low */
++#define SD_SYS_ADDR_HIGH	0x0002		/* DMA System Address High */
++#define SD_BLOCK_SIZE		0x0004 		/* Block Size*/
++#define SD_BLOCK_COUNT		0x0006 		/* Block Count */
++#define SD_ARG_LOW	 	0x0008		/* Command Argument Low */
++#define SD_ARG_HIGH	 	0x000a		/* Command Argument High */
++#define SD_TRANS_MODE		0x000c		/* Transfer Mode */
++#define SD_COMMAND	 	0x000e		/* Command */
++#define SD_RESP_0		0x0010		/* Command Response 0 */
++#define SD_RESP_1		0x0012		/* Command Response 1 */
++#define SD_RESP_2		0x0014		/* Command Response 2 */
++#define SD_RESP_3		0x0016		/* Command Response 3 */
++#define SD_RESP_4		0x0018		/* Command Response 4 */
++#define SD_RESP_5		0x001a		/* Command Response 5 */
++#define SD_RESP_6		0x001c		/* Command Response 6 */
++#define SD_RESP_7		0x001e		/* Command Response 7 */
++#define SD_BUF_DPORT_0		0x0020		/* Buffer Data Port 0 */
++#define SD_BUF_DPORT_1		0x0022		/* Buffer Data Port 1 */
++#define SD_PRESENT_STAT_1	0x0024		/* Present State 1 */
++#define SD_PRESENT_STAT_2	0x0026		/* Present State 2 */
++#define SD_HOST_CTRL		0x0028		/* Host Control */
++#define SD_BLOCK_GAP_CTRL	0x002a		/* Block Gap Control */
++#define SD_CLOCK_CNTL		0x002c		/* Clock Control */
++#define SD_TO_CTRL_SW_RST	0x002e		/* Timeout Control/SW Reset */
++#define SD_NOR_I_STAT		0x0030		/* Normal Interrupt Status */
++#define SD_ERR_I_STAT		0x0032		/* Error Interrupt Status */
++#define SD_NOR_I_STAT_EN	0x0034		/* Normal Interrupt Status Enable */
++#define SD_ERR_I_STAT_EN	0x0036		/* Error Interrupt Status Enable */
++#define SD_NOR_INT_EN		0x0038		/* Normal Interrupt Generation Enable */
++#define SD_ERR_INT_EN		0x003a		/* Error Interrupt Generation Enable */
++#define SD_ACMD12_ERR_STAT	0x003c		/* Auto CMD12 Error Status */
++#define SD_CAP_1		0x0040		/* Capabilities 1 */
++#define SD_CAP_3		0x0044		/* Capabilities 3 */
++#define SD_CAP_4		0x0046		/* Capabilities 4 */
++#define SD_MAX_CUR_1		0x0048		/* Maximum Current 1 */
++#define SD_MAX_CUR_2		0x004a		/* Maximum Current 2 */
++#define SD_MAX_CUR_3		0x004c		/* Maximum Current 3 */
++#define SD_MAX_CUR_4		0x004e		/* Maximum Current 4 */
++#define SD_FE_ACMD12_ERR	0x0050		/* Force Event for Auto CMD12 Error */
++#define SD_FE_ERR_STAT		0x0052		/* Force Event for Error Status */
++#define SD_ADMA_ERR_STAT	0x0054		/* ADMA Error Status */
++#define SD_ADMA_SADDR_1		0x0058		/* ADMA System Address[15:0] */
++#define SD_ADMA_SADDR_2		0x005a		/* ADMA System Address[31:16] */
++#define SD_ADMA_SADDR_3		0x005c		/* ADMA System Address[47:32] */
++#define SD_ADMA_SADDR_4		0x005e		/* ADMA System Address[64:48] */
++#define SD_FIFO_PARAM		0x00e0		/* FIRO Parameters */
++#define SD_SPI_MODE		0x00e4		/* SPI Mode */
++#define SD_CLK_BURST_SET	0x00e6 		/* Clock and Burst Size Setup */
++#define SD_CE_ATA_1		0x00e8		/* CE-ATA 1 */
++#define SD_CE_ATA_2		0x00ea		/* CE-ATA 2 */
++#define SD_PAD_IO_SETUP		0x00ec		/* Pad I/O Setup */
++#define SD_SLOT_INT_STAT	0x00fc		/* Slot Interrupt Status*/
++#define SD_HOST_CTRL_VER	0x00fe		/* Host Controller Version */
++
++/* SD_BLOCK_SIZE */
++#define HOST_DMA_BDRY_OFFSET	12
++#define HOST_DMA_BDRY_MASK	((u16)0x7)
++#define BLOCK_SIZE_OFFSET	0
++#define BLOCK_SIZE_MASK		((u16)0x0fff)
++#define BLOCK_SIZE_MAX		((u16)0x0800)
++
++/* SD_TRANS_MODE */
++#define MULTI_BLK_SEL		((u16)1 << 5)
++#define TO_HOST_DIR		((u16)1 << 4)
++#define AUTO_CMD12_EN		((u16)1 << 2)
++#define BLK_CNT_EN		((u16)1 << 1)
++#define DMA_EN			((u16)1 << 0)
++
++/* SD_COMMAND */
++#define CMD_IDX_OFFSET		8
++#define CMD_IDX_MASK		((u16)0x3f)
++#define CMD_TYPE_OFFSET		6
++#define CMD_TYPE_MASK		((u16)0x3)
++#define CMD_TYPE_NORMAL		((u16)0x0)
++#define CMD_TYPE_RESUME		((u16)0x1)
++#define CMD_TYPE_SUSPEND	((u16)0x2)
++#define CMD_TYPE_ABORT		((u16)0x3)
++#define DATA_PRESENT		((u16)1 << 5)
++#define CMD_IDX_CHK_EN		((u16)1 << 4)
++#define CMD_CRC_CHK_EN		((u16)1 << 3)
++#define RESP_TYPE_OFFSET	0
++#define RESP_TYPE_MASK		((u16)0x3)
++/* RES_TYPE */
++#define CMD_RESP_NONE		((u16)0x0)
++#define CMD_RESP_136BIT		((u16)0x1)
++#define CMD_RESP_48BIT		((u16)0x2)
++#define CMD_RESP_48BITB 	((u16)0x3)
++
++/* SD_PRESENT_STAT_1 */
++#define CMD_INHBT_DAT		((u16)1 << 1)
++#define CMD_INHBT_CMD		((u16)1 << 0)
++
++/* SD_PRESENT_STAT_2 */
++#define CARD_STABLE		((u16)1 << 1)
++#define CARD_DETECTED		((u16)1 << 2)
++#define CARD_PROT		((u16)1 << 3)
++#define DATA_LINE_LEVEL_MASK	((u16)0xf << 4)
++#define CMD_LINE_LEVEL_MASK	((u16)1 << 8)
++
++/* SD_HOST_CTRL */
++#define SD_BUS_VLT_OFFSET	9
++#define SD_BUS_VLT_MASK		((u16)0x7)
++#define SD_BUS_VLT_18V		((u16)0x5)
++#define SD_BUS_VLT_30V		((u16)0x6)
++#define SD_BUS_VLT_33V		((u16)0x7)
++#define SD_BUS_POWER		((u16)1 << 8)
++#define DMA_SEL_OFFSET		3
++#define DMA_SEL_MASK		((u16)0x3)
++#define DMA_SEL_SDMA		((u16)0)
++#define DMA_SEL_ADMA1		((u16)1)
++#define DMA_SEL_ADMA2_32	((u16)2)
++#define DMA_SEL_ADMA2_64	((u16)3)
++#define HI_SPEED_EN		((u16)1 << 2)
++#define DATA_WIDTH_4BIT		((u16)1 << 1)
++
++/* SD_BLOCK_GAP_CTRL */
++#define INT_BLK_GAP		((u16)1 << 3)
++#define RD_WT_CNTL		((u16)1 << 2)
++#define CONT_REQ		((u16)1 << 1)
++#define STOP_AT_BLK_GAP_REQ	((u16)1 << 0)
++
++/* SD_CLOCK_CNTL */
++#define SD_FREQ_SEL_OFFSET	8
++#define SD_FREQ_SEL_MASK	((u16)0xff)
++#define EXT_CLK_EN		((u16)1 << 2)
++#define INT_CLK_STABLE		((u16)1 << 1)
++#define INT_CLK_EN		((u16)1 << 0)
++
++/* SD_TO_CTRL_SW_RST */
++#define SW_RST_DAT		((u16)1 << 10)
++#define SW_RST_CMD		((u16)1 << 9)
++#define SW_RST_ALL		((u16)1 << 8)
++#define DAT_TO_VAL_OFFSET	0
++#define DAT_TO_MASK		((u16)0xf)
++
++/* SD_NOR_I_STAT,  SD_NOR_I_STAT_EN, SD_NOR_INT_EN */
++#define ERR_INT			((u16)1 << 15) /* Error Interrupt*/
++#define CARD_INT		((u16)1 << 8) /* Card Interrupt */
++#define CARD_REM		((u16)1 << 7) /* Card Removal Interrupt */
++#define CARD_INS		((u16)1 << 6) /* Card Insertion Interrupt */
++#define RX_RDY			((u16)1 << 5) /* Buffer Read Ready */
++#define TX_RDY			((u16)1 << 4) /* Buffer Write Ready */
++#define DMA_INT			((u16)1 << 3) /* DMA Interrupt */
++#define BLK_GAP_EVNT		((u16)1 << 2) /* Block Gap Event */
++#define XFER_COMP		((u16)1 << 1) /* Transfer Complete */
++#define CMD_COMP		((u16)1 << 0) /* Command Complete */
++#define SD_NOR_I_STAT_RVD_MASK 	((u16)0x7e00) /* Mask for SD_NOR_I_STAT Reserved Bits[14 :9] */
++#define SD_NOR_INT_EN_RVD_MASK	((u16)0xfe00) /* Mask for SD_NOR_INT_EN/SD_NOR_I_STAT_EN Reserved Bits[15 :9] */
++
++/* SD_ERR_I_STAT,  SD_ERR_I_STAT_EN, SD_ERR_INT_EN */
++#define CRC_STATUS_ERR		((u16)1 << 15) /* CRC Status Error  Returned from Card in Write Transaction*/
++#define CPL_TO_ERR		((u16)1 << 14) /* Command Completion Signal Timeout Error, for CE-ATA mode only*/
++#define AXI_RESP_ERR		((u16)1 << 13) /* AXI Bus Response Error */
++#define SPI_ERR			((u16)1 << 12) /* SPI Mode Error*/
++#define ADMA_ERR		((u16)1 << 9) /* AMDA Error */
++#define AUTO_CMD12_ERR		((u16)1 << 8) /* Auto CMD12 Error*/
++#define CUR_LIMIT_ERR		((u16)1 << 7) /* Current Limit Error*/
++#define RD_DATA_END_ERR		((u16)1 << 6) /* Read Data End Bit Error*/
++#define RD_DATA_CRC_ERR		((u16)1 << 5) /* Read Data CRC Error*/
++#define DATA_TO_ERR		((u16)1 << 4) /* Data Timeout Error*/
++#define CMD_IDX_ERR		((u16)1 << 3) /* Command Index Error*/
++#define CMD_END_BIT_ERR		((u16)1 << 2) /* Command End Bit Error*/
++#define CMD_CRC_ERR		((u16)1 << 1) /* Command CRC Error*/
++#define CMD_TO_ERR		((u16)1 << 0) /* Command Timeout Error*/
++#define SD_ERR_INT_EN_RVD_MASK		((u16)0x0c00) /* Mask for SD_ERR_INT_EN/SD_ERR_I_STAT_EN Reserved Bits[11 :10] */
++#define SD_ERR_INT_DATA_ERR_MASK	(DATA_TO_ERR | RD_DATA_CRC_ERR | RD_DATA_END_ERR) /*DATA Line Error*/
++#define SD_ERR_INT_CMD_ERR_MASK		(CMD_TO_ERR | CMD_CRC_ERR | CMD_END_BIT_ERR | CMD_IDX_ERR) /* CMD Line Error*/
++
++/* SD_FIFO_PARAM */
++#define DIS_PAD_SD_CLK_GATE	((u16)1 << 10) /* Turn on/off Dynamic SD Clock Gating */
++
++/* SD_CLK_BURST_SET */
++#define SDCLK_DELAY_OFFSET	10
++#define SDCLK_DELAY_MASK	((u16)0xf)
++#define SDCLK_DELAY_MAX	((u16)0xf)
++#define SDCLK_SEL_OFFSET	8
++#define SDCLK_SEL_MASK		((u16)0x3)
++#define SDCLK_SEL_INIT_VAL	((u16)0x3)
++#define DMA_BURST_SIZE		((u16)0)
++
++/* SD_SLOT_INT_STAT */
++#define SLOT_INT1 		((u16)1<<1)
++#define SLOT_INT0 		((u16)1<<0)
++#define SlOT_INT_MASK		(SLOT_INT0 | SLOT_INT1)
++
++/* SD_CE_ATA_2 */
++#define DATA_WIDTH_8BIT		((u16)1 << 8)
++#define MMC_CARD		((u16)1 << 12)
+diff --git a/include/asm-arm/arch-pxa688/mfp-pxa688.h b/include/asm-arm/arch-pxa688/mfp-pxa688.h
+index 0f66574..2512775 100644
+--- a/include/asm-arm/arch-pxa688/mfp-pxa688.h
++++ b/include/asm-arm/arch-pxa688/mfp-pxa688.h
+@@ -71,6 +71,9 @@
+ #define GPIO151_SMC_SCLK	MFP_CFG(GPIO151, AF0)
+ 
+ /* I2C */
++#define TWSI1_SCL		MFP_CFG(TWSI1_SCL, AF0)
++#define TWSI1_SDA		MFP_CFG(TWSI1_SDA, AF0)
++
+ #define GPIO53_CI2C_SCL             MFP_CFG(GPIO53, AF2)
+ #define GPIO54_CI2C_SDA             MFP_CFG(GPIO54, AF2)
+ 
+diff --git a/include/configs/mmp2_jasper_emmc.h b/include/configs/mmp2_jasper_emmc.h
+new file mode 100644
+index 0000000..4c2b7b0
+--- /dev/null
++++ b/include/configs/mmp2_jasper_emmc.h
+@@ -0,0 +1,40 @@
++/*
++ * (C) Copyright 2008
++ * Marvell Semiconductors Ltd. Shanghai, China.
++ *
++ * Configuration for Tavor EVB board.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.    See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++#ifndef __CONFIG_MMP2_JASPER_EMMC_H
++#define __CONFIG_MMP2_JASPER_EMMC_H
++
++#include <configs/mmp2_jasper.h>
++
++/* MMC configuration */
++#define CONFIG_CMD_MMC
++#define CONFIG_MMC
++#define CONFIG_GENERIC_MMC
++#define CONFIG_PXA9XX_SDH
++#define CONFIG_DOS_PARTITION
++
++#define BOOT_FROM_EMMC
++#define CONFIG_MMCBOOT			"mmc read 0x4c00 0x1800 0x1100000"
++#define CONFIG_MBR_SECTOR		0x4800
++
++#endif
++/* __CONFIG_MMP2_JASPER_EMMC_H */
+diff --git a/include/mmc.h b/include/mmc.h
+index 229d494..a795881 100644
+--- a/include/mmc.h
++++ b/include/mmc.h
+@@ -75,6 +75,13 @@
+ #define MMC_CMD_WRITE_SINGLE_BLOCK	24
+ #define MMC_CMD_WRITE_MULTIPLE_BLOCK	25
+ #define MMC_CMD_APP_CMD			55
++/* MMC bus testing commands*/
++#define MMC_CMD_BUSTEST_W		19
++#define MMC_CMD_BUSTEST_R		14
++/* MMC erase commands */
++#define MMC_CMD_ERASE_GRP_START		35
++#define MMC_CMD_ERASE_GRP_END		36
++#define MMC_CMD_ERASE			38
+ 
+ #define SD_CMD_SEND_RELATIVE_ADDR	3
+ #define SD_CMD_SWITCH_FUNC		6
+@@ -128,6 +135,7 @@
+  * EXT_CSD fields
+  */
+ 
++#define EXT_CSD_PART_CONF	179	/* R/W */
+ #define EXT_CSD_BUS_WIDTH	183	/* R/W */
+ #define EXT_CSD_HS_TIMING	185	/* R/W */
+ #define EXT_CSD_CARD_TYPE	196	/* RO */
+@@ -179,6 +187,19 @@ struct mmc_cid {
+ 	char pnm[7];
+ };
+ 
++struct mmc_bits_cid {
++	char manu_id;
++	char reserved0:6,
++	     dev_type:2;
++	char oem_id;
++	char prod_name[6];
++	char prod_ver;
++	u32  prod_sn;
++	char month:4,
++	     year:4;
++	char crc:7;
++};
++
+ struct mmc_csd
+ {
+ 	u8	csd_structure:2,
+@@ -200,8 +221,9 @@ struct mmc_csd
+ 		vdd_w_curr_min:3,
+ 		vdd_w_curr_max:3,
+ 		c_size_mult:3,
+-		sector_size:5,
++		//sector_size:5,
+ 		erase_grp_size:5,
++		erase_grp_mult:5,
+ 		wp_grp_size:5,
+ 		wp_grp_enable:1,
+ 		default_ecc:2,
+@@ -253,17 +275,30 @@ struct mmc {
+ 	uint ocr;
+ 	uint scr[2];
+ 	uint csd[4];
++	struct mmc_csd bcsd;
+ 	uint cid[4];
++	struct mmc_bits_cid bcid;
+ 	ushort rca;
+ 	uint tran_speed;
+ 	uint read_bl_len;
++	uint max_read_bl_len;
+ 	uint write_bl_len;
++	uint sectors;
+ 	u64 capacity;
+ 	block_dev_desc_t block_dev;
+ 	int (*send_cmd)(struct mmc *mmc,
+ 			struct mmc_cmd *cmd, struct mmc_data *data);
+ 	void (*set_ios)(struct mmc *mmc);
+ 	int (*init)(struct mmc *mmc);
++
++	/*eMMC4.4 special features*/
++	char ext_csd_part_support;
++	char ext_csd_part_config;
++	char ext_csd_boot_config_prot;
++	u32  ext_csd_boot_size;
++	char ext_csd_boot_bus_width;
++	u32  erase_grp_size; //sectors
++	char ext_csd_erase_mem_content;
+ };
+ 
+ int mmc_register(struct mmc *mmc);
+diff --git a/include/part.h b/include/part.h
+index 980fd04..653fc8c 100644
+--- a/include/part.h
++++ b/include/part.h
+@@ -49,6 +49,16 @@ typedef struct block_dev_desc {
+ 				       unsigned long start,
+ 				       lbaint_t blkcnt,
+ 				       const void *buffer);
++#ifdef CONFIG_GENERIC_MMC
++	int		initialized;
++	unsigned long	(*block_erase)(int dev,
++				       unsigned long start,
++				       lbaint_t blkcnt);
++	unsigned long	(*switch_part)(int dev,
++				       unsigned int part_num);
++	unsigned long	(*switch_boot)(int dev,
++				       unsigned int part_num);
++#endif
+ 	void		*priv;		/* driver private struct pointer */
+ }block_dev_desc_t;
+ 
+-- 
+1.6.0.4
+

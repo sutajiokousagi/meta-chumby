@@ -1,0 +1,28 @@
+From 427cc4f5900b27746c59c2d1c5759ebbf72e4c25 Mon Sep 17 00:00:00 2001
+From: Lei Wen <leiwen@marvell.com>
+Date: Tue, 13 Oct 2009 15:32:09 +0800
+Subject: [PATCH] disable console only for aspenite when using spi nor
+
+For the conflict between uart and ssp pin set on aspenite,
+disable the uart output by default.
+While UART output should valid when using on other platform
+---
+ drivers/serial/ns16550.c |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/drivers/serial/ns16550.c b/drivers/serial/ns16550.c
+index 1c071cb..d5f704d 100644
+--- a/drivers/serial/ns16550.c
++++ b/drivers/serial/ns16550.c
+@@ -70,7 +70,7 @@ void NS16550_putc (NS16550_t com_port, char c)
+ 	if(__count < 1000)
+ 		__log_buf[__count ++] = c;
+ 
+-#ifndef CONFIG_PXA3XX_SPI
++#if (!defined CONFIG_PXA3XX_SPI && defined CONFIG_ASPENITE) || !defined CONFIG_ASPENITE
+ 	while ((com_port->lsr & LSR_THRE) == 0);
+ 	com_port->thr = c;
+ #endif
+-- 
+1.6.0.4
+

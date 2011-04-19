@@ -1,0 +1,134 @@
+From 0251950b3d0c72ab3c0acd24fd4bae867824a940 Mon Sep 17 00:00:00 2001
+From: Lei Wen <leiwen@marvell.com>
+Date: Mon, 21 Sep 2009 11:17:40 +0800
+Subject: [PATCH] fix onenand build bug after eliminate warning
+
+Signed-off-by: Lei Wen <leiwen@marvell.com>
+---
+ board/pxa/common/common.c          |    5 ++
+ drivers/mtd/onenand/onenand_base.c |   83 +----------------------------------
+ 2 files changed, 8 insertions(+), 80 deletions(-)
+
+diff --git a/board/pxa/common/common.c b/board/pxa/common/common.c
+index 2cc972d..8e077cd 100644
+--- a/board/pxa/common/common.c
++++ b/board/pxa/common/common.c
+@@ -1,5 +1,10 @@
+ #include <asm/arch/common.h>
+ 
++void complete(struct completion *completion)
++{
++	completion->done = 1;
++}
++
+ inline unsigned long msecs_to_jiffies(int time)
+ {
+ 	return time * HZ / USEC_PER_SEC;
+diff --git a/drivers/mtd/onenand/onenand_base.c b/drivers/mtd/onenand/onenand_base.c
+index dad8cd1..5f53cc4 100644
+--- a/drivers/mtd/onenand/onenand_base.c
++++ b/drivers/mtd/onenand/onenand_base.c
+@@ -450,36 +450,6 @@ static int onenand_interrupt_wait(struct mtd_info *mtd, int state)
+ }
+ 
+ /*
+- * onenand_try_interrupt_wait - [DEFAULT] try interrupt wait
+- * @param mtd		MTD device structure
+- * @param state		state to select the max. timeout value
+- *
+- * Try interrupt based wait (It is used one-time)
+- */
+-static int onenand_try_interrupt_wait(struct mtd_info *mtd, int state)
+-{
+-	struct onenand_chip *this = mtd->priv;
+-	unsigned long remain, timeout;
+-
+-	/* We use interrupt wait first */
+-	this->wait = onenand_interrupt_wait;
+-
+-	timeout = msecs_to_jiffies(100);
+-	remain = wait_for_completion_timeout(&this->complete, timeout);
+-	if (!remain) {
+-		printk(KERN_INFO "OneNAND: There's no interrupt. "
+-				"We use the normal wait\n");
+-
+-		/* Release the irq */
+-		free_irq(this->irq, this);
+-
+-		this->wait = onenand_wait;
+-	}
+-
+-	return onenand_wait(mtd, state);
+-}
+-
+-/*
+  * onenand_setup_wait - [OneNAND Interface] setup onenand wait method
+  * @param mtd		MTD device structure
+  *
+@@ -499,19 +469,9 @@ static void onenand_setup_wait(struct mtd_info *mtd)
+ 		return;
+ 	}
+ 
+-	if (request_irq(this->irq, &onenand_interrupt,
+-				IRQF_SHARED, "onenand", this)) {
+-		/* If we can't get irq, use the normal wait */
+-		this->wait = onenand_wait;
+-		return;
+-	}
+-
+-	/* Enable interrupt */
+-	syscfg = this->read_word(this->base + ONENAND_REG_SYS_CFG1);
+-	syscfg |= ONENAND_SYS_CFG1_IOBE;
+-	this->write_word(syscfg, this->base + ONENAND_REG_SYS_CFG1);
+-
+-	this->wait = onenand_try_interrupt_wait;
++	/* If we can't get irq, use the normal wait */
++	this->wait = onenand_wait;
++	return;
+ }
+ 
+ /**
+@@ -2942,40 +2902,3 @@ int onenand_scan(struct mtd_info *mtd, int maxchips)
+ 
+ 	return this->scan_bbt(mtd);
+ }
+-
+-/**
+- * onenand_release - [OneNAND Interface] Free resources held by the OneNAND device
+- * @param mtd		MTD device structure
+- */
+-void onenand_release(struct mtd_info *mtd)
+-{
+-	struct onenand_chip *this = mtd->priv;
+-	struct pxa3xx_bbm *bbm = mtd->bbm;
+-
+-	bbm->uninit(mtd);
+-#ifdef CONFIG_MTD_PARTITIONS
+-	/* Deregister partitions */
+-	del_mtd_partitions (mtd);
+-#endif
+-	/* Deregister the device */
+-	del_mtd_device (mtd);
+-
+-	/* Free bad block table memory, if allocated */
+-	if (this->bbm) {
+-		struct bbm_info *bbm = this->bbm;
+-		kfree(bbm->bbt);
+-		kfree(this->bbm);
+-	}
+-	/* Buffers allocated by onenand_scan */
+-	if (this->options & ONENAND_PAGEBUF_ALLOC)
+-		kfree(this->page_buf);
+-	if (this->options & ONENAND_OOBBUF_ALLOC)
+-		kfree(this->oob_buf);
+-}
+-
+-EXPORT_SYMBOL_GPL(onenand_scan);
+-EXPORT_SYMBOL_GPL(onenand_release);
+-
+-MODULE_LICENSE("GPL");
+-MODULE_AUTHOR("Kyungmin Park <kyungmin.park@samsung.com>");
+-MODULE_DESCRIPTION("Generic OneNAND flash driver code");
+-- 
+1.6.0.4
+

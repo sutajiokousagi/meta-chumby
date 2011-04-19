@@ -1,0 +1,148 @@
+From 510cb28d0e801574411b11614bb01c703ecf638e Mon Sep 17 00:00:00 2001
+From: Mingliang Hu <mingliang.hu@marvell.com>
+Date: Sun, 21 Feb 2010 14:25:49 +0800
+Subject: [PATCH] pxa688: add voltage change support on Bonnell and core 936 support for Z1
+
+Signed-off-by: Mingliang Hu <mingliang.hu@marvell.com>
+
+MMP2>> setvol 1330
+MMP2>> op 3
+
+op3: core-936, ddr-400, axi-200
+---
+ board/pxa/common/freq.c    |   22 +++++++++++++++++++++-
+ board/pxa/common/freq_ll.S |   35 +++++++++++++++++++++++++++++------
+ 2 files changed, 50 insertions(+), 7 deletions(-)
+
+diff --git a/board/pxa/common/freq.c b/board/pxa/common/freq.c
+index b28826a..ac77905 100644
+--- a/board/pxa/common/freq.c
++++ b/board/pxa/common/freq.c
+@@ -965,7 +965,11 @@ U_BOOT_CMD(
+ #define MFP_I2C_SDA	0xd401e1b4	/* GPIO54 */
+ #endif
+ 
++#if defined(CONFIG_CPU_PXA688)
++#define TWSI0_CLK	0xd4015004
++#else
+ #define TWSI0_CLK	0xd401502c
++#endif
+ #define TWSI1_CLK	0xd401506c
+ 
+ #define I2C_BASE	0xd4011000
+@@ -1245,6 +1249,10 @@ U_BOOT_CMD(
+ 	#define VBUCK1_CNT(x)	((x < 0) ? -1 :			\
+ 				((x < 1825) ? ((x - 725) / 25)	\
+ 				: -1))
++#elif defined(CONFIG_MMP2_JASPER)
++	#define VBUCK1_CNT(x)	((x < 0) ? -1 :			\
++				((x <= 1380) ? ((x - 750) / 10)	\
++				: -1))
+ #else
+ 	#define VBUCK1_CNT(x)	(-1)
+ #endif
+@@ -1304,12 +1312,16 @@ int set_volt(u32 vol)
+ 	int cnt = -1 , i, res = 0;
+ 	static int first_time = 1;
+ 	u32 i2c_base_saved;
++	unsigned char pval;
+ 
+ 	i2c_base_saved = i2c_base;
+ 
+ #if (defined(CONFIG_TAVOREVB) || defined(CONFIG_TTC_DKB))
+ 	i2c_base = I2C_BASE;
+ 	cnt = VBUCK1_CNT(vol);
++#elif defined(CONFIG_MMP2_JASPER)
++	i2c_base = I2C_BASE;
++	cnt = VBUCK1_CNT(vol);
+ #elif (defined(CONFIG_ASPENITE) || defined(CONFIG_ZYLONITE2))
+ 	i2c_base = PI2C_BASE;
+ 	for (i = 0; i < ASPEN_ECO11_SIZE; i++)
+@@ -1342,6 +1354,13 @@ int set_volt(u32 vol)
+ 	res = i2c_writeb(0x34, 0x00, 0x0);	/* dummy write */
+ 	res = i2c_writeb(0x34, 0x23, cnt);	/* set V3 voltage in ADTV1 */
+ 	res = i2c_writeb(0x34, 0x20, 0x01);	/* select ADTV1 and let it go ramping */
++#elif CONFIG_MMP2_JASPER
++	res = i2c_readb(0x60, 0x02, &pval);
++	pval &= ~0x3f;
++	pval |= cnt;
++	res = i2c_writeb(0x60, 0x02, pval);
++	res = i2c_readb(0x60, 0x02, &pval);
++	printf("SD1 raw val is 0x%x\n", pval);
+ #endif
+ 	i2c_base = i2c_base_saved;
+ 	return res;
+@@ -1361,7 +1380,8 @@ int do_setvol(cmd_tbl_t * cmdtp, int flag, int argc, char *argv[])
+ 			"493  521  550  578  606  635  663  691  720  748  776\n"
+ 			"805  833  861  890  918  947  975  1003 1032 1060 1088\n"
+ 			"1117 1145 1173 1202 1230 1258 1287 1315 1343 1372 1400\n"
+-			"1429 1457 1485 1514 1542 1570 1599\n");
++			"1429 1457 1485 1514 1542 1570 1599\n"
++			"for mmp2 bonnell, xxxx can be 750..1380, step 10\n");
+ 		return 0;
+ 	}
+ 
+diff --git a/board/pxa/common/freq_ll.S b/board/pxa/common/freq_ll.S
+index 06fb7c0..f22eef8 100644
+--- a/board/pxa/common/freq_ll.S
++++ b/board/pxa/common/freq_ll.S
+@@ -170,27 +170,50 @@ freq_sram_start:
+ 4:
+ 	cmp	r2, #0x3
+ 	bne	5f
+-	@ select PLL2 frequency, 624MHz
+-	ldr	r7, =0x086003e2
++	@ select PLL2 frequency, 936MHz
++	ldr	r7, =0x086005e2
+ 	str	r7, [r5, #0x0414]
+ 	ldr	r7, =0x00FFFE00
+ 	str	r7, [r5, #0x0034]
+-	ldr	r7, =0x00223A00
++	ldr	r7, =0x00235a00
+ 	str	r7, [r5, #0x0034]
+-	ldr	r7, =0x00223B00
++	ldr	r7, =0x00235b00
+ 	str	r7, [r5, #0x0034]
+-	ldr	r7, =0x286003e2
++	ldr	r7, =0x286005e2
+ 	str	r7, [r5, #0x0414]
+ 	@ select clock source, PJ4-PLL2, SP-PLL1/2, AXI/DDR-PLL1
+ 	ldr	r7, =0x40800000
+ 	str	r7, [r5, #0x0008]
+-	@ divider setting and frequency change request, core-624, ddr-400, axi-200
++	@ divider setting and frequency change request, core-936, ddr-400, axi-200
+ 	ldr	r7, =0x08fd8248
+ 	str	r7, [r6, #0x00]
+ 	ldr	r7, =0x78fd8248
+ 	str	r7, [r6, #0x04]
+ 
+ 5:
++	cmp	r2, #0x4
++	bne	6f
++	@ select PLL2 frequency, 962MHz
++	ldr	r7, =0x086005e2
++	str	r7, [r5, #0x0414]
++	ldr	r7, =0x00FFFE00
++	str	r7, [r5, #0x0034]
++	ldr	r7, =0x00237200
++	str	r7, [r5, #0x0034]
++	ldr	r7, =0x00237300
++	str	r7, [r5, #0x0034]
++	ldr	r7, =0x286005e2
++	str	r7, [r5, #0x0414]
++	@ select clock source, PJ4-PLL2, SP-PLL1/2, AXI/DDR-PLL1
++	ldr	r7, =0x40800000
++	str	r7, [r5, #0x0008]
++	@ divider setting and frequency change request, core-962, ddr-400, axi-200
++	ldr	r7, =0x08fd8248
++	str	r7, [r6, #0x00]
++	ldr	r7, =0x78fd8248
++	str	r7, [r6, #0x04]
++
++6:
+ 	@
+ 	@ ddr re-calibration after frequency change
+ 	@
+-- 
+1.6.0.4
+

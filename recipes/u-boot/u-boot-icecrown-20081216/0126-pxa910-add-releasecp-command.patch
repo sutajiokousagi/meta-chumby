@@ -1,0 +1,53 @@
+From 2ad3e94a6b72e31b8888ca7d342ae4d844921705 Mon Sep 17 00:00:00 2001
+From: Ning Jiang <ning.jiang@marvell.com>
+Date: Sun, 23 Aug 2009 18:39:54 +0800
+Subject: [PATCH] pxa910: add releasecp command
+
+Signed-off-by: Ning Jiang <ning.jiang@marvell.com>
+Signed-off-by: Bin Yang <bin.yang@marvell.com>
+---
+ board/pxa/common/freq.c |   31 +++++++++++++++++++++++++++++++
+ 1 files changed, 31 insertions(+), 0 deletions(-)
+
+diff --git a/board/pxa/common/freq.c b/board/pxa/common/freq.c
+index beec158..6046404 100644
+--- a/board/pxa/common/freq.c
++++ b/board/pxa/common/freq.c
+@@ -1527,3 +1527,34 @@ U_BOOT_CMD(
+ 		"timeout secs - set timeout secs\n"
+ 	  );
+ 
++void releasecp(void)
++{
++	printf("release cp ...");
++	/* put a jump instr to 96KB for CP in ddr loc 0x0 */
++	reg_write(0x0, 0xe3a0fb60);
++	/* CP vector table placed low */
++	reg_write(0xd4282c04, reg_read(0xd4282c04) & ~0x1);
++	/* release cp */
++	reg_write(0xd4051020, reg_read(0xd4051020) | 0x1);   /* reset */
++	reg_write(0xd4051020, reg_read(0xd4051020) & ~0x41); /* release */
++	printf("done\n");
++}
++
++int do_releasecp(cmd_tbl_t * cmdtp, int flag, int argc, char *argv[])
++{
++	if (argc != 1) {
++		printf ("Usage:\n%s\n", cmdtp->usage);
++		return 1;
++	}
++
++	releasecp();
++
++	return 0;
++}
++
++U_BOOT_CMD(
++		releasecp,	6,	1,	do_releasecp,
++		"releasecp	- release seagull image at 0x18000\n",
++		"releasecp - release seagull image at 0x18000\n"
++	  );
++
+-- 
+1.6.0.4
+

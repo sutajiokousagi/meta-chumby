@@ -1,0 +1,49 @@
+From 32a42d2f8e45968c3a9b4cc4deab58b2ea58b59a Mon Sep 17 00:00:00 2001
+From: Mingliang Hu <mingliang.hu@marvell.com>
+Date: Fri, 22 Jan 2010 11:06:57 +0800
+Subject: [PATCH] pxa688: add op3 for 400CPU/400DDR/200AXI/546GPU
+
+Signed-off-by: Mingliang Hu <mingliang.hu@marvell.com>
+
+This OP is for benchmark purpose.
+---
+ board/pxa/common/freq_ll.S |   23 +++++++++++++++++++++++
+ 1 files changed, 23 insertions(+), 0 deletions(-)
+
+diff --git a/board/pxa/common/freq_ll.S b/board/pxa/common/freq_ll.S
+index 0a64fb6..fa53f03 100644
+--- a/board/pxa/common/freq_ll.S
++++ b/board/pxa/common/freq_ll.S
+@@ -168,6 +168,29 @@ freq_sram_start:
+ 	str	r7, [r6, #0x04]
+ 
+ 4:
++	cmp	r2, #0x3
++	bne	5f
++	@ select PLL2 frequency, 546MHz
++	ldr	r7, =0x08600362
++	str	r7, [r5, #0x0414]
++	ldr	r7, =0x00FFFE00
++	str	r7, [r5, #0x0034]
++	ldr	r7, =0x0021f200
++	str	r7, [r5, #0x0034]
++	ldr	r7, =0x0021f300
++	str	r7, [r5, #0x0034]
++	ldr	r7, =0x28600362
++	str	r7, [r5, #0x0414]
++	@ select clock source, PJ4-PLL1, SP-PLL1/2, AXI/DDR-PLL1
++	ldr	r7, =0x20800000
++	str	r7, [r5, #0x0008]
++	@ divider setting and frequency change request, core-400, ddr-400, axi-200
++	ldr	r7, =0x08fd8249
++	str	r7, [r6, #0x00]
++	ldr	r7, =0x78fd8249
++	str	r7, [r6, #0x04]
++
++5:
+ 	@
+ 	@ ddr re-calibration after frequency change
+ 	@
+-- 
+1.6.0.4
+

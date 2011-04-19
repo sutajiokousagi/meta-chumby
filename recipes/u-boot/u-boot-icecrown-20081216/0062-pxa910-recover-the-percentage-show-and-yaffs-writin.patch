@@ -1,0 +1,86 @@
+From c1193cb4d3b08cf0e7ac589625a1b74f8cfc85ad Mon Sep 17 00:00:00 2001
+From: Lei Wen <leiwen@marvell.com>
+Date: Thu, 21 May 2009 14:13:18 +0800
+Subject: [PATCH] pxa910: recover the percentage show and yaffs writing with onenand
+
+Signed-off-by: Lei Wen <leiwen@marvell.com>
+---
+ drivers/mtd/onenand/onenand_base.c |   32 +++++++++++++++++++++++++++++++-
+ 1 files changed, 31 insertions(+), 1 deletions(-)
+
+diff --git a/drivers/mtd/onenand/onenand_base.c b/drivers/mtd/onenand/onenand_base.c
+index c0353ff..9f22c0c 100644
+--- a/drivers/mtd/onenand/onenand_base.c
++++ b/drivers/mtd/onenand/onenand_base.c
+@@ -1472,6 +1472,10 @@ static int onenand_fill_auto_oob(struct mtd_info *mtd, u_char *oob_buf,
+ 	return 0;
+ }
+ 
++static inline int notsizealigned(int x, int pagesize) {
++	return x % pagesize;
++}
++
+ /**
+  * onenand_write_ops_nolock - [OneNAND Interface] write main and/or out-of-band
+  * @param mtd		MTD device structure
+@@ -1492,6 +1496,11 @@ static int onenand_write_ops_nolock(struct mtd_info *mtd, loff_t to,
+ 	const u_char *oob = ops->oobbuf;
+ 	u_char *oobbuf;
+ 	int ret = 0;
++	int pagesize;
++	int is_yaffs;
++
++	is_yaffs = (oob != NULL && oob == buf) ? 1 : 0;
++	pagesize = (is_yaffs) ? (mtd->writesize + mtd->oobsize) : (mtd->writesize);
+ 
+ 	DEBUG(MTD_DEBUG_LEVEL3, "onenand_write_ops_nolock: to = 0x%08x, len = %i\n", (unsigned int) to, (int) len);
+ 
+@@ -1506,7 +1515,7 @@ static int onenand_write_ops_nolock(struct mtd_info *mtd, loff_t to,
+ 	}
+ 
+ 	/* Reject writes, which are not page aligned */
+-        if (unlikely(NOTALIGNED(to) || NOTALIGNED(len))) {
++        if (unlikely(NOTALIGNED(to) || notsizealigned(len, pagesize))) {
+                 printk(KERN_ERR "onenand_write_ops_nolock: Attempt to write not page aligned data\n");
+                 return -EINVAL;
+         }
+@@ -1541,6 +1550,12 @@ static int onenand_write_ops_nolock(struct mtd_info *mtd, loff_t to,
+ 
+ 		this->write_bufferram(mtd, ONENAND_DATARAM, wbuf, 0, mtd->writesize);
+ 
++		if (is_yaffs) {
++			oob = wbuf + mtd->writesize;
++			buf += mtd->oobsize;
++			written += mtd->oobsize;
++		}
++
+ 		if (oob) {
+ 			oobbuf = this->oob_buf;
+ 
+@@ -1591,8 +1606,23 @@ static int onenand_write_ops_nolock(struct mtd_info *mtd, loff_t to,
+ 		column = 0;
+ 		to += thislen;
+ 		buf += thislen;
++
++		if (!strcmp(mtd->owner, "UBOOT"))
++		{
++			int n = written;
++
++			n = n / (len / 100);
++			printf("\rWriting data at 0x%x "
++					"-- %3d%% complete.",
++					(unsigned int)to, n);
++		}
+ 	}
+ 
++
++	if (!strcmp(mtd->owner, "UBOOT"))
++		printf("\rWriting data at 0x%x "
++				"-- %3d%% complete.",
++				(unsigned int)to, 100);
+ 	ops->retlen = written;
+ 
+ 	return ret;
+-- 
+1.6.0.4
+

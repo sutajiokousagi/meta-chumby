@@ -1,0 +1,103 @@
+From 9614c69d435b0e5b2c0d315c82eb5d22e1e366fc Mon Sep 17 00:00:00 2001
+From: Lei Wen <leiwen@marvell.com>
+Date: Thu, 12 Mar 2009 09:37:34 +0800
+Subject: [PATCH] pxa910: prolong the boot delay to 10s
+
+---
+ Makefile                    |    6 +++---
+ include/configs/aspenite.h  |    2 +-
+ include/configs/avengers.h  |    2 +-
+ include/configs/tavorevb.h  |    2 +-
+ include/configs/ttc_dkb.h   |    2 +-
+ include/configs/zylonite2.h |    2 +-
+ 6 files changed, 8 insertions(+), 8 deletions(-)
+
+diff --git a/Makefile b/Makefile
+index 2a3506e..52d3500 100644
+--- a/Makefile
++++ b/Makefile
+@@ -2570,13 +2570,13 @@ zylonite2_config:       unconfig
+ avengers_config:	unconfig
+ 	@$(MKCONFIG) $(@:_config=) arm 88SV331xV5 avengers  pxa pxa168
+ 
++ttc_dkb_config	:	unconfig
++	@$(MKCONFIG) $(@:_config=) arm 88SV331xV5 ttc_dkb   pxa pxa168
++
+ #########################################################################
+ ## ARM92xT Systems
+ #########################################################################
+ 
+-ttc_dkb_config	:	unconfig
+-	@$(MKCONFIG) $(@:_config=) arm 88SV331xV5 ttc_dkb pxa pxa168
+-
+ #########################################################################
+ ## Atmel AT91RM9200 Systems
+ #########################################################################
+diff --git a/include/configs/aspenite.h b/include/configs/aspenite.h
+index e20e1ab..83040c7 100644
+--- a/include/configs/aspenite.h
++++ b/include/configs/aspenite.h
+@@ -106,7 +106,7 @@
+ #define CONFIG_SYS_INITRD_SIZE      	"400000"
+ #undef  CONFIG_BOOTARGS
+ 
+-#define CONFIG_BOOTDELAY        	3
++#define CONFIG_BOOTDELAY        	10
+ 
+ #if (CONFIG_BOOTDELAY >= 0)
+ 
+diff --git a/include/configs/avengers.h b/include/configs/avengers.h
+index d8233fa..65e83cf 100644
+--- a/include/configs/avengers.h
++++ b/include/configs/avengers.h
+@@ -106,7 +106,7 @@
+ #define CONFIG_SYS_INITRD_SIZE      	"400000"
+ #undef  CONFIG_BOOTARGS
+ 
+-#define CONFIG_BOOTDELAY        	3
++#define CONFIG_BOOTDELAY        	10
+ 
+ #if (CONFIG_BOOTDELAY >= 0)
+ 
+diff --git a/include/configs/tavorevb.h b/include/configs/tavorevb.h
+index 1e927e4..b5a6a33 100644
+--- a/include/configs/tavorevb.h
++++ b/include/configs/tavorevb.h
+@@ -109,7 +109,7 @@
+ #define CONFIG_SYS_INITRD_SIZE      	"400000"
+ #undef  CONFIG_BOOTARGS
+ 
+-#define CONFIG_BOOTDELAY        	3
++#define CONFIG_BOOTDELAY        	10
+ 
+ #if (CONFIG_BOOTDELAY >= 0)
+ 
+diff --git a/include/configs/ttc_dkb.h b/include/configs/ttc_dkb.h
+index 7caa71f..d534d96 100644
+--- a/include/configs/ttc_dkb.h
++++ b/include/configs/ttc_dkb.h
+@@ -108,7 +108,7 @@
+ #define CONFIG_SYS_INITRD_SIZE      	"400000"
+ #undef  CONFIG_BOOTARGS
+ 
+-#define CONFIG_BOOTDELAY        	3
++#define CONFIG_BOOTDELAY        	10
+ 
+ #if (CONFIG_BOOTDELAY >= 0)
+ 
+diff --git a/include/configs/zylonite2.h b/include/configs/zylonite2.h
+index 9a4b7db..bfb31dc 100644
+--- a/include/configs/zylonite2.h
++++ b/include/configs/zylonite2.h
+@@ -106,7 +106,7 @@
+ #define CONFIG_SYS_INITRD_SIZE      	"400000"
+ #undef  CONFIG_BOOTARGS
+ 
+-#define CONFIG_BOOTDELAY        	3
++#define CONFIG_BOOTDELAY        	10
+ 
+ #if (CONFIG_BOOTDELAY >= 0)
+ 
+-- 
+1.6.0.4
+
