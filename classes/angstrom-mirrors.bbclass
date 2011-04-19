@@ -1,5 +1,6 @@
 # By default, consult angstrom mirrors last for git and svn
 # Let all other URL types consult angstrom-mirrors first.
+# This overrides the class bundled with openembedded.
 
 PREMIRRORS_append () {
 cvs://.*/.* http://www.angstrom-distribution.org/unstable/sources/
