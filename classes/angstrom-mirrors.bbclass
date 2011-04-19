@@ -1,4 +1,5 @@
 # By default, consult angstrom mirrors last for git and svn
+# Let all other URL types consult angstrom-mirrors first.
 
 PREMIRRORS_append () {
 cvs://.*/.* http://www.angstrom-distribution.org/unstable/sources/
