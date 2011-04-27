@@ -9,15 +9,12 @@ IMAGE_CMD_ext3 = "genext2fs -N 50000 -b ${ROOTFS_SIZE} -d ${IMAGE_ROOTFS} ${DEPL
 EXTRA_IMAGEDEPENDS += "makedisk-native config-util-native virtual/kernel virtual/bootloader chumby-blobs virtual/chumby-bootimage"
 MACHINE_POSTPROCESS_COMMAND = "chumby_make_rom"
 
-FEED_DEPLOYDIR_BASE_URI = "http://175.41.134.235:10230/oe-repo"
-
 chumby_make_rom () {
 
     # Make full boot ROM
     install -d ${DEPLOY_DIR_IMAGE}
     makedisk -o ${DEPLOY_DIR_IMAGE}/rom-${MACHINE}-${IMAGE_BASENAME}.img \
              -a 16M:0x53:${DEPLOY_DIR_IMAGE}/boot-${MACHINE}.bin \
-             -a ${ROOTFS_SIZE}k:0x83:${DEPLOY_DIR_IMAGE}/${IMAGE_LINK_NAME}.ext3 \
              -a ${ROOTFS_SIZE}k:0x83:${DEPLOY_DIR_IMAGE}/${IMAGE_LINK_NAME}.ext3
     package_stagefile_shell ${DEPLOY_DIR_IMAGE}/rom-${MACHINE}-${IMAGE_BASENAME}.img
 }
