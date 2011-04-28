@@ -1,2 +1,2 @@
 inherit native
-require config-util.inc
+require config-util-native.inc
