@@ -2,7 +2,7 @@
 # the original site is much faster.
 # This overrides the class bundled with openembedded.
 
-POSTMIRRORS_append () {
+MIRRORS_append () {
 svn://.*/.* http://www.angstrom-distribution.org/unstable/sources/
 git://.*/.* http://www.angstrom-distribution.org/unstable/sources/
 cvs://.*/.* http://www.angstrom-distribution.org/unstable/sources/
