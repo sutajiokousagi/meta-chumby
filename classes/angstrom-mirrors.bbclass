@@ -2,7 +2,7 @@
 # the original site is much faster.
 # This overrides the class bundled with openembedded.
 
-MIRRORS_append () {
+PREMIRRORS_append () {
 svn://.*/.* http://git.chumby.com.sg/sources-mirror/
 git://.*/.* http://git.chumby.com.sg/sources-mirror/
 cvs://.*/.* http://git.chumby.com.sg/sources-mirror/
