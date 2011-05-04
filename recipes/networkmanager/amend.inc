@@ -1,4 +1,4 @@
-PR .= "-amend"
+PR .= "-amend-r1"
 SRC_URI += "file://0001-add-chumby-plugin.patch \
             file://0002-fix-username-attribute.patch \
             file://0003-make-plugin-parsing-more-robust.patch \
