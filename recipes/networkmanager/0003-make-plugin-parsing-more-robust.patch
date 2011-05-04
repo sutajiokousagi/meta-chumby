@@ -1,0 +1,891 @@
+From b2c323893aef209dc84615be27030fed5db6d8c9 Mon Sep 17 00:00:00 2001
+From: Sean Cross <sean@chumby.com>
+Date: Wed, 4 May 2011 23:47:09 +0800
+Subject: [PATCH 2/3] networkmanager: Make plugin parsing more robust
+
+---
+ system-settings/plugins/chumby/Makefile    |   37 +++-
+ system-settings/plugins/chumby/Makefile.am |    2 +
+ system-settings/plugins/chumby/Makefile.in |   37 +++-
+ system-settings/plugins/chumby/config.c    |  346 ++++++++++++++++++++++++++++
+ system-settings/plugins/chumby/config.h    |   91 ++++++++
+ system-settings/plugins/chumby/plugin.c    |  197 +---------------
+ 6 files changed, 521 insertions(+), 189 deletions(-)
+ create mode 100644 system-settings/plugins/chumby/config.c
+ create mode 100644 system-settings/plugins/chumby/config.h
+
+diff --git a/system-settings/plugins/chumby/Makefile b/system-settings/plugins/chumby/Makefile
+index b63356c..87820d7 100644
+--- a/system-settings/plugins/chumby/Makefile
++++ b/system-settings/plugins/chumby/Makefile
+@@ -37,7 +37,12 @@ host_triplet = arm-angstrom-linux-gnueabi
+ subdir = system-settings/plugins/chumby
+ DIST_COMMON = $(srcdir)/Makefile.am $(srcdir)/Makefile.in
+ ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
+-am__aclocal_m4_deps = $(top_srcdir)/configure.ac
++am__aclocal_m4_deps = $(top_srcdir)/m4/compiler_warnings.m4 \
++	$(top_srcdir)/m4/gtk-doc.m4 $(top_srcdir)/m4/intltool.m4 \
++	$(top_srcdir)/m4/libnl-check.m4 $(top_srcdir)/m4/libtool.m4 \
++	$(top_srcdir)/m4/ltoptions.m4 $(top_srcdir)/m4/ltsugar.m4 \
++	$(top_srcdir)/m4/ltversion.m4 $(top_srcdir)/m4/lt~obsolete.m4 \
++	$(top_srcdir)/configure.ac
+ am__configure_deps = $(am__aclocal_m4_deps) $(CONFIGURE_DEPENDENCIES) \
+ 	$(ACLOCAL_M4)
+ mkinstalldirs = $(SHELL) $(top_srcdir)/mkinstalldirs
+@@ -74,6 +79,7 @@ libnm_settings_plugin_chumby_la_DEPENDENCIES =  \
+ 	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1)
+ am_libnm_settings_plugin_chumby_la_OBJECTS =  \
+ 	libnm_settings_plugin_chumby_la-plugin.lo \
++	libnm_settings_plugin_chumby_la-config.lo \
+ 	libnm_settings_plugin_chumby_la-nm-chumby-connection.lo
+ libnm_settings_plugin_chumby_la_OBJECTS =  \
+ 	$(am_libnm_settings_plugin_chumby_la_OBJECTS)
+@@ -160,10 +166,29 @@ INSTALL_SCRIPT = ${INSTALL}
+ INSTALL_STRIP_PROGRAM = $(install_sh) -c -s
+ INSTOBJEXT = .mo
+ INTLLIBS = 
++INTLTOOL_CAVES_RULE = %.caves:     %.caves.in     $(INTLTOOL_MERGE) $(wildcard $(top_srcdir)/po/*.po) ; LC_ALL=C $(INTLTOOL_MERGE) -d -u -c $(top_builddir)/po/.intltool-merge-cache $(top_srcdir)/po $< $@
++INTLTOOL_DESKTOP_RULE = %.desktop:   %.desktop.in   $(INTLTOOL_MERGE) $(wildcard $(top_srcdir)/po/*.po) ; LC_ALL=C $(INTLTOOL_MERGE) -d -u -c $(top_builddir)/po/.intltool-merge-cache $(top_srcdir)/po $< $@
++INTLTOOL_DIRECTORY_RULE = %.directory: %.directory.in $(INTLTOOL_MERGE) $(wildcard $(top_srcdir)/po/*.po) ; LC_ALL=C $(INTLTOOL_MERGE) -d -u -c $(top_builddir)/po/.intltool-merge-cache $(top_srcdir)/po $< $@
+ INTLTOOL_EXTRACT = /home/user/chumby-oe/output-angstrom-.9/sysroots/i686-linux/usr/bin/intltool-extract
++INTLTOOL_KBD_RULE = %.kbd:       %.kbd.in       $(INTLTOOL_MERGE) $(wildcard $(top_srcdir)/po/*.po) ; LC_ALL=C $(INTLTOOL_MERGE) -x -u -m -c $(top_builddir)/po/.intltool-merge-cache $(top_srcdir)/po $< $@
++INTLTOOL_KEYS_RULE = %.keys:      %.keys.in      $(INTLTOOL_MERGE) $(wildcard $(top_srcdir)/po/*.po) ; LC_ALL=C $(INTLTOOL_MERGE) -k -u -c $(top_builddir)/po/.intltool-merge-cache $(top_srcdir)/po $< $@
+ INTLTOOL_MERGE = /home/user/chumby-oe/output-angstrom-.9/sysroots/i686-linux/usr/bin/intltool-merge
++INTLTOOL_OAF_RULE = %.oaf:       %.oaf.in       $(INTLTOOL_MERGE) $(wildcard $(top_srcdir)/po/*.po) ; LC_ALL=C $(INTLTOOL_MERGE) -o -p $(top_srcdir)/po $< $@
+ INTLTOOL_PERL = /home/user/chumby-oe/output-angstrom-.9/sysroots/i686-linux/usr/bin/perl
++INTLTOOL_POLICY_RULE = %.policy:    %.policy.in    $(INTLTOOL_MERGE) $(wildcard $(top_srcdir)/po/*.po) ; LC_ALL=C $(INTLTOOL_MERGE) -x -u -c $(top_builddir)/po/.intltool-merge-cache $(top_srcdir)/po $< $@
++INTLTOOL_PONG_RULE = %.pong:      %.pong.in      $(INTLTOOL_MERGE) $(wildcard $(top_srcdir)/po/*.po) ; LC_ALL=C $(INTLTOOL_MERGE) -x -u -c $(top_builddir)/po/.intltool-merge-cache $(top_srcdir)/po $< $@
++INTLTOOL_PROP_RULE = %.prop:      %.prop.in      $(INTLTOOL_MERGE) $(wildcard $(top_srcdir)/po/*.po) ; LC_ALL=C $(INTLTOOL_MERGE) -d -u -c $(top_builddir)/po/.intltool-merge-cache $(top_srcdir)/po $< $@
++INTLTOOL_SCHEMAS_RULE = %.schemas:   %.schemas.in   $(INTLTOOL_MERGE) $(wildcard $(top_srcdir)/po/*.po) ; LC_ALL=C $(INTLTOOL_MERGE) -s -u -c $(top_builddir)/po/.intltool-merge-cache $(top_srcdir)/po $< $@
++INTLTOOL_SERVER_RULE = %.server:    %.server.in    $(INTLTOOL_MERGE) $(wildcard $(top_srcdir)/po/*.po) ; LC_ALL=C $(INTLTOOL_MERGE) -o -u -c $(top_builddir)/po/.intltool-merge-cache $(top_srcdir)/po $< $@
++INTLTOOL_SERVICE_RULE = %.service: %.service.in   $(INTLTOOL_MERGE) $(wildcard $(top_srcdir)/po/*.po) ; LC_ALL=C $(INTLTOOL_MERGE) -d -u -c $(top_builddir)/po/.intltool-merge-cache $(top_srcdir)/po $< $@
++INTLTOOL_SHEET_RULE = %.sheet:     %.sheet.in     $(INTLTOOL_MERGE) $(wildcard $(top_srcdir)/po/*.po) ; LC_ALL=C $(INTLTOOL_MERGE) -x -u -c $(top_builddir)/po/.intltool-merge-cache $(top_srcdir)/po $< $@
++INTLTOOL_SOUNDLIST_RULE = %.soundlist: %.soundlist.in $(INTLTOOL_MERGE) $(wildcard $(top_srcdir)/po/*.po) ; LC_ALL=C $(INTLTOOL_MERGE) -d -u -c $(top_builddir)/po/.intltool-merge-cache $(top_srcdir)/po $< $@
++INTLTOOL_THEME_RULE = %.theme:     %.theme.in     $(INTLTOOL_MERGE) $(wildcard $(top_srcdir)/po/*.po) ; LC_ALL=C $(INTLTOOL_MERGE) -d -u -c $(top_builddir)/po/.intltool-merge-cache $(top_srcdir)/po $< $@
++INTLTOOL_UI_RULE = %.ui:        %.ui.in        $(INTLTOOL_MERGE) $(wildcard $(top_srcdir)/po/*.po) ; LC_ALL=C $(INTLTOOL_MERGE) -x -u -c $(top_builddir)/po/.intltool-merge-cache $(top_srcdir)/po $< $@
+ INTLTOOL_UPDATE = /home/user/chumby-oe/output-angstrom-.9/sysroots/i686-linux/usr/bin/intltool-update
++INTLTOOL_XAM_RULE = %.xam:       %.xml.in       $(INTLTOOL_MERGE) $(wildcard $(top_srcdir)/po/*.po) ; LC_ALL=C $(INTLTOOL_MERGE) -x -u -c $(top_builddir)/po/.intltool-merge-cache $(top_srcdir)/po $< $@
++INTLTOOL_XML_NOMERGE_RULE = %.xml:       %.xml.in       $(INTLTOOL_MERGE) ; LC_ALL=C $(INTLTOOL_MERGE) -x -u /tmp $< $@
++INTLTOOL_XML_RULE = %.xml:       %.xml.in       $(INTLTOOL_MERGE) $(wildcard $(top_srcdir)/po/*.po) ; LC_ALL=C $(INTLTOOL_MERGE) -x -u -c $(top_builddir)/po/.intltool-merge-cache $(top_srcdir)/po $< $@
+ IPTABLES_PATH = /usr/sbin/iptables
+ LD = arm-angstrom-linux-gnueabi-ld --sysroot=/home/user/chumby-oe/output-angstrom-.9/sysroots/armv5te-angstrom-linux-gnueabi
+ LDFLAGS = -Wl,-O1 -Wl,--hash-style=gnu
+@@ -281,6 +306,8 @@ pkglib_LTLIBRARIES = libnm-settings-plugin-chumby.la
+ libnm_settings_plugin_chumby_la_SOURCES = \
+ 	plugin.c \
+ 	plugin.h \
++	config.c \
++	config.h \
+ 	nm-chumby-connection.c \
+ 	nm-chumby-connection.h
+ 
+@@ -378,6 +405,7 @@ mostlyclean-compile:
+ distclean-compile:
+ 	-rm -f *.tab.c
+ 
++include ./$(DEPDIR)/libnm_settings_plugin_chumby_la-config.Plo
+ include ./$(DEPDIR)/libnm_settings_plugin_chumby_la-nm-chumby-connection.Plo
+ include ./$(DEPDIR)/libnm_settings_plugin_chumby_la-plugin.Plo
+ 
+@@ -412,6 +440,13 @@ libnm_settings_plugin_chumby_la-plugin.lo: plugin.c
+ #	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) \
+ #	$(LIBTOOL)  --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libnm_settings_plugin_chumby_la_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -c -o libnm_settings_plugin_chumby_la-plugin.lo `test -f 'plugin.c' || echo '$(srcdir)/'`plugin.c
+ 
++libnm_settings_plugin_chumby_la-config.lo: config.c
++	$(LIBTOOL)  --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libnm_settings_plugin_chumby_la_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -MT libnm_settings_plugin_chumby_la-config.lo -MD -MP -MF $(DEPDIR)/libnm_settings_plugin_chumby_la-config.Tpo -c -o libnm_settings_plugin_chumby_la-config.lo `test -f 'config.c' || echo '$(srcdir)/'`config.c
++	$(am__mv) $(DEPDIR)/libnm_settings_plugin_chumby_la-config.Tpo $(DEPDIR)/libnm_settings_plugin_chumby_la-config.Plo
++#	source='config.c' object='libnm_settings_plugin_chumby_la-config.lo' libtool=yes \
++#	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) \
++#	$(LIBTOOL)  --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libnm_settings_plugin_chumby_la_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -c -o libnm_settings_plugin_chumby_la-config.lo `test -f 'config.c' || echo '$(srcdir)/'`config.c
++
+ libnm_settings_plugin_chumby_la-nm-chumby-connection.lo: nm-chumby-connection.c
+ 	$(LIBTOOL)  --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libnm_settings_plugin_chumby_la_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -MT libnm_settings_plugin_chumby_la-nm-chumby-connection.lo -MD -MP -MF $(DEPDIR)/libnm_settings_plugin_chumby_la-nm-chumby-connection.Tpo -c -o libnm_settings_plugin_chumby_la-nm-chumby-connection.lo `test -f 'nm-chumby-connection.c' || echo '$(srcdir)/'`nm-chumby-connection.c
+ 	$(am__mv) $(DEPDIR)/libnm_settings_plugin_chumby_la-nm-chumby-connection.Tpo $(DEPDIR)/libnm_settings_plugin_chumby_la-nm-chumby-connection.Plo
+diff --git a/system-settings/plugins/chumby/Makefile.am b/system-settings/plugins/chumby/Makefile.am
+index 502b7da..0b517d2 100644
+--- a/system-settings/plugins/chumby/Makefile.am
++++ b/system-settings/plugins/chumby/Makefile.am
+@@ -4,6 +4,8 @@ pkglib_LTLIBRARIES = libnm-settings-plugin-chumby.la
+ libnm_settings_plugin_chumby_la_SOURCES = \
+ 	plugin.c \
+ 	plugin.h \
++	config.c \
++	config.h \
+ 	nm-chumby-connection.c \
+ 	nm-chumby-connection.h
+ 
+diff --git a/system-settings/plugins/chumby/Makefile.in b/system-settings/plugins/chumby/Makefile.in
+index f914002..9676dca 100644
+--- a/system-settings/plugins/chumby/Makefile.in
++++ b/system-settings/plugins/chumby/Makefile.in
+@@ -37,7 +37,12 @@ host_triplet = @host@
+ subdir = system-settings/plugins/chumby
+ DIST_COMMON = $(srcdir)/Makefile.am $(srcdir)/Makefile.in
+ ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
+-am__aclocal_m4_deps = $(top_srcdir)/configure.ac
++am__aclocal_m4_deps = $(top_srcdir)/m4/compiler_warnings.m4 \
++	$(top_srcdir)/m4/gtk-doc.m4 $(top_srcdir)/m4/intltool.m4 \
++	$(top_srcdir)/m4/libnl-check.m4 $(top_srcdir)/m4/libtool.m4 \
++	$(top_srcdir)/m4/ltoptions.m4 $(top_srcdir)/m4/ltsugar.m4 \
++	$(top_srcdir)/m4/ltversion.m4 $(top_srcdir)/m4/lt~obsolete.m4 \
++	$(top_srcdir)/configure.ac
+ am__configure_deps = $(am__aclocal_m4_deps) $(CONFIGURE_DEPENDENCIES) \
+ 	$(ACLOCAL_M4)
+ mkinstalldirs = $(SHELL) $(top_srcdir)/mkinstalldirs
+@@ -74,6 +79,7 @@ libnm_settings_plugin_chumby_la_DEPENDENCIES =  \
+ 	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1)
+ am_libnm_settings_plugin_chumby_la_OBJECTS =  \
+ 	libnm_settings_plugin_chumby_la-plugin.lo \
++	libnm_settings_plugin_chumby_la-config.lo \
+ 	libnm_settings_plugin_chumby_la-nm-chumby-connection.lo
+ libnm_settings_plugin_chumby_la_OBJECTS =  \
+ 	$(am_libnm_settings_plugin_chumby_la_OBJECTS)
+@@ -160,10 +166,29 @@ INSTALL_SCRIPT = @INSTALL_SCRIPT@
+ INSTALL_STRIP_PROGRAM = @INSTALL_STRIP_PROGRAM@
+ INSTOBJEXT = @INSTOBJEXT@
+ INTLLIBS = @INTLLIBS@
++INTLTOOL_CAVES_RULE = @INTLTOOL_CAVES_RULE@
++INTLTOOL_DESKTOP_RULE = @INTLTOOL_DESKTOP_RULE@
++INTLTOOL_DIRECTORY_RULE = @INTLTOOL_DIRECTORY_RULE@
+ INTLTOOL_EXTRACT = @INTLTOOL_EXTRACT@
++INTLTOOL_KBD_RULE = @INTLTOOL_KBD_RULE@
++INTLTOOL_KEYS_RULE = @INTLTOOL_KEYS_RULE@
+ INTLTOOL_MERGE = @INTLTOOL_MERGE@
++INTLTOOL_OAF_RULE = @INTLTOOL_OAF_RULE@
+ INTLTOOL_PERL = @INTLTOOL_PERL@
++INTLTOOL_POLICY_RULE = @INTLTOOL_POLICY_RULE@
++INTLTOOL_PONG_RULE = @INTLTOOL_PONG_RULE@
++INTLTOOL_PROP_RULE = @INTLTOOL_PROP_RULE@
++INTLTOOL_SCHEMAS_RULE = @INTLTOOL_SCHEMAS_RULE@
++INTLTOOL_SERVER_RULE = @INTLTOOL_SERVER_RULE@
++INTLTOOL_SERVICE_RULE = @INTLTOOL_SERVICE_RULE@
++INTLTOOL_SHEET_RULE = @INTLTOOL_SHEET_RULE@
++INTLTOOL_SOUNDLIST_RULE = @INTLTOOL_SOUNDLIST_RULE@
++INTLTOOL_THEME_RULE = @INTLTOOL_THEME_RULE@
++INTLTOOL_UI_RULE = @INTLTOOL_UI_RULE@
+ INTLTOOL_UPDATE = @INTLTOOL_UPDATE@
++INTLTOOL_XAM_RULE = @INTLTOOL_XAM_RULE@
++INTLTOOL_XML_NOMERGE_RULE = @INTLTOOL_XML_NOMERGE_RULE@
++INTLTOOL_XML_RULE = @INTLTOOL_XML_RULE@
+ IPTABLES_PATH = @IPTABLES_PATH@
+ LD = @LD@
+ LDFLAGS = @LDFLAGS@
+@@ -281,6 +306,8 @@ pkglib_LTLIBRARIES = libnm-settings-plugin-chumby.la
+ libnm_settings_plugin_chumby_la_SOURCES = \
+ 	plugin.c \
+ 	plugin.h \
++	config.c \
++	config.h \
+ 	nm-chumby-connection.c \
+ 	nm-chumby-connection.h
+ 
+@@ -378,6 +405,7 @@ mostlyclean-compile:
+ distclean-compile:
+ 	-rm -f *.tab.c
+ 
++@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libnm_settings_plugin_chumby_la-config.Plo@am__quote@
+ @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libnm_settings_plugin_chumby_la-nm-chumby-connection.Plo@am__quote@
+ @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libnm_settings_plugin_chumby_la-plugin.Plo@am__quote@
+ 
+@@ -412,6 +440,13 @@ libnm_settings_plugin_chumby_la-plugin.lo: plugin.c
+ @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+ @am__fastdepCC_FALSE@	$(LIBTOOL)  --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libnm_settings_plugin_chumby_la_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -c -o libnm_settings_plugin_chumby_la-plugin.lo `test -f 'plugin.c' || echo '$(srcdir)/'`plugin.c
+ 
++libnm_settings_plugin_chumby_la-config.lo: config.c
++@am__fastdepCC_TRUE@	$(LIBTOOL)  --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libnm_settings_plugin_chumby_la_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -MT libnm_settings_plugin_chumby_la-config.lo -MD -MP -MF $(DEPDIR)/libnm_settings_plugin_chumby_la-config.Tpo -c -o libnm_settings_plugin_chumby_la-config.lo `test -f 'config.c' || echo '$(srcdir)/'`config.c
++@am__fastdepCC_TRUE@	$(am__mv) $(DEPDIR)/libnm_settings_plugin_chumby_la-config.Tpo $(DEPDIR)/libnm_settings_plugin_chumby_la-config.Plo
++@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='config.c' object='libnm_settings_plugin_chumby_la-config.lo' libtool=yes @AMDEPBACKSLASH@
++@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
++@am__fastdepCC_FALSE@	$(LIBTOOL)  --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libnm_settings_plugin_chumby_la_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -c -o libnm_settings_plugin_chumby_la-config.lo `test -f 'config.c' || echo '$(srcdir)/'`config.c
++
+ libnm_settings_plugin_chumby_la-nm-chumby-connection.lo: nm-chumby-connection.c
+ @am__fastdepCC_TRUE@	$(LIBTOOL)  --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libnm_settings_plugin_chumby_la_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -MT libnm_settings_plugin_chumby_la-nm-chumby-connection.lo -MD -MP -MF $(DEPDIR)/libnm_settings_plugin_chumby_la-nm-chumby-connection.Tpo -c -o libnm_settings_plugin_chumby_la-nm-chumby-connection.lo `test -f 'nm-chumby-connection.c' || echo '$(srcdir)/'`nm-chumby-connection.c
+ @am__fastdepCC_TRUE@	$(am__mv) $(DEPDIR)/libnm_settings_plugin_chumby_la-nm-chumby-connection.Tpo $(DEPDIR)/libnm_settings_plugin_chumby_la-nm-chumby-connection.Plo
+diff --git a/system-settings/plugins/chumby/config.c b/system-settings/plugins/chumby/config.c
+new file mode 100644
+index 0000000..8f2ce45
+--- /dev/null
++++ b/system-settings/plugins/chumby/config.c
+@@ -0,0 +1,346 @@
++/**
++ * section: Tree
++ * synopsis: Navigates a tree to print element names
++ * purpose: Parse a file to a tree, use xmlDocGetRootElement() to
++ *          get the root element, then walk the document and print
++ *          all the element name in document order.
++ * usage: tree1 filename_or_URL
++ * test: tree1 test2.xml > tree1.tmp ; diff tree1.tmp tree1.res ; rm tree1.tmp
++ * author: Dodji Seketeli
++ * copy: see Copyright for the status of this software.
++ */
++#include <stdio.h>
++#include <string.h>
++#include <stdint.h>
++#include <ctype.h>
++#include <libxml/parser.h>
++#include <libxml/tree.h>
++#include <glib.h>
++#include <sys/stat.h>
++#include <arpa/inet.h>
++#include <sys/stat.h>
++#include <netinet/ether.h>
++
++#include "config.h"
++
++#define SYSTEM_CONNECTIONS_PATH "/etc/NetworkManager/system-connections"
++
++void
++md5touuid(gchar *input, gchar *output, gint32 output_size)
++{
++	int input_i, output_i;
++	bzero(output, output_size);
++
++	for(input_i = output_i = 0; output_i < output_size-1; output_i++, input_i++)
++	{
++		output[output_i] = input[input_i];
++		if(input_i == 7 || input_i == 11 || input_i == 15 || input_i == 19)
++		{
++			output[++output_i] = '-';
++		}
++	}
++}
++
++static void 
++strtoip(char *s, uint32_t *addr) 
++{ 
++	*addr = inet_addr(s);
++}
++
++void
++generate_uuid(struct connection *conn, gchar *id, guint32 id_size)
++{
++    /* Make the UUID just be a hash of the SSID */
++    gchar *raw_id;
++    raw_id = g_compute_checksum_for_data(G_CHECKSUM_MD5, (guchar *)conn, sizeof(*conn));
++    md5touuid(raw_id, id, id_size);
++}
++
++#if 0
++static void
++print_ssid(FILE *output, struct connection *conn)
++{
++	int i;
++	int printable = TRUE;
++	/* Check whether each byte is printable.  If not, we have to use an
++	 * integer list, otherwise we can just use a string.
++	 */
++	for (i = 0; i < conn->phy.wlan.ssid_len; i++) {
++		char c = conn->phy.wlan.ssid[i] & 0xFF;
++		if (!isprint (c)) {
++			printable = FALSE;
++			break;
++		}
++	}
++
++//	if (printable)
++//		fprintf(output, "%s\n", conn->phy.wlan.ssid);
++//	else
++	{
++		for (i=0; i < conn->phy.wlan.ssid_len; i++)
++			fprintf(output, "%d;", conn->phy.wlan.ssid[i]);
++		fprintf(output, "\n");
++	}
++}
++#endif
++
++/*
++ *To compile this file using gcc you can type
++ *gcc `xml2-config --cflags --libs` -o xmlexample libxml2-example.c
++ */
++
++/**
++ * print_element_names:
++ * @a_node: the initial xml node to consider.
++ *
++ * Prints the names of the all the xml elements
++ * that are siblings or children of a given xml node.
++ */
++gchar *
++read_connection(struct connection *conn, xmlNode * a_node)
++{
++	static gchar err[512];
++	bzero(conn, sizeof(*conn));
++	xmlAttr *properties = a_node->properties;
++
++	/* Set some defaults */
++	conn->allocation_type = ALLOCATION_TYPE_DHCP;
++	conn->connection_type = CONNECTION_TYPE_WLAN;
++	conn->phy.wlan.auth_type = AUTH_TYPE_OPEN;
++	conn->phy.wlan.encryption_type = ENCRYPTION_TYPE_NONE;
++	conn->phy.wlan.key_type = KEY_TYPE_ASCII;
++
++	for(properties = a_node->properties; properties; properties = properties->next) {
++		char *name = (char *)properties->name;
++		char *value = (char *)properties->children->content;
++
++		if(!strcmp(name, "type")) {
++			if(!strcmp(value, "wlan"))
++				conn->connection_type = CONNECTION_TYPE_WLAN;
++			else if(!strcmp(value, "lan"))
++				conn->connection_type = CONNECTION_TYPE_LAN;
++			else {
++				conn->connection_type = CONNECTION_TYPE_UNKNOWN;
++				g_snprintf(err, sizeof(err), "Unrecognized connection type: %s\n", value);
++				return err;
++			}
++		}
++
++		else if(!strcmp(name, "hwaddr"))
++			strncpy(conn->phy.wlan.hwaddr, value, sizeof(conn->phy.wlan.hwaddr)-1);
++
++		else if(!strcmp(name, "ssid")) {
++			strncpy(conn->phy.wlan.ssid, value, sizeof(conn->phy.wlan.ssid)-1);
++			conn->phy.wlan.ssid_len = xmlUTF8Size(properties->name);
++		}
++
++		else if(!strcmp(name, "auth")) {
++			if(!strcmp(value, "OPEN"))
++				conn->phy.wlan.auth_type = AUTH_TYPE_OPEN;
++			else if(!strcmp(value, "WEPAUTO"))
++				conn->phy.wlan.auth_type = AUTH_TYPE_WEPAUTO;
++			else if(!strcmp(value, "WPAPSK"))
++				conn->phy.wlan.auth_type = AUTH_TYPE_WPAPSK;
++			else if(!strcmp(value, "WPA2PSK"))
++				conn->phy.wlan.auth_type = AUTH_TYPE_WPA2PSK;
++			else {
++				conn->phy.wlan.auth_type = AUTH_TYPE_UNKNOWN;
++				g_snprintf(err, sizeof(err), "Unrecognized auth: %s\n", value);
++				return err;
++			}
++		}
++
++		else if(!strcmp(name, "encryption")) {
++			if(!strcmp(value, "NONE"))
++				conn->phy.wlan.encryption_type = ENCRYPTION_TYPE_NONE;
++			else if(!strcmp(value, "WEP"))
++				conn->phy.wlan.encryption_type = ENCRYPTION_TYPE_WEP;
++			else if(!strcmp(value, "TKIP"))
++				conn->phy.wlan.encryption_type = ENCRYPTION_TYPE_TKIP;
++			else if(!strcmp(value, "AES"))
++				conn->phy.wlan.encryption_type = ENCRYPTION_TYPE_AES;
++			else {
++				conn->phy.wlan.encryption_type = ENCRYPTION_TYPE_UNKNOWN;
++				g_snprintf(err, sizeof(err), "Unrecognized encryption: %s\n", value);
++				return err;
++			}
++		}
++
++		else if(!strcmp(name, "encoding")) {
++			if(!strcmp(value, "ascii"))
++				conn->phy.wlan.key_type = KEY_TYPE_ASCII;
++			else if(!strcmp(value, "hex"))
++				conn->phy.wlan.key_type = KEY_TYPE_HEX;
++			else {
++				conn->phy.wlan.key_type = KEY_TYPE_UNKNOWN;
++				g_snprintf(err, sizeof(err), "Unrecognized encoding type: %s\n", value);
++				return err;
++			}
++		}
++
++		else if(!strcmp(name, "key"))
++			strncpy(conn->phy.wlan.key, value, sizeof(conn->phy.wlan.key)-1);
++
++		else if(!strcmp(name, "allocation")) {
++			if(!strcmp(value, "static"))
++				conn->allocation_type = ALLOCATION_TYPE_STATIC;
++			else if(!strcmp(value, "dhcp"))
++				conn->allocation_type = ALLOCATION_TYPE_DHCP;
++			else {
++				conn->allocation_type = ALLOCATION_TYPE_UNKNOWN;
++				g_snprintf(err, sizeof(err), "Unrecognized allocation: %s\n", value);
++				return err;
++			}
++		}
++
++		else if(!strcmp(name, "ip"))
++			strtoip(value, &conn->ip);
++		else if(!strcmp(name, "netmask"))
++			strtoip(value, &conn->netmask);
++		else if(!strcmp(name, "gateway"))
++			strtoip(value, &conn->gateway);
++		else if(!strcmp(name, "nameserver1"))
++			strtoip(value, &conn->nameserver1);
++		else if(!strcmp(name, "nameserver2"))
++			strtoip(value, &conn->nameserver2);
++		else if(!strcmp(name, "username"))
++			; // Ignore
++		else {
++			fprintf(stderr, "Unrecognized field: %s\n", name);
++		}
++	}
++
++	return NULL;
++}
++
++#if 0
++void
++write_config_file(struct connection *conn)
++{
++    gchar id[40];
++    gchar filename[PATH_MAX];
++    FILE *output;
++
++    generate_uuid(conn, id, sizeof(id));
++
++    snprintf(filename, sizeof(filename), "%s/%s.conf", SYSTEM_CONNECTIONS_PATH, id);
++    umask(0077);
++    output = fopen(filename, "w");
++    if(!output) {
++        perror("Unable to open connections file for writing");
++        return;
++    }
++
++
++    fprintf(output, "[connection]\n");
++    if(conn->connection_type == CONNECTION_TYPE_WLAN)
++        fprintf(output, "id=%s\n", conn->phy.wlan.ssid);
++    else
++        fprintf(output, "id=lan\n");
++    fprintf(output, "uuid=%s\n", id);
++
++    if(conn->connection_type == CONNECTION_TYPE_WLAN) {
++        fprintf(output, "type=%s\n", "802-11-wireless");
++        fprintf(output, "\n");
++        fprintf(output, "[802-11-wireless]\n");
++        fprintf(output, "ssid=");
++        print_ssid(output, conn);
++        fprintf(output, "\n");
++
++        fprintf(output, "\n");
++
++        fprintf(output, "[802-11-wireless-security]\n");
++        if(conn->phy.wlan.auth_type == AUTH_TYPE_OPEN || conn->phy.wlan.auth_type == AUTH_TYPE_WEPAUTO) {
++            fprintf(output, "key-mgmt=none\n");
++        }
++        else if(conn->phy.wlan.auth_type == AUTH_TYPE_WPAPSK || conn->phy.wlan.auth_type == AUTH_TYPE_WPA2PSK) {
++            fprintf(output, "key-mgmt=none\n");
++        }
++
++        if(conn->phy.wlan.encryption_type == ENCRYPTION_TYPE_WEP) {
++            fprintf(output, "wep-key0=%s\n", conn->phy.wlan.key);
++            fprintf(output, "wep-key-type=1\n");
++        }
++        else if(conn->phy.wlan.encryption_type == ENCRYPTION_TYPE_AES || conn->phy.wlan.encryption_type == ENCRYPTION_TYPE_TKIP) {
++            fprintf(output, "key-mgmt=wpa-psk\n");
++            fprintf(output, "psk=%s\n", conn->phy.wlan.key);
++        }
++    }
++
++    else if(conn->connection_type == CONNECTION_TYPE_LAN) {
++        fprintf(output, "type=%s\n", "802-3-ethernet");
++        fprintf(output, "\n");
++        fprintf(output, "[802-3-ethernet]\n");
++    }
++
++
++
++    fprintf(output, "\n");
++    fprintf(output, "[ipv4]\n");
++    conn->allocation_type = ALLOCATION_TYPE_DHCP;
++    if(conn->allocation_type == ALLOCATION_TYPE_DHCP) {
++        fprintf(output, "method=auto\n");
++    }
++    else {
++        int netmask;
++        fprintf(output, "method=manual\n");
++	for(netmask=31; netmask>=0; netmask--)
++            if(conn->netmask & (1<<netmask))
++                break;
++        fprintf(output, "addresses=%u,%u,%u\n", conn->ip, netmask+1, conn->gateway);
++        fprintf(output, "dns=%u,%u\n", conn->nameserver1, conn->nameserver2);
++    }
++    fclose(output);
++}
++#endif
++
++#if 0
++/**
++ * Convert the network_configs file to NetworkManager's keyfile
++ */
++int
++convert_network_configs(char *filename)
++{
++
++    xmlDoc *doc = NULL;
++    xmlNode *root_element = NULL;
++    xmlNode *cur_node;
++
++    /*
++     * this initialize the library and check potential ABI mismatches
++     * between the version it was compiled for and the actual shared
++     * library used.
++     */
++    LIBXML_TEST_VERSION
++
++    /*parse the file and get the DOM */
++    doc = xmlReadFile(filename, NULL, 0);
++
++    if (doc == NULL) {
++        printf("error: could not parse file %s\n", filename);
++        return 1;
++    }
++
++    /*Get the root element node */
++    root_element = xmlDocGetRootElement(doc);
++    for (cur_node = root_element->children; cur_node; cur_node = cur_node->next) {
++        if (cur_node->type == XML_ELEMENT_NODE && !strcmp((char *)cur_node->name, "configuration")) {
++            struct connection conn;
++            read_connection(&conn, cur_node);
++            write_config_file(&conn);
++        }
++    }
++
++
++    /*free the document */
++    xmlFreeDoc(doc);
++
++    /*
++     *Free the global variables that may
++     *have been allocated by the parser.
++     */
++    xmlCleanupParser();
++
++    return 0;
++}
++#endif
+diff --git a/system-settings/plugins/chumby/config.h b/system-settings/plugins/chumby/config.h
+new file mode 100644
+index 0000000..cc51c1c
+--- /dev/null
++++ b/system-settings/plugins/chumby/config.h
+@@ -0,0 +1,91 @@
++#ifndef __CONFIG_H__
++#define __CONFIG_H__
++
++#include <libxml/parser.h>
++#include <libxml/tree.h>
++#include <glib.h>
++#include <stdint.h>
++
++
++enum connection_type {
++	CONNECTION_TYPE_LAN,
++	CONNECTION_TYPE_WLAN,
++	CONNECTION_TYPE_3G,
++	CONNECTION_TYPE_UNKNOWN,
++};
++
++enum key_type {
++	KEY_TYPE_ASCII,
++	KEY_TYPE_HEX,
++	KEY_TYPE_UNKNOWN,
++};
++
++enum auth_type {
++	AUTH_TYPE_OPEN,
++	AUTH_TYPE_WEPAUTO,
++	AUTH_TYPE_WPAPSK,
++	AUTH_TYPE_WPA2PSK,
++	AUTH_TYPE_UNKNOWN,
++};
++
++enum encryption_type {
++	ENCRYPTION_TYPE_NONE,
++	ENCRYPTION_TYPE_WEP,
++	ENCRYPTION_TYPE_AES,
++	ENCRYPTION_TYPE_TKIP,
++	ENCRYPTION_TYPE_UNKNOWN,
++};
++
++enum allocation_type {
++        ALLOCATION_TYPE_STATIC,
++        ALLOCATION_TYPE_DHCP,
++        ALLOCATION_TYPE_UNKNOWN,
++};
++
++struct lan_connection {
++};
++
++struct wifi_connection {
++	char ssid[64];
++	char ssid_len;
++	char hwaddr[18];
++	char key[1024];
++	enum key_type key_type;
++	enum auth_type auth_type;
++	enum encryption_type encryption_type;
++};
++
++struct connection {
++	enum connection_type connection_type;
++
++	enum allocation_type allocation_type;
++	uint32_t ip;
++	uint32_t netmask;
++	uint32_t gateway;
++	uint32_t nameserver1;
++	uint32_t nameserver2;
++
++	union {
++		struct wifi_connection wlan;
++		struct lan_connection lan;
++	} phy;
++};
++
++
++gchar *
++read_connection(struct connection *conn, xmlNode * a_node);
++
++int
++convert_network_configs(char *filename);
++
++void
++md5touuid(gchar *input, gchar *output, gint32 output_size);
++
++void
++generate_uuid(struct connection *conn, gchar *id, guint32 id_size);
++
++void
++write_config_file(struct connection *conn);
++
++
++#endif //__CONFIG_H__
+diff --git a/system-settings/plugins/chumby/plugin.c b/system-settings/plugins/chumby/plugin.c
+index 4c61c69..c463a02 100644
+--- a/system-settings/plugins/chumby/plugin.c
++++ b/system-settings/plugins/chumby/plugin.c
+@@ -54,7 +54,7 @@
+ #include <nm-setting-cdma.h>
+ #include <nm-setting-ppp.h>
+ 
+-
++#include "config.h"
+ #include "plugin.h"
+ #include "nm-system-config-interface.h"
+ 
+@@ -77,63 +77,6 @@ G_DEFINE_TYPE_EXTENDED (SCPluginChumby, sc_plugin_chumby, G_TYPE_OBJECT, 0,
+ #define CHUMBY_FILE_PATH_TAG "chumby-file-path"
+ 
+ 
+-enum connection_type {
+-        CONNECTION_TYPE_LAN,
+-        CONNECTION_TYPE_WLAN,
+-};
+-
+-enum key_type {
+-        KEY_TYPE_ASCII,
+-        KEY_TYPE_HEX,
+-};
+-
+-enum auth_type {
+-        AUTH_TYPE_OPEN,
+-        AUTH_TYPE_WEPAUTO,
+-        AUTH_TYPE_WPAPSK,
+-        AUTH_TYPE_WPA2PSK,
+-};
+-
+-enum encryption_type {
+-        ENCRYPTION_TYPE_NONE,
+-        ENCRYPTION_TYPE_WEP,
+-        ENCRYPTION_TYPE_AES,
+-        ENCRYPTION_TYPE_TKIP,
+-};
+-
+-enum allocation_type {
+-        ALLOCATION_TYPE_STATIC,
+-        ALLOCATION_TYPE_DHCP,
+-};
+-
+-struct lan_connection {
+-};
+-
+-struct wifi_connection {
+-        char ssid[64];
+-        char ssid_len;
+-        char hwaddr[18];
+-        char key[1024];
+-        enum key_type key_type;
+-        enum auth_type auth_type;
+-        enum encryption_type encryption_type;
+-};
+-
+-struct connection {
+-        enum connection_type connection_type;
+-
+-        enum allocation_type allocation_type;
+-        uint32_t ip;
+-        uint32_t netmask;
+-        uint32_t gateway;
+-        uint32_t nameserver1;
+-        uint32_t nameserver2;
+-
+-        union { 
+-                struct wifi_connection wlan;
+-                struct lan_connection lan;
+-        } phy;
+-};
+ 
+ 
+ typedef struct {
+@@ -165,31 +108,6 @@ typedef struct {
+ 
+ 
+ 
+-static void
+-md5touuid (gchar *input, gchar *output, gint32 output_size)
+-{
+-	int input_i, output_i;
+-	bzero(output, output_size);
+-
+-	for (input_i = output_i = 0; output_i < output_size-1; output_i++, input_i++) {
+-		output[output_i] = input[input_i];
+-		if (input_i == 7 || input_i == 11 || input_i == 15 || input_i == 19)
+-		{
+-			output[++output_i] = '-';
+-		}
+-	}
+-}
+-
+-static void
+-generate_uuid (struct connection *conn, gchar *id, guint32 id_size)
+-{
+-	/* Make the UUID just be a hash of the SSID */
+-	gchar *raw_id;
+-	raw_id = g_compute_checksum_for_data(G_CHECKSUM_MD5, (guchar *)conn, sizeof(*conn));
+-	md5touuid(raw_id, id, id_size);
+-}
+-
+-
+ 
+ static void
+ strtoip(char *s, uint32_t *addr)
+@@ -200,109 +118,6 @@ strtoip(char *s, uint32_t *addr)
+ 
+ 
+ static void
+-read_connection(struct connection *conn, xmlNode * a_node)
+-{
+-	xmlAttr *properties;
+-	bzero(conn, sizeof(*conn));
+-	properties = a_node->properties;
+-	for(properties = a_node->properties; properties; properties = properties->next) {
+-		char *name = (char *)properties->name;
+-		char *value = (char *)properties->children->content;
+-
+-		if(!strcmp(name, "type")) {
+-			if(!strcmp(value, "wlan"))
+-				conn->connection_type = CONNECTION_TYPE_WLAN;
+-			else if(!strcmp(value, "lan"))
+-				conn->connection_type = CONNECTION_TYPE_LAN;
+-			else {
+-				PLUGIN_PRINT("chumby", "Unrecognized connection type: %s\n", value);
+-				return;
+-			}
+-		}
+-
+-		else if(!strcmp(name, "hwaddr"))
+-			strncpy(conn->phy.wlan.hwaddr, value, sizeof(conn->phy.wlan.hwaddr)-1);
+-
+-		else if(!strcmp(name, "ssid")) {
+-			strncpy(conn->phy.wlan.ssid, value, sizeof(conn->phy.wlan.ssid)-1);
+-			conn->phy.wlan.ssid_len = xmlUTF8Size(properties->name);
+-		}
+-
+-		else if (!strcmp(name, "auth")) {
+-			if(!strcmp(value, "OPEN"))
+-				conn->phy.wlan.auth_type = AUTH_TYPE_OPEN;
+-			else if(!strcmp(value, "WEPAUTO"))
+-				conn->phy.wlan.auth_type = AUTH_TYPE_WEPAUTO;
+-			else if(!strcmp(value, "WPAPSK"))
+-				conn->phy.wlan.auth_type = AUTH_TYPE_WPAPSK;
+-			else if(!strcmp(value, "WPA2PSK"))
+-				conn->phy.wlan.auth_type = AUTH_TYPE_WPA2PSK;
+-			else {
+-				PLUGIN_PRINT("chumby", "Unrecognized auth: %s\n", value);
+-				return;
+-			}
+-		}
+-
+-		else if (!strcmp(name, "encryption")) {
+-			if(!strcmp(value, "NONE"))
+-				conn->phy.wlan.encryption_type = ENCRYPTION_TYPE_NONE;
+-			else if(!strcmp(value, "WEP"))
+-				conn->phy.wlan.encryption_type = ENCRYPTION_TYPE_WEP;
+-			else if(!strcmp(value, "TKIP"))
+-				conn->phy.wlan.encryption_type = ENCRYPTION_TYPE_TKIP;
+-			else if(!strcmp(value, "AES"))
+-				conn->phy.wlan.encryption_type = ENCRYPTION_TYPE_AES;
+-			else {
+-				PLUGIN_PRINT("chumby", "Unrecognized encryption: %s\n", value);
+-				return;
+-			}
+-		}
+-
+-		else if (!strcmp(name, "encoding")) {
+-			if(!strcmp(value, "ascii"))
+-				conn->phy.wlan.key_type = KEY_TYPE_ASCII;
+-			else if(!strcmp(value, "hex"))
+-				conn->phy.wlan.key_type = KEY_TYPE_HEX;
+-			else {
+-				PLUGIN_PRINT("chumby", "Unrecognized encoding type: %s\n", value);
+-				return;
+-			}
+-		}
+-
+-		else if (!strcmp(name, "key"))
+-			strncpy(conn->phy.wlan.key, value, sizeof(conn->phy.wlan.key)-1);
+-
+-		else if (!strcmp(name, "allocation")) {
+-			if(!strcmp(value, "static"))
+-				conn->allocation_type = ALLOCATION_TYPE_STATIC;
+-			else if(!strcmp(value, "dhcp"))
+-				conn->allocation_type = ALLOCATION_TYPE_DHCP;
+-			else {
+-				PLUGIN_PRINT("chumby", "Unrecognized allocation: %s\n", value);
+-				return;
+-			}
+-		}
+-	
+-		else if (!strcmp(name, "ip"))
+-			strtoip(value, &conn->ip);
+-		else if (!strcmp(name, "netmask"))
+-			strtoip(value, &conn->netmask);
+-		else if (!strcmp(name, "gateway"))
+-			strtoip(value, &conn->gateway);
+-		else if (!strcmp(name, "nameserver1"))
+-			strtoip(value, &conn->nameserver1);
+-		else if (!strcmp(name, "nameserver2"))
+-			strtoip(value, &conn->nameserver2);
+-		else if (!strcmp(name, "username"))
+-			;
+-		else {
+-			PLUGIN_PRINT("chumby", "Unrecognized field: %s\n", name);
+-		}
+-	}
+-}
+-
+-
+-static void
+ reload_configs (gpointer data)
+ {
+ 	xmlDoc *doc = NULL;
+@@ -339,7 +154,15 @@ reload_configs (gpointer data)
+ 			NMChumbyConnection *exported;
+ 			struct connection conn;
+ 			gchar uuid[60];
+-			read_connection(&conn, cur_node);
++			gchar *err;
++
++			err = read_connection(&conn, cur_node);
++			if (err) {
++				PLUGIN_PRINT("chumby", "Unable to parse entry: %s\n", err);
++				continue;
++			}
++
++
+ 			generate_uuid(&conn, uuid, sizeof(uuid));
+ 
+ 			if (g_hash_table_lookup (priv->iface_connections, uuid)) {
+-- 
+1.7.3.5
+
