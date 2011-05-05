@@ -1,0 +1,223 @@
+diff -Nurd NetworkManager-0.8.1-stock/system-settings/plugins/chumby/plugin.c NetworkManager-0.8.1/system-settings/plugins/chumby/plugin.c
+--- NetworkManager-0.8.1-stock/system-settings/plugins/chumby/plugin.c	2011-05-06 05:24:03.072142320 +0800
++++ NetworkManager-0.8.1/system-settings/plugins/chumby/plugin.c	2011-05-06 05:25:35.532142256 +0800
+@@ -56,6 +56,7 @@
+ 
+ 
+ #include "plugin.h"
++#include "config.h"
+ #include "nm-system-config-interface.h"
+ 
+ #define CHUMBY_PLUGIN_NAME "chumby"
+@@ -77,65 +78,6 @@
+ #define CHUMBY_FILE_PATH_TAG "chumby-file-path"
+ 
+ 
+-enum connection_type {
+-        CONNECTION_TYPE_LAN,
+-        CONNECTION_TYPE_WLAN,
+-};
+-
+-enum key_type {
+-        KEY_TYPE_ASCII,
+-        KEY_TYPE_HEX,
+-};
+-
+-enum auth_type {
+-        AUTH_TYPE_OPEN,
+-        AUTH_TYPE_WEPAUTO,
+-        AUTH_TYPE_WPAPSK,
+-        AUTH_TYPE_WPA2PSK,
+-};
+-
+-enum encryption_type {
+-        ENCRYPTION_TYPE_NONE,
+-        ENCRYPTION_TYPE_WEP,
+-        ENCRYPTION_TYPE_AES,
+-        ENCRYPTION_TYPE_TKIP,
+-};
+-
+-enum allocation_type {
+-        ALLOCATION_TYPE_STATIC,
+-        ALLOCATION_TYPE_DHCP,
+-};
+-
+-struct lan_connection {
+-};
+-
+-struct wifi_connection {
+-        char ssid[64];
+-        char ssid_len;
+-        char hwaddr[18];
+-        char key[1024];
+-        enum key_type key_type;
+-        enum auth_type auth_type;
+-        enum encryption_type encryption_type;
+-};
+-
+-struct connection {
+-        enum connection_type connection_type;
+-
+-        enum allocation_type allocation_type;
+-        uint32_t ip;
+-        uint32_t netmask;
+-        uint32_t gateway;
+-        uint32_t nameserver1;
+-        uint32_t nameserver2;
+-
+-        union { 
+-                struct wifi_connection wlan;
+-                struct lan_connection lan;
+-        } phy;
+-};
+-
+-
+ typedef struct {
+ 	GFileMonitor *hostname_monitor;
+ 	GFileMonitor *dhcp_monitor;
+@@ -164,144 +106,6 @@
+ 
+ 
+ 
+-
+-static void
+-md5touuid (gchar *input, gchar *output, gint32 output_size)
+-{
+-	int input_i, output_i;
+-	bzero(output, output_size);
+-
+-	for (input_i = output_i = 0; output_i < output_size-1; output_i++, input_i++) {
+-		output[output_i] = input[input_i];
+-		if (input_i == 7 || input_i == 11 || input_i == 15 || input_i == 19)
+-		{
+-			output[++output_i] = '-';
+-		}
+-	}
+-}
+-
+-static void
+-generate_uuid (struct connection *conn, gchar *id, guint32 id_size)
+-{
+-	/* Make the UUID just be a hash of the SSID */
+-	gchar *raw_id;
+-	raw_id = g_compute_checksum_for_data(G_CHECKSUM_MD5, (guchar *)conn, sizeof(*conn));
+-	md5touuid(raw_id, id, id_size);
+-}
+-
+-
+-
+-static void
+-strtoip(char *s, uint32_t *addr)
+-{
+-        *addr = inet_addr(s);
+-}
+-
+-
+-
+-static void
+-read_connection(struct connection *conn, xmlNode * a_node)
+-{
+-	xmlAttr *properties;
+-	bzero(conn, sizeof(*conn));
+-	properties = a_node->properties;
+-	for(properties = a_node->properties; properties; properties = properties->next) {
+-		char *name = (char *)properties->name;
+-		char *value = (char *)properties->children->content;
+-
+-		if(!strcmp(name, "type")) {
+-			if(!strcmp(value, "wlan"))
+-				conn->connection_type = CONNECTION_TYPE_WLAN;
+-			else if(!strcmp(value, "lan"))
+-				conn->connection_type = CONNECTION_TYPE_LAN;
+-			else {
+-				PLUGIN_PRINT("chumby", "Unrecognized connection type: %s\n", value);
+-				return;
+-			}
+-		}
+-
+-		else if(!strcmp(name, "hwaddr"))
+-			strncpy(conn->phy.wlan.hwaddr, value, sizeof(conn->phy.wlan.hwaddr)-1);
+-
+-		else if(!strcmp(name, "ssid")) {
+-			strncpy(conn->phy.wlan.ssid, value, sizeof(conn->phy.wlan.ssid)-1);
+-			conn->phy.wlan.ssid_len = xmlUTF8Size(properties->name);
+-		}
+-
+-		else if (!strcmp(name, "auth")) {
+-			if(!strcmp(value, "OPEN"))
+-				conn->phy.wlan.auth_type = AUTH_TYPE_OPEN;
+-			else if(!strcmp(value, "WEPAUTO"))
+-				conn->phy.wlan.auth_type = AUTH_TYPE_WEPAUTO;
+-			else if(!strcmp(value, "WPAPSK"))
+-				conn->phy.wlan.auth_type = AUTH_TYPE_WPAPSK;
+-			else if(!strcmp(value, "WPA2PSK"))
+-				conn->phy.wlan.auth_type = AUTH_TYPE_WPA2PSK;
+-			else {
+-				PLUGIN_PRINT("chumby", "Unrecognized auth: %s\n", value);
+-				return;
+-			}
+-		}
+-
+-		else if (!strcmp(name, "encryption")) {
+-			if(!strcmp(value, "NONE"))
+-				conn->phy.wlan.encryption_type = ENCRYPTION_TYPE_NONE;
+-			else if(!strcmp(value, "WEP"))
+-				conn->phy.wlan.encryption_type = ENCRYPTION_TYPE_WEP;
+-			else if(!strcmp(value, "TKIP"))
+-				conn->phy.wlan.encryption_type = ENCRYPTION_TYPE_TKIP;
+-			else if(!strcmp(value, "AES"))
+-				conn->phy.wlan.encryption_type = ENCRYPTION_TYPE_AES;
+-			else {
+-				PLUGIN_PRINT("chumby", "Unrecognized encryption: %s\n", value);
+-				return;
+-			}
+-		}
+-
+-		else if (!strcmp(name, "encoding")) {
+-			if(!strcmp(value, "ascii"))
+-				conn->phy.wlan.key_type = KEY_TYPE_ASCII;
+-			else if(!strcmp(value, "hex"))
+-				conn->phy.wlan.key_type = KEY_TYPE_HEX;
+-			else {
+-				PLUGIN_PRINT("chumby", "Unrecognized encoding type: %s\n", value);
+-				return;
+-			}
+-		}
+-
+-		else if (!strcmp(name, "key"))
+-			strncpy(conn->phy.wlan.key, value, sizeof(conn->phy.wlan.key)-1);
+-
+-		else if (!strcmp(name, "allocation")) {
+-			if(!strcmp(value, "static"))
+-				conn->allocation_type = ALLOCATION_TYPE_STATIC;
+-			else if(!strcmp(value, "dhcp"))
+-				conn->allocation_type = ALLOCATION_TYPE_DHCP;
+-			else {
+-				PLUGIN_PRINT("chumby", "Unrecognized allocation: %s\n", value);
+-				return;
+-			}
+-		}
+-	
+-		else if (!strcmp(name, "ip"))
+-			strtoip(value, &conn->ip);
+-		else if (!strcmp(name, "netmask"))
+-			strtoip(value, &conn->netmask);
+-		else if (!strcmp(name, "gateway"))
+-			strtoip(value, &conn->gateway);
+-		else if (!strcmp(name, "nameserver1"))
+-			strtoip(value, &conn->nameserver1);
+-		else if (!strcmp(name, "nameserver2"))
+-			strtoip(value, &conn->nameserver2);
+-		else if (!strcmp(name, "username"))
+-			;
+-		else {
+-			PLUGIN_PRINT("chumby", "Unrecognized field: %s\n", name);
+-		}
+-	}
+-}
+-
+-
+ static void
+ reload_configs (gpointer data)
+ {
+Binary files NetworkManager-0.8.1-stock/system-settings/plugins/chumby/.plugin.c.swp and NetworkManager-0.8.1/system-settings/plugins/chumby/.plugin.c.swp differ
