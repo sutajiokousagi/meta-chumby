@@ -1,0 +1,353 @@
+diff -ur NetworkManager-0.8.1-stock/system-settings/plugins/chumby/config.c NetworkManager-0.8.1/system-settings/plugins/chumby/config.c
+--- NetworkManager-0.8.1-stock/system-settings/plugins/chumby/config.c	2011-05-06 22:57:19.736142305 +0800
++++ NetworkManager-0.8.1/system-settings/plugins/chumby/config.c	2011-05-07 00:21:08.780142307 +0800
+@@ -50,7 +50,7 @@
+ void
+ generate_uuid(struct connection *conn, gchar *id, guint32 id_size)
+ {
+-    /* Make the UUID just be a hash of the SSID */
++    /* Make the UUID just be a hash of the connection */
+     gchar *raw_id;
+     raw_id = g_compute_checksum_for_data(G_CHECKSUM_MD5, (guchar *)conn, sizeof(*conn));
+     md5touuid(raw_id, id, id_size);
+diff -ur NetworkManager-0.8.1-stock/system-settings/plugins/chumby/nm-chumby-connection.c NetworkManager-0.8.1/system-settings/plugins/chumby/nm-chumby-connection.c
+--- NetworkManager-0.8.1-stock/system-settings/plugins/chumby/nm-chumby-connection.c	2011-05-06 22:57:19.732142305 +0800
++++ NetworkManager-0.8.1/system-settings/plugins/chumby/nm-chumby-connection.c	2011-05-07 01:35:58.044142311 +0800
+@@ -32,6 +32,7 @@
+ 
+ #include "nm-chumby-connection.h"
+ #include "plugin.h"
++#include "config.h"
+ 
+ G_DEFINE_TYPE (NMChumbyConnection, nm_chumby_connection, NM_TYPE_SYSCONFIG_CONNECTION)
+ 
+@@ -138,9 +139,14 @@
+ 	g_return_if_fail (priv);
+ 
+ 	switch (prop_id) {
+-	case PROP_CONNECTION:
+-		priv->cconnection = g_value_get_pointer (value);
++	case PROP_CONNECTION: {
++		struct connection *new_cconnection = g_malloc(sizeof(struct connection));
++		if (priv->cconnection)
++			g_free(priv->cconnection);
++		memcpy(new_cconnection, g_value_get_pointer(value), sizeof(struct connection));
++		priv->cconnection = new_cconnection;
+ 		break;
++	}
+ 	default:
+ 		G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
+ 		break;
+@@ -164,6 +170,15 @@
+ 	}
+ }
+ 
++void
++nm_chumby_get_uuid (NMChumbyConnection *con, gchar *id, guint32 id_size)
++{
++	NMChumbyConnectionPrivate *priv = NM_CHUMBY_CONNECTION_GET_PRIVATE (con);
++	g_return_if_fail (priv);
++	g_return_if_fail (id);
++	generate_uuid (priv->cconnection, id, id_size);
++}
++
+ static void
+ nm_chumby_connection_class_init (NMChumbyConnectionClass *chumby_connection_class)
+ {
+diff -ur NetworkManager-0.8.1-stock/system-settings/plugins/chumby/nm-chumby-connection.h NetworkManager-0.8.1/system-settings/plugins/chumby/nm-chumby-connection.h
+--- NetworkManager-0.8.1-stock/system-settings/plugins/chumby/nm-chumby-connection.h	2011-05-06 22:57:19.732142305 +0800
++++ NetworkManager-0.8.1/system-settings/plugins/chumby/nm-chumby-connection.h	2011-05-06 23:33:40.372142995 +0800
+@@ -51,6 +51,9 @@
+ 
+ 
+ NMChumbyConnection *nm_chumby_connection_new (struct connection *connection);
++void nm_chumby_get_uuid (NMChumbyConnection *con, gchar *id, guint32 id_size);
++
++
+ 
+ G_END_DECLS
+ 
+diff -ur NetworkManager-0.8.1-stock/system-settings/plugins/chumby/plugin.c NetworkManager-0.8.1/system-settings/plugins/chumby/plugin.c
+--- NetworkManager-0.8.1-stock/system-settings/plugins/chumby/plugin.c	2011-05-06 22:57:19.732142305 +0800
++++ NetworkManager-0.8.1/system-settings/plugins/chumby/plugin.c	2011-05-07 02:32:46.952141045 +0800
+@@ -64,7 +64,8 @@
+ #define CHUMBY_DIR "/psp"
+ #define CONF_DHCP CHUMBY_DIR "/dhcp"
+ #define HOSTNAME_FILE "/etc/HOSTNAME"
+-#define CONFIG_FILE "/psp/network_configs"
++#define CONFIGS_FILE "/psp/network_configs"
++#define CONFIG_FILE "/psp/network_config"
+ 
+ static void system_config_interface_init (NMSystemConfigInterface *system_config_interface_class);
+ 
+@@ -80,9 +81,12 @@
+ 
+ typedef struct {
+ 	GFileMonitor *hostname_monitor;
+-	GFileMonitor *dhcp_monitor;
++	GFileMonitor *configs_monitor;
++	GFileMonitor *config_monitor;
++	NMChumbyConnection *instant;
+ 	char *hostname;
+ 	GHashTable *iface_connections;
++	GMutex *mutex;
+ } SCPluginChumbyPrivate;
+ 
+ GQuark
+@@ -117,26 +121,36 @@
+ 
+ 	GHashTable *existing;
+ 
++	char previous_uuid[66];
++	gboolean previous = FALSE;
+ 
+-	PLUGIN_PRINT("chumby", "Reloading configs...\n");
++	//PLUGIN_PRINT("chumby", "Reloading configs...\n");
+ 
++	g_mutex_lock(priv->mutex);
++
++	if (priv->instant) {
++		previous = TRUE;
++		nm_chumby_get_uuid( priv->instant, previous_uuid, sizeof(previous_uuid));
++	}
+ 
+ 
+ 	/*parse the file and get the DOM */
+-	doc = xmlReadFile(CONFIG_FILE, NULL, 0);
++	doc = xmlReadFile(CONFIGS_FILE, NULL, 0);
+ 
+ 	if (doc == NULL) {
+-		PLUGIN_PRINT("chumby", "error: could not parse file %s\n", CONFIG_FILE);
++		PLUGIN_PRINT("chumby", "error: could not parse file %s\n", CONFIGS_FILE);
+ 		xmlCleanupParser();
++		g_mutex_unlock(priv->mutex);
+ 		return;
+ 	}
+ 
+ 	/*Get the root element node */
+ 	root_element = xmlDocGetRootElement(doc);
+ 	if (!root_element) {
+-		PLUGIN_PRINT("chumby", "error: could not find root element in " CONFIG_FILE "\n");
++		PLUGIN_PRINT("chumby", "error: could not find root element in " CONFIGS_FILE "\n");
+ 		xmlFreeDoc(doc);
+ 		xmlCleanupParser();
++		g_mutex_unlock(priv->mutex);
+ 		return;
+ 	}
+ 
+@@ -157,7 +171,7 @@
+ 			generate_uuid(&conn, uuid, sizeof(uuid));
+ 
+ 			if (g_hash_table_lookup (priv->iface_connections, uuid)) {
+-				PLUGIN_PRINT("chumby", "Ignoring duplicate connection %s (%s)\n", (conn.connection_type == CONNECTION_TYPE_WLAN) ? conn.phy.wlan.ssid : "lan", uuid);
++				//PLUGIN_PRINT("chumby", "Ignoring duplicate connection %s (%s)\n", (conn.connection_type == CONNECTION_TYPE_WLAN) ? conn.phy.wlan.ssid : "lan", uuid);
+ 				continue;
+ 			}
+ 
+@@ -165,16 +179,26 @@
+ 			exported = g_hash_table_lookup (existing, uuid);
+ 			if(!g_hash_table_remove (existing, uuid))
+ 			{
+-				PLUGIN_PRINT("chumby", "Adding new connection %s (%s)\n", (conn.connection_type == CONNECTION_TYPE_WLAN) ? conn.phy.wlan.ssid : "lan", uuid);
+-				exported = nm_chumby_connection_new(&conn);
+-				g_signal_emit_by_name (data,
+-						       NM_SYSTEM_CONFIG_INTERFACE_CONNECTION_ADDED,
+-						       exported);
+-				g_signal_emit_by_name (data,
+-						       NM_SYSTEM_CONFIG_INTERFACE_UNMANAGED_SPECS_CHANGED);
++				/* Only add it if it's not a previous UUID */
++				if (!previous || strcmp(uuid, previous_uuid)) {
++					//PLUGIN_PRINT("chumby", "Adding new connection %s (%s)\n", (conn.connection_type == CONNECTION_TYPE_WLAN) ? conn.phy.wlan.ssid : "lan", uuid);
++					exported = nm_chumby_connection_new(&conn);
++					g_signal_emit_by_name (data,
++							       NM_SYSTEM_CONFIG_INTERFACE_CONNECTION_ADDED,
++							       exported);
++					g_signal_emit_by_name (data,
++							       NM_SYSTEM_CONFIG_INTERFACE_UNMANAGED_SPECS_CHANGED);
++				}
++				/* Move the connection from an instant one to a permanent one */
++				else {
++					//PLUGIN_PRINT("chumby", "Ignoring connection %s (%s) as it's the instant one\n", (conn.connection_type == CONNECTION_TYPE_WLAN) ? conn.phy.wlan.ssid : "lan", uuid);
++					exported = priv->instant;
++					priv->instant = NULL;
++					previous = FALSE;
++				}
+ 			}
+ 			else
+-				PLUGIN_PRINT("chumby", "Preserving old connection %s (%s)\n", (conn.connection_type == CONNECTION_TYPE_WLAN) ? conn.phy.wlan.ssid : "lan", uuid);
++				//PLUGIN_PRINT("chumby", "Preserving old connection %s (%s)\n", (conn.connection_type == CONNECTION_TYPE_WLAN) ? conn.phy.wlan.ssid : "lan", uuid);
+ 			g_hash_table_insert (priv->iface_connections, uuid, exported);
+ 		}
+ 	}
+@@ -188,7 +212,13 @@
+ 
+ 		g_hash_table_iter_init (&iter, existing);
+ 		while (g_hash_table_iter_next (&iter, NULL, &value)) {
+-			//g_object_ref (value);
++			NMSetting *setting = nm_connection_get_setting_by_name(value, NM_SETTING_WIRELESS_SETTING_NAME);
++			gchar *ssid;
++			char aa[66];
++
++			ssid = (gchar *) (nm_setting_wireless_get_ssid((NMSettingWireless *)setting))->data;
++			nm_chumby_get_uuid( value, aa, sizeof(aa));
++			//PLUGIN_PRINT("chumby", "Removing connection %s (%s)\n", ssid, aa);
+ 			g_signal_emit_by_name (value, NM_SETTINGS_CONNECTION_INTERFACE_REMOVED);
+ 			g_object_unref (value);
+ 		}
+@@ -196,9 +226,113 @@
+ 
+ 	g_hash_table_destroy (existing);
+ 
++
++	g_mutex_unlock(priv->mutex);
++	return;
+ }
+ 
+ 
++static void
++reload_config (gpointer data)
++{
++	xmlDoc *doc = NULL;
++	xmlNode *root_element = NULL;
++
++	SCPluginChumbyPrivate *priv = SC_PLUGIN_CHUMBY_GET_PRIVATE (data);
++
++	NMChumbyConnection *exported;
++	struct connection conn;
++	gchar uuid_temp[60];
++	gchar *uuid;
++
++
++	g_mutex_lock(priv->mutex);
++
++	//PLUGIN_PRINT("chumby", "Reloading config...\n");
++
++
++	/*parse the file and get the DOM */
++	doc = xmlReadFile(CONFIG_FILE, NULL, 0);
++	if (doc == NULL) {
++		PLUGIN_PRINT("chumby", "error: could not parse file %s\n", CONFIG_FILE);
++		xmlCleanupParser();
++		g_mutex_unlock(priv->mutex);
++		return;
++	}
++
++	/*Get the root element node, which should be a <configuration> node */
++	root_element = xmlDocGetRootElement(doc);
++	if (!root_element || root_element->type != XML_ELEMENT_NODE || strcmp((char *)root_element->name, "configuration")) {
++		PLUGIN_PRINT("chumby", "error: could not find root element in " CONFIG_FILE "\n");
++		xmlFreeDoc(doc);
++		xmlCleanupParser();
++		g_mutex_unlock(priv->mutex);
++		return;
++	}
++
++
++	/* Read the connection and free the XML DOM */
++	read_connection(&conn, root_element);
++	generate_uuid(&conn, uuid_temp, sizeof(uuid_temp));
++	uuid = g_strdup(uuid_temp);
++	xmlFreeDoc(doc);
++	xmlCleanupParser();
++
++
++	/* Make sure this is a new connection */
++	if (g_hash_table_lookup (priv->iface_connections, uuid)) {
++		//PLUGIN_PRINT("chumby", CONFIG_FILE " config is already present in " CONFIGS_FILE);
++
++		/* If there was a previous private connection, release it */
++		if (priv->instant) {
++			g_signal_emit_by_name (priv->instant, NM_SETTINGS_CONNECTION_INTERFACE_REMOVED);
++			g_object_unref (priv->instant);
++			priv->instant = NULL;
++		}
++		g_free(uuid);
++		g_mutex_unlock(priv->mutex);
++		return;
++	}
++
++
++	/* Make sure the connection has actually changed */
++	if (priv->instant) {
++		char previous_uuid[66];
++		nm_chumby_get_uuid( priv->instant, previous_uuid, sizeof(previous_uuid));
++		if (!strcmp(uuid, previous_uuid)) {
++			//PLUGIN_PRINT("chumby", CONFIG_FILE " hasn't changed (%s vs %s)", uuid, previous_uuid);
++			g_free(uuid);
++			g_mutex_unlock(priv->mutex);
++			return;
++		}
++		//PLUGIN_PRINT("chumby", "Previous uuid %s is different from current uuid of %s", previous_uuid, uuid);
++	}
++
++
++	//PLUGIN_PRINT("chumby", "Updating instant UUID to %s", uuid);
++
++	/* Indicate the new connection was added */
++	exported = nm_chumby_connection_new(&conn);
++	g_signal_emit_by_name (data,
++			       NM_SYSTEM_CONFIG_INTERFACE_CONNECTION_ADDED,
++			       exported);
++	g_signal_emit_by_name (data,
++			       NM_SYSTEM_CONFIG_INTERFACE_UNMANAGED_SPECS_CHANGED);
++
++
++	/* See if we need to report the old connection was removed */
++	if (priv->instant) {
++		g_signal_emit_by_name (priv->instant, NM_SETTINGS_CONNECTION_INTERFACE_REMOVED);
++		g_object_unref (priv->instant);
++		priv->instant = NULL;
++	}
++	priv->instant = exported;
++
++	g_free(uuid);
++	g_mutex_unlock(priv->mutex);
++
++	return;
++}
+ 
+ void
+ connection_to_nmconnection (NMConnection *connection, struct connection *conn)
+@@ -270,7 +404,7 @@
+ 		wireless_setting = NM_SETTING_WIRELESS(nm_setting_wireless_new());
+ 
+ 		/* Copy over the SSID */
+-		PLUGIN_PRINT("chumby", "Setting SSID to %s (%d bytes long)", conn->phy.wlan.ssid, conn->phy.wlan.ssid_len);
++		//PLUGIN_PRINT("chumby", "Setting SSID to %s (%d bytes long)", conn->phy.wlan.ssid, conn->phy.wlan.ssid_len);
+ 		array = g_byte_array_sized_new (strlen (conn->phy.wlan.ssid));
+ 		g_byte_array_append (array, (const guint8 *) conn->phy.wlan.ssid, strlen (conn->phy.wlan.ssid));
+ 
+@@ -470,12 +604,18 @@
+ 	SCPluginChumbyPrivate *priv = SC_PLUGIN_CHUMBY_GET_PRIVATE (config);
+ 
+ 	priv->hostname_monitor = monitor_file_changes (HOSTNAME_FILE, hostname_changed, config);
+-	priv->dhcp_monitor = monitor_file_changes (CONFIG_FILE, reload_configs, config);
++	priv->configs_monitor = monitor_file_changes (CONFIGS_FILE, reload_configs, config);
++	priv->config_monitor = monitor_file_changes (CONFIG_FILE, reload_config, config);
++	priv->instant = NULL;
++	priv->mutex = g_mutex_new();
+ 
+ 	if (!hostname_is_dynamic ())
+ 		priv->hostname = hostname_read ();
+ 
++	//PLUGIN_PRINT("chumby", "Calling to reload configs...\n");
+ 	reload_configs(config);
++	//PLUGIN_PRINT("chumby", "Calling to reload config...\n");
++	reload_config(config);
+ }
+ 
+ static void
+@@ -488,8 +628,11 @@
+ {
+ 	SCPluginChumbyPrivate *priv = SC_PLUGIN_CHUMBY_GET_PRIVATE (object);
+ 
+-	if (priv->dhcp_monitor)
+-		g_object_unref (priv->dhcp_monitor);
++	if (priv->configs_monitor)
++		g_object_unref (priv->configs_monitor);
++
++	if (priv->config_monitor)
++		g_object_unref (priv->config_monitor);
+ 
+ 	if (priv->hostname_monitor)
+ 		g_object_unref (priv->hostname_monitor);
