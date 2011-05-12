@@ -1,0 +1,24 @@
+From 59cbd47c96e1a9b5f7b82568d6ff32e5918b5fee Mon Sep 17 00:00:00 2001
+From: Sean Cross <sean@chumby.com>
+Date: Sat, 7 May 2011 12:57:52 +0800
+Subject: [PATCH 2/5] ethernet: Set MAC address from configuration
+
+---
+ drivers/net/mxc_fec.c |    1 +
+ 1 files changed, 1 insertions(+), 0 deletions(-)
+
+diff --git a/drivers/net/mxc_fec.c b/drivers/net/mxc_fec.c
+index a204a7e..2af802f 100644
+--- a/drivers/net/mxc_fec.c
++++ b/drivers/net/mxc_fec.c
+@@ -939,6 +939,7 @@ int mxc_fec_initialize(bd_t *bis)
+ 			printf("got MAC address from IIM: %pM\n", ethaddr);
+ 			memcpy(dev->enetaddr, ethaddr, 6);
+ 			fec_set_hwaddr(dev);
++			eth_setenv_enetaddr("ethaddr", ethaddr);
+ 		}
+ 	}
+ 
+-- 
+1.7.1
+

@@ -1,0 +1,171 @@
+From 1596e3ae0000b3ec81ad9db5f39998e5260c50f2 Mon Sep 17 00:00:00 2001
+From: Sean Cross <sean@chumby.com>
+Date: Sat, 7 May 2011 12:58:45 +0800
+Subject: [PATCH 4/5] u-boot: Speedup ext2 access
+
+---
+ fs/ext2/Makefile |    2 +-
+ fs/ext2/ext2fs.c |   58 +++++++++++++++++++++++++++++++++++++++++++----------
+ include/ext2fs.h |    4 +-
+ 3 files changed, 50 insertions(+), 14 deletions(-)
+
+diff --git a/fs/ext2/Makefile b/fs/ext2/Makefile
+index 712e348..cbe7cfa 100644
+--- a/fs/ext2/Makefile
++++ b/fs/ext2/Makefile
+@@ -35,7 +35,7 @@ COBJS-$(CONFIG_CMD_EXT2) := ext2fs.o dev.o
+ SRCS	:= $(AOBJS:.o=.S) $(COBJS-y:.o=.c)
+ OBJS	:= $(addprefix $(obj),$(AOBJS) $(COBJS-y))
+ 
+-#CPPFLAGS +=
++CFLAGS += -O -fno-forward-propagate
+ 
+ all:	$(LIB) $(AOBJS)
+ 
+diff --git a/fs/ext2/ext2fs.c b/fs/ext2/ext2fs.c
+index d54f60b..1bad52f 100644
+--- a/fs/ext2/ext2fs.c
++++ b/fs/ext2/ext2fs.c
+@@ -178,6 +178,7 @@ int indir1_blkno = -1;
+ uint32_t *indir2_block = NULL;
+ int indir2_size = 0;
+ int indir2_blkno = -1;
++static unsigned int inode_size;
+ 
+ 
+ static int ext2fs_blockgroup
+@@ -212,7 +213,7 @@ static int ext2fs_read_inode
+ 	unsigned int blkoff;
+ 
+ #ifdef DEBUG
+-	printf ("ext2fs read inode %d\n", ino);
++	printf ("ext2fs read inode %d, inode_size %d\n", ino, inode_size);
+ #endif
+ 	/* It is easier to calculate if the first inode is 0.  */
+ 	ino--;
+@@ -222,16 +223,12 @@ static int ext2fs_read_inode
+ 		return (0);
+ 	}
+ 
+-	inodes_per_block = EXT2_BLOCK_SIZE(data) / __le16_to_cpu(sblock->inode_size);
+-
+-#ifdef DEBUG
+-	printf ("ext2fs read inode blkno %d blkoff %d\n", blkno, blkoff);
+-#endif
++	inodes_per_block = EXT2_BLOCK_SIZE(data) / inode_size;
+ 
+ 	blkno = __le32_to_cpu (blkgrp.inode_table_id) +
+ 		(ino % __le32_to_cpu (sblock->inodes_per_group))
+ 		/ inodes_per_block;
+-	blkoff = (ino % inodes_per_block) * __le16_to_cpu (sblock->inode_size);
++	blkoff = (ino % inodes_per_block) * inode_size;
+ #ifdef DEBUG
+ 	printf ("ext2fs read inode blkno %d blkoff %d\n", blkno, blkoff);
+ #endif
+@@ -367,7 +364,7 @@ static int ext2fs_read_block (ext2fs_node_t node, int fileblock) {
+ 			indir2_size = blksz;
+ 		}
+ 		if ((__le32_to_cpu (indir1_block[rblock / perblock]) <<
+-		     log2_blksz) != indir1_blkno) {
++		     log2_blksz) != indir2_blkno) {
+ 			status = ext2fs_devread (__le32_to_cpu(indir1_block[rblock / perblock]) << log2_blksz,
+ 						 0, blksz,
+ 						 (char *) indir2_block);
+@@ -417,6 +414,36 @@ int ext2fs_read_file
+ 		if (blknr < 0) {
+ 			return (-1);
+ 		}
++
++                if ((i != (pos / blocksize)) &&
++                    (i != (blockcnt - 1)) &&
++                    blknr)
++                {
++                  #define MAX_CONT_BLK 1000
++
++                  int m, n, p, q;
++
++                  m = i;
++
++                  n = (blockcnt - 1) - m;
++
++                  if (n > MAX_CONT_BLK) n = MAX_CONT_BLK;
++
++                  for (p = 1; p < n; p++)
++                  {
++                    q = ext2fs_read_block(node, m + p);
++
++                    if (q < 0)
++                      return -1;
++
++                    if (q != (blknr + p))
++                      break;
++
++                    blockend += blocksize;
++                    i++;
++                  }
++                }
++
+ 		blknr = blknr << log2blocksize;
+ 
+ 		/* Last block.  */
+@@ -447,7 +474,7 @@ int ext2fs_read_file
+ 		} else {
+ 			memset (buf, 0, blocksize - skipfirst);
+ 		}
+-		buf += blocksize - skipfirst;
++		buf += blockend;
+ 	}
+ 	return (len);
+ }
+@@ -752,7 +779,7 @@ int ext2fs_find_file
+ }
+ 
+ 
+-int ext2fs_ls (char *dirname) {
++int ext2fs_ls (const char *dirname) {
+ 	ext2fs_node_t dirnode;
+ 	int status;
+ 
+@@ -772,7 +799,7 @@ int ext2fs_ls (char *dirname) {
+ }
+ 
+ 
+-int ext2fs_open (char *filename) {
++int ext2fs_open (const char *filename) {
+ 	ext2fs_node_t fdiro = NULL;
+ 	int status;
+ 	int len;
+@@ -863,6 +890,15 @@ int ext2fs_mount (unsigned part_length) {
+ 	if (__le16_to_cpu (data->sblock.magic) != EXT2_MAGIC) {
+ 		goto fail;
+ 	}
++	if (__le32_to_cpu(data->sblock.revision_level == 0)) {
++		inode_size = 128;
++	} else {
++		inode_size = __le16_to_cpu(data->sblock.inode_size);
++	}
++#ifdef DEBUG
++	printf("EXT2 rev %d, inode_size %d\n",
++			__le32_to_cpu(data->sblock.revision_level), inode_size);
++#endif
+ 	data->diropen.data = data;
+ 	data->diropen.ino = 2;
+ 	data->diropen.inode_read = 1;
+diff --git a/include/ext2fs.h b/include/ext2fs.h
+index de935b0..163a9bb 100644
+--- a/include/ext2fs.h
++++ b/include/ext2fs.h
+@@ -74,8 +74,8 @@ typedef enum
+ 
+ 
+ extern int ext2fs_set_blk_dev(block_dev_desc_t *rbdd, int part);
+-extern int ext2fs_ls (char *dirname);
+-extern int ext2fs_open (char *filename);
++extern int ext2fs_ls (const char *dirname);
++extern int ext2fs_open (const char *filename);
+ extern int ext2fs_read (char *buf, unsigned len);
+ extern int ext2fs_mount (unsigned part_length);
+ extern int ext2fs_close(void);
+-- 
+1.7.1
+

@@ -1,0 +1,39 @@
+From f714b03ff071667744a8c9f84662cbf3b837338c Mon Sep 17 00:00:00 2001
+From: Sean Cross <sean@chumby.com>
+Date: Sat, 7 May 2011 13:54:13 +0800
+Subject: [PATCH 5/5] u-boot: Add wintergrasp config to Makefile
+
+---
+ MAKEALL  |    1 +
+ Makefile |    3 +++
+ 2 files changed, 4 insertions(+), 0 deletions(-)
+
+diff --git a/MAKEALL b/MAKEALL
+index edebaea..7a0861e 100755
+--- a/MAKEALL
++++ b/MAKEALL
+@@ -539,6 +539,7 @@ LIST_ARM9="			\
+ 	versatileab		\
+ 	versatilepb		\
+ 	voiceblue		\
++	wintergrasp		\
+ 	davinci_dvevm		\
+ 	davinci_schmoogie	\
+ 	davinci_sffsdr		\
+diff --git a/Makefile b/Makefile
+index 228d5e9..dd9e101 100644
+--- a/Makefile
++++ b/Makefile
+@@ -3215,6 +3215,9 @@ mx25_3stack_config	:	unconfig
+ mx28_evk_config : unconfig
+ 	@$(MKCONFIG) $(@:_config=) arm arm926ejs mx28_evk freescale mx28
+ 
++wintergrasp_config : unconfig
++	@$(MKCONFIG) $(@:_config=) arm arm926ejs wintergrasp freescale mx28
++
+ imx31_litekit_config	: unconfig
+ 	@$(MKCONFIG) $(@:_config=) arm arm1136 imx31_litekit NULL mx31
+ 
+-- 
+1.7.1
+

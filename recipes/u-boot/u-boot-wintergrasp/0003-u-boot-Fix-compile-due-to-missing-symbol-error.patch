@@ -1,0 +1,25 @@
+From a2114d01edeca14ade3a96e0400e920e4b54c4eb Mon Sep 17 00:00:00 2001
+From: Sean Cross <sean@chumby.com>
+Date: Sat, 7 May 2011 12:58:13 +0800
+Subject: [PATCH 3/5] u-boot: Fix compile due to missing symbol error
+
+---
+ lib_arm/eabi_compat.c |    5 +++++
+ 1 files changed, 5 insertions(+), 0 deletions(-)
+
+diff --git a/lib_arm/eabi_compat.c b/lib_arm/eabi_compat.c
+index 86eacf1..78380ba 100644
+--- a/lib_arm/eabi_compat.c
++++ b/lib_arm/eabi_compat.c
+@@ -16,3 +16,8 @@ int raise (int signum)
+ 	printf("raise: Signal # %d caught\n", signum);
+ 	return 0;
+ }
++
++void __aeabi_unwind_cpp_pr0(void)
++{
++};
++
+-- 
+1.7.1
+

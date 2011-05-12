@@ -1,0 +1,34 @@
+diff -Nurd git-stock/include/configs/wintergrasp.h git/include/configs/wintergrasp.h
+--- git-stock/include/configs/wintergrasp.h	2011-05-08 03:45:05.268149202 +0800
++++ git/include/configs/wintergrasp.h	2011-05-08 03:53:24.852149205 +0800
+@@ -46,7 +46,7 @@
+  * U-Boot general configurations
+  */
+ #define CONFIG_SYS_LONGHELP
+-#define CONFIG_SYS_PROMPT	"MX28 U-Boot > "
++#define CONFIG_SYS_PROMPT	"Wintergrasp U-Boot > "
+ #define CONFIG_SYS_CBSIZE	1024		/* Console I/O buffer size */
+ #define CONFIG_SYS_PBSIZE \
+ 	(CONFIG_SYS_CBSIZE + sizeof(CONFIG_SYS_PROMPT) + 16)
+@@ -65,7 +65,7 @@
+  */
+ #define CONFIG_CMDLINE_TAG
+ #define CONFIG_SETUP_MEMORY_TAGS
+-#define CONFIG_BOOTDELAY	3
++#define CONFIG_BOOTDELAY	1
+ #define CONFIG_BOOTFILE		uImage
+ #define CONFIG_BOOTARGS		"console=ttyAM0,115200n8 "
+ #define CONFIG_BOOTCOMMAND	"run bootcmd_mmc"
+@@ -79,10 +79,9 @@
+         "autoload=n\0" \
+         "bootargs_mmc=setenv bootargs " \
+                 "${bootargs} " \
+-                "root=/dev/mmcblk0p2 rw rootwait " \
+-                "ip=dhcp fec_mac=${ethaddr} gpmi\0" \
++                "root=/dev/mmcblk0p3 rw rootwait\0" \
+         "bootcmd_mmc=run bootargs_mmc; " \
+-                "ext2load mmc 0:2 ${loadaddr} /boot/${bootfile}; " \
++                "fatload mmc 0:1 ${loadaddr} ${bootfile}; " \
+                 "bootm\0" \
+ 
+ /*

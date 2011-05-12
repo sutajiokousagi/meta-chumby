@@ -9,14 +9,14 @@ ZZAPSPLASH = ' ${@base_contains("MACHINE_FEATURES", "screen", "psplash-zap", "",
 DEPENDS = "task-base \
            ${SPLASH} \
            ${ZZAPSPLASH} \
-config-util regutil-${CNPLATFORM} \
+           config-util regutil \
 	   "
 
 IMAGE_INSTALL = "task-base \
 	    ${ANGSTROM_EXTRA_INSTALL} \
 	    ${SPLASH} \
 	    ${ZZAPSPLASH} \
-config-util regutil-${CNPLATFORM} \
+            config-util regutil \
 	    "
 
 IMAGE_LINGUAS = ""
