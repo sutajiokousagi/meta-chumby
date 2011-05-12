@@ -8,7 +8,7 @@ PR = "r1"
 
 PACKAGE_ARCH = "${MACHINE}"
 
-SRC_URI = "${CHUMBYSG_GIT_HOST}/chumby-sg/regutil;subpath=;protocol=${CHUMBYSG_GIT_PROTOCOL}"
+SRC_URI = "${CHUMBYSG_GIT_HOST}/chumby-sg/regutil${CHUMBYSG_GIT_EXTENSION};subpath=;protocol=${CHUMBYSG_GIT_PROTOCOL}"
 SRCREV = "${AUTOREV}"
 S = "${WORKDIR}/git"
 
