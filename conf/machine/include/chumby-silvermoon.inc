@@ -15,7 +15,6 @@ MACHINE_TASK_PROVIDER 		= "task-base"
 MACHINE_ESSENTIAL_EXTRA_RDEPENDS = "u-boot-2009.07-silvermoon"
 MACHINE_HAS_CRYPTOPROCESSOR = "1"
 
-PREFERRED_PROVIDER_virtual/kernel = "linux-silvermoon"
 PREFERRED_PROVIDER_virtual/bootloader = "u-boot-2009.07-silvermoon"
 PREFERRED_PROVIDER_chumby-blobs = "chumby-blobs-silvermoon"
 
