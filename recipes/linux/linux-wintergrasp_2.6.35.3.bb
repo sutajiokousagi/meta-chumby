@@ -2,7 +2,7 @@ inherit chumbysg-git chumby-info
 
 require recipes/linux/linux.inc
 
-PR = "r0"
+PR = "r1"
 
 COMPATIBLE_MACHINE = "chumby-wintergrasp"
 
@@ -10,7 +10,6 @@ PROVIDES = "virtual/kernel"
 
 SRC_URI = "${CHUMBYSG_GIT_HOST}/wintergrasp/linux-2.6.35.3-wintergrasp${CHUMBYSG_GIT_EXTENSION};subpath=src;protocol=${CHUMBYSG_GIT_PROTOCOL} \
            file://0000-base-patches.patch \
-           file://0001-pm-Ignore-spurrious-power-switch.patch \
            file://defconfig \
 "
 SRCREV = "${AUTOREV}"
