@@ -2,7 +2,7 @@ inherit chumbysg-git chumby-info
 
 require recipes/linux/linux.inc
 
-PR = "r0"
+PR = "r1"
 
 COMPATIBLE_MACHINE = "chumby-silvermoon-netv"
 
