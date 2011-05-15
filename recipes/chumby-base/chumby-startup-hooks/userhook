@@ -1,0 +1,15 @@
+#!/bin/sh
+
+case "$1" in
+	start)
+		if [ -x /psp/rfs1/userhook-base ]
+		then
+			/psp/rfs1/userhook-base
+		fi
+		;;
+	stop)
+		;;
+	*)
+		echo "Usage: userhook-base.sh {start|stop}" >&2
+		;;
+esac
