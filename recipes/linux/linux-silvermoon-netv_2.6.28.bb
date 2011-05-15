@@ -7,8 +7,6 @@ PR = "r1"
 COMPATIBLE_MACHINE = "chumby-silvermoon-netv"
 
 SRC_URI = "${CHUMBYSG_GIT_HOST}/chumby-sg/linux-2.6.28-silvermoon${CHUMBYSG_GIT_EXTENSION};subpath=src;protocol=${CHUMBYSG_GIT_PROTOCOL};branch=netv \
-           file://0001-disable-cache-thingy.patch \
-	   file://0002-fix-touchscreen-init.patch \
            file://defconfig \
 "
 SRCREV = "${AUTOREV}"
