@@ -1,0 +1,22 @@
+diff -ur NetworkManager-0.8.1-stock/system-settings/plugins/chumby/plugin.c NetworkManager-0.8.1/system-settings/plugins/chumby/plugin.c
+--- NetworkManager-0.8.1-stock/system-settings/plugins/chumby/plugin.c	2011-05-07 08:32:47.364145347 +0800
++++ NetworkManager-0.8.1/system-settings/plugins/chumby/plugin.c	2011-05-17 06:27:00.884219865 +0800
+@@ -414,7 +414,10 @@
+ 
+ 
+ 		if (conn->phy.wlan.auth_type != AUTH_TYPE_OPEN) {
++			/* Indicate security settings are present */
++			g_object_set (wireless_setting, "security", "802-11-wireless-security", NULL);
+ 			setting = nm_connection_create_setting ("802-11-wireless-security");
++
+ 			if(conn->phy.wlan.auth_type == AUTH_TYPE_OPEN || conn->phy.wlan.auth_type == AUTH_TYPE_WEPAUTO) {
+ 				g_object_set (setting, "key-mgmt", "none", NULL);
+ 			}
+@@ -435,6 +438,7 @@
+ 				g_object_set (setting, "psk", conn->phy.wlan.key, NULL);
+ 			}
+ 			nm_connection_add_setting (connection, setting);
++
+ 		}
+ 	}
+ 
