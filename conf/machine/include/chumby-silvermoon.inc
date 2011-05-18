@@ -24,13 +24,10 @@ BOOTIMAGE_NAME = "u-boot-${MACHINE}.bin"
 
 
 MACHINE_EXTRA_RDEPENDS += " \
-    sd8686-firmware \
-    sd8686 \
     chumby-udev-rules \
 "
 
 MACHINE_EXTRA_INSTALL = "\
-    sd8686-silvermoon \
     chumby-udev-rules-silvermoon \
 "
 
