@@ -4,6 +4,8 @@
 
 TARGET_ARCH = "arm"
 
+CNPLATFORM = "silvermoon"
+
 MACHINE_GUI_CLASS = "bigscreen"
 MACHINE_CLASS = "bigscreen"
 MACHINE_DISPLAY_WIDTH_PIXELS = "800"

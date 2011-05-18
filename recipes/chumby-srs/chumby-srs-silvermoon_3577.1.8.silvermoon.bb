@@ -6,7 +6,7 @@ PRIORITY = "required"
 LICENSE = "GPL"
 PR = "r0"
 
-COMPATIBLE_MACHINE = "chumby-silvermoon"
+COMPATIBLE_MACHINE = "chumby-silvermoon-*"
 
 SRC_URI = "${CHUMBYSG_GIT_HOST}/chumby-clone/https_internal.chumby.com_firmware_srs-wowhd-1.0_${RVERSION}${CHUMBYSG_GIT_EXTENSION};subpath=src;protocol=${CHUMBYSG_GIT_PROTOCOL}"
 SRCREV = "${AUTOREV}"

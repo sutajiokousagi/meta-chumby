@@ -20,9 +20,7 @@ COMPATIBLE_MACHINE = "chumby-silvermoon"
 
 FILES_${PN} = "/boot"
 
-CNPLATFORM = "${@bb.data.getVar('MACHINE', d, 1).replace('chumby-', '')}"
-
-
+PACKAGE_ARCH = "${MACHINE}"
 
 #do_install () {
 #    install -d ${D}/boot

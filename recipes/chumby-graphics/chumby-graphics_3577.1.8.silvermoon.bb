@@ -1,3 +1,3 @@
 require chumby-graphics.inc
-COMPATIBLE_MACHINE = "chumby-silvermoon"
+COMPATIBLE_MACHINE = "chumby-silvermoon-*"
 PROVIDES = "chumby-graphics"

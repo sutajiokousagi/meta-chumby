@@ -4,10 +4,12 @@ AUTHOR = "Sean Cross"
 LICENSE = "BSD"
 
 PROVIDES = "chumby-blobs"
-COMPATIBLE_MACHINE = "chumby-silvermoon"
+COMPATIBLE_MACHINE = "chumby-silvermoon-*"
 
 SRC_URI = "file://obm.bin"
 S = "${WORKDIR}"
+
+PACKAGE_ARCH = "${MACHINE}"
 
 do_compile() {
     true

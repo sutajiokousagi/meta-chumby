@@ -1,4 +1,4 @@
-CNPLATFORM = "${@bb.data.getVar('MACHINE', d, 1).replace('chumby-', '')}"
+CNPLATFORM = "${@bb.data.getVar('MACHINE', d, 1).split('-')[1]}"
 
 # chumby SVN repos are pulled into GIT.
 # Because we pull from the production/release branch (instead of trunk),
