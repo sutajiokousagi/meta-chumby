@@ -4,7 +4,7 @@ DESCRIPTION = "udev rules for ${CNPLATFORM}"
 HOMEPAGE = "http://www.chumby.com/"
 AUTHOR = "Sean Cross"
 LICENSE = "BSD"
-PR = "r1"
+PR = "r2"
 
 SRC_URI = "file://40-chumby-early.rules \
            file://98-chumby-late.rules \
