@@ -1,7 +1,7 @@
 DESCRIPTION = "Utilities for driving NeTV"
 LICENSE = "BSD"
 
-PR = "r0"
+PR = "r1"
 
 SRC_URI = "file://helpers/dumpreg.c \
 	file://helpers/putreg.c \
