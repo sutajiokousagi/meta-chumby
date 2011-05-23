@@ -41,6 +41,7 @@ do_install() {
 	install -m 0755 setbox ${D}/usr/bin
 	install -m 0755 modeline ${D}/usr/bin
 	install -m 0755 derive_km ${D}/usr/bin
+	install -m 0755 fpga_ctl ${D}/usr/bin
 
 	install -d ${D}/${base_libdir}/firmware
 	install -m 0644 fpga/hdmi_overlay.bin ${D}/${base_libdir}/firmware/
