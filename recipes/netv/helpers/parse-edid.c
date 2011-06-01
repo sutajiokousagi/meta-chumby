@@ -165,6 +165,8 @@ const byte edid_v1_descriptor_flag[] = { 0x00, 0x00 };
 
 char* myname;
 
+byte *base;
+
 void MSG( const char* x )
 {
   fprintf( stderr, "%s: %s\n", myname, x ); 
@@ -229,7 +231,7 @@ main( int argc, char** argv )
     }
 
   fclose( edid_file );
-
+  
   return parse_edid( edid );
 }
 #endif
@@ -301,6 +303,11 @@ unsigned int parse_hdmi_datablocks(byte *block) {
   num_descrips = block[0] & 0x1F;
   tag_code = block[0] >> 5;
   offset++;
+
+#ifdef DETAILS
+  printf( "Offset: %02x\n", (unsigned int) (block - base) );
+#endif
+
   switch(tag_code) {
   case 0: 
     printf( "reserved tag code\n" );
@@ -384,6 +391,9 @@ void parse_hdmi_extension(byte *block) {
   int i;
   unsigned char checksum;
 
+#ifdef DETAILS
+  printf( "Offset: %02x\n", (unsigned int) (block - base) );
+#endif
   if( block[0] != 0x02 ) {
     printf( "not an CEA extension block, aborting.\n" );
     return;
@@ -433,7 +443,9 @@ parse_edid( byte* edid )
   byte checksum = 0;
   char *vendor_sign;
   int ret = 0;
-  
+
+  base = edid;
+
   for( i = 0; i < EDID_LENGTH; i++ )
     checksum += edid[ i ];
 
@@ -524,7 +536,10 @@ parse_timing_description( byte* dtd )
   int htotal, vtotal;
   htotal = H_ACTIVE + H_BLANKING;
   vtotal = V_ACTIVE + V_BLANKING;
-  
+
+#ifdef DETAILS
+  printf( "Offset: %02x\n", (unsigned int) (dtd - base) );
+#endif
   printf( "\tMode \t\"%dx%d\"", H_ACTIVE, V_ACTIVE );
   printf( "\t# vfreq %3.3fHz, hfreq %6.3fkHz\n",
 	  (double)PIXEL_CLOCK/((double)vtotal*(double)htotal),
@@ -558,6 +573,10 @@ parse_timing_description( byte* dtd )
 int
 block_type( byte* block )
 {
+
+#ifdef DETAILS
+  printf( "Offset: %02x\n", (unsigned int) (block - base) );
+#endif
   if ( !strncmp( edid_v1_descriptor_flag, block, 2 ) )
     {
       printf("\t# Block type: 2:%x 3:%x\n", block[2], block[3]);
@@ -624,6 +643,9 @@ char* get_vendor_sign( byte const* block )
 int
 parse_monitor_limits( byte* block )
 {
+#ifdef DETAILS
+  printf( "Offset: %02x\n", (unsigned int) (block - base) );
+#endif
   printf( "\tHorizSync %u-%u\n", H_MIN_RATE, H_MAX_RATE );
   printf( "\tVertRefresh %u-%u\n", V_MIN_RATE, V_MAX_RATE );
   if ( MAX_PIXEL_CLOCK == 10*0xff )
