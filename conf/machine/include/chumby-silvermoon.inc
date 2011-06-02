@@ -2,6 +2,9 @@
 #@Name: Silvermoon Armada 100 Development Platform
 #@DESCRIPTION: Machine configuration for chumby Silvermoon board
 
+require conf/machine/include/tune-xscale.inc
+require conf/machine/include/chumby.inc
+
 TARGET_ARCH = "arm"
 
 CNPLATFORM = "silvermoon"
@@ -26,10 +29,6 @@ MACHINE_EXTRA_RDEPENDS += " \
     chumby-udev-rules \
 "
 
-MACHINE_EXTRA_INSTALL = "\
-    chumby-udev-rules-silvermoon \
-"
-
 MACHINE_EXTRA_RRECOMMENDS = " kernel-modules"
 
 INITRAMFS_IMAGE = ""
@@ -44,5 +43,3 @@ ROOT_FLASH_SIZE = "180"
 IMAGE_ROOTFS_SIZE = "180000"
 
 
-require conf/machine/include/tune-xscale.inc
-require conf/machine/include/chumby.inc

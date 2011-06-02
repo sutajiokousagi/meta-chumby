@@ -1,6 +1,6 @@
 #@TYPE: Machine
-#@Name: Silvermoon Armada 100 Development Platform
-#@DESCRIPTION: Machine configuration for chumby Silvermoon board
+#@Name: 
+#@DESCRIPTION: 
 
 CNPLATFORM = "${@bb.data.getVar('MACHINE', d, 1).replace('chumby-', '')}"
 
@@ -8,6 +8,7 @@ IMAGE_FSTYPES = "ext3"
 IMAGE_CMD_ext3 = "genext2fs -N 50000 -b ${ROOTFS_SIZE} -d ${IMAGE_ROOTFS} ${DEPLOY_DIR_IMAGE}/${IMAGE_NAME}.rootfs.ext3 ${EXTRA_IMAGECMD}; tune2fs -j ${DEPLOY_DIR_IMAGE}/${IMAGE_NAME}.rootfs.ext3"
 EXTRA_IMAGEDEPENDS += "makedisk-native config-util-native virtual/kernel virtual/bootloader chumby-blobs virtual/chumby-bootimage"
 MACHINE_POSTPROCESS_COMMAND = "chumby_make_rom"
+MACHINE_EXTRA_RDEPENDS += "chumby-startup-hooks"
 
 chumby_make_rom () {
 
