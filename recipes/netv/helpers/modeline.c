@@ -125,12 +125,14 @@ int main(int argc, char **argv) {
     unsigned int i;
     unsigned int mode;
 
-    unsigned char modeline[128];
+    unsigned char modeline[256];
     FILE *infile;
     char *filename;
 
     char c;
     int scan;
+
+    unsigned char snoop_ctl = 0;
 
     unsigned char checksum;
 
@@ -146,7 +148,7 @@ int main(int argc, char **argv) {
       exit(0);
     }
 
-    for( i = 0; i< 128; i++ ) {
+    for( i = 0; i< 256; i++ ) {
       modeline[i] = 0xff;
     }
 
@@ -157,8 +159,12 @@ int main(int argc, char **argv) {
       modeline[i++] = c;
     }
 
+    snoop_ctl = read_byte(0);
+    snoop_ctl &= ~0x40;
+    write_byte( 0, snoop_ctl );
+
     checksum = 0;
-    printf( "writing to modeline rom:\n" );
+    printf( "writing to classic modeline rom:\n" );
     for( i = 0; i < 127; i++ ) {
       write_byte( 0x14, modeline[i] );
       write_byte( 0x13, i & 0x7F );
@@ -173,9 +179,35 @@ int main(int argc, char **argv) {
     }
     checksum = 0 - checksum;
     write_byte( 0x14, checksum );
-    write_byte( 0x13, i & 0x7F );
-    write_byte( 0x13, i | 0x80 );
-    write_byte( 0x13, i & 0x7F );
+    write_byte( 0x13, 127 & 0x7F );
+    write_byte( 0x13, 127 | 0x80 );
+    write_byte( 0x13, 127 & 0x7F );
+    printf( "%02x ", checksum);
+    
+    printf( "\n" );
+
+    snoop_ctl |= 0x40;
+    write_byte( 0, snoop_ctl );
+
+    checksum = 0;
+    printf( "writing to HDMI modeline rom:\n" );
+    for( i = 128; i < 255; i++ ) {
+      write_byte( 0x14, modeline[i] );
+      write_byte( 0x13, i & 0x7F );
+      write_byte( 0x13, i | 0x80 );
+      write_byte( 0x13, i & 0x7F );
+      checksum += modeline[i];
+
+      if( (i % 16) == 0 ) {
+	printf( "\n%02x: ", i );
+      }
+      printf( "%02x ", modeline[i]);
+    }
+    checksum = 0 - checksum;
+    write_byte( 0x14, checksum );
+    write_byte( 0x13, 255 & 0x7F );
+    write_byte( 0x13, 255 | 0x80 );
+    write_byte( 0x13, 255 & 0x7F );
     printf( "%02x ", checksum);
     
     printf( "\n" );
