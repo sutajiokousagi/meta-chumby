@@ -1,9 +1,10 @@
 /*
- * dcid_utility.c
+ * dumptiming.c
  *
- * Aaron "Caustik" Robinson
- * (c) Copyright Chumby Industries, 2007
- * All rights reserved
+ * bunnie@chumby.com
+ * based on code by Aaron "Caustik" Robinson
+ * (c) Copyright Chumby Industries, 2007, 2011
+ * Distributed under BSD license
  */
 
 #include <sys/ioctl.h>
@@ -79,29 +80,23 @@ int main(int argc, char **argv) {
     unsigned char buffer[32];
     int i;
 
-	if(argc == 2) {
-		read_eeprom("/dev/i2c-0", DEVADDR>>1, strtol(argv[1], NULL, 0), buffer, 1);
-        printf("%d: %02hx\n", strtol(argv[1], NULL, 0), buffer[0]);
-		return 1;
-	}
-
+    if(argc == 2) {
+      read_eeprom("/dev/i2c-0", DEVADDR>>1, strtol(argv[1], NULL, 0), buffer, 1);
+      printf("0x%02x: %02hx\n", strtol(argv[1], NULL, 0), buffer[0]);
+      return 1;
+    }
 
     if(read_eeprom("/dev/i2c-0", DEVADDR>>1, 0, buffer, sizeof(buffer))) {
         return 1;
     }
-    for(i=0; i<sizeof(buffer)/sizeof(*buffer); i++)
-        printf("%02x: %02hx\n", i, buffer[i]);
-    printf("\n");
 
-
-	/*
     for(i=0; i<sizeof(buffer)/sizeof(*buffer); i++) {
-        char buffer;
-        if(read_eeprom("/dev/i2c-1", DEVADDR>>1, i, &buffer, sizeof(buffer)))
-            return 1;
-        printf("%d: %02hx\n", i, buffer);
+      if( (i % 4) == 0 ) {
+	printf( "\n0x%02x: ", i );
+      }
+      printf("%02x ", buffer[i]);
     }
-	*/
+    printf("\n");
 
     return 0;
 }

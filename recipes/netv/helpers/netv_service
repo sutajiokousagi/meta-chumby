@@ -1,0 +1,55 @@
+#!/bin/sh
+
+case "$1" in
+	start)
+	      # very important: make sure clock is input before doing this!
+	      regutil -w LCD_CFG_SCLK_DIV=0x90000001
+	      echo "installing chumby xilinx driver"
+	      modprobe chumby_xilinx
+	      sleep 1       # must give time for modprobe to make dev node
+	      echo "configuring FPGA"
+	      fpga_ctl r
+	      cat /lib/firmware/hdmi_overlay.bin > /dev/fpga
+
+              # turn off graphic layer
+	      regutil -w LCD_SPU_DMA_CTRL0=0x08441011
+	      # hard code alpha
+	      regutil -w LCD_SPU_DMA_CTRL1=0x2001ff81
+
+	      # maximize depth of LCD fifos
+	      regutil -w LCD_MISC_CNTL=0x0  #0x5 to distress
+	      # hard-code sync to active high
+	      regutil -w LCD_SPU_DUMB_CTRL=0x210ff003
+	      
+	      echo "forcing attached mode to 720p"
+	      sleep 1  # this may be removeable
+	      putreg 0 0xc  # force HPD
+	      modeline /lib/firmware/min720p.edid
+	      sleep 1
+	      putreg 0 4    # connect once
+
+	      echo "deriving HDCP keys"
+	      sleep 4       # this timeout can be optimized if we can figure out a way
+	      derive_km     # to measure when the Km transaction is completed
+
+	      echo "resetting link with acquired key"
+	      putreg 0 0xc  # disconnect again
+	      sleep 2
+	      putreg 0 4    # connect again, this time with Km setup
+	      
+	      echo "setting box and sync"
+	      sleep 2
+	      putreg 3 0x45  # reset the line sync state machine
+	      putreg 3 0x5   # now run int normal overlay mode, with HDCP on
+	      setbox 100 100 1080 520 # center an opening
+	      
+		;;
+	stop)
+	      echo "resetting FPGA and stopping"
+	      fpga_ctl r
+	      rmmod chumby_xilinx
+		;;
+	*)
+		echo "Usage: netv {start|stop}" >&2
+		;;
+esac
