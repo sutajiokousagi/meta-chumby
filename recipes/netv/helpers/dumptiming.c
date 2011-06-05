@@ -148,6 +148,7 @@ int main(int argc, char **argv) {
 
     t.lcd_vsync_latency_lines = buffer[0x1a] | ((buffer[0x1b] & 0xf) << 8);
 
+    printf( "--DEPRACATED-- please use fpga_ctl t\n" );
     printf( "Horizontal active pixels: %d\n", t.hactive );
     printf( "Vertical active lines: %d\n", t.vactive );
     printf( "Horizontal total pixels: %d\n", t.htotal );

@@ -1,8 +1,12 @@
 #include <stdio.h>
+#include <string.h>
 #include <stdlib.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <sys/ioctl.h>
+
+#include <linux/i2c.h>
+#include <linux/i2c-dev.h>
 
 /*
  * Ioctl definitions -- should sync to kernel source instead of copying here
@@ -78,13 +82,347 @@ ioctl_init(int file_desc, int *state) {
   }
 }
 
+int write_eeprom(char *i2c_device, int addr, int start_reg,
+                 unsigned char *buffer, int bytes) {
+    unsigned char               data[bytes+1];
+    int                         device_file;
+    struct i2c_rdwr_ioctl_data  packets;
+    struct i2c_msg              messages[1];
+
+    if((device_file = open(i2c_device, O_RDWR))==-1) {
+        perror("Unable to open i2c device");
+        return 1;
+    }
+
+    // Set the address we'll read to the start address.
+    data[0] = start_reg;
+    memcpy(data+1, buffer, bytes);
+
+    messages[0].addr    = addr;
+    messages[0].flags   = 0;
+    messages[0].len     = bytes+1;
+    messages[0].buf     = data;
+
+    packets.msgs        = messages;
+    packets.nmsgs       = 1;
+
+    if(ioctl(device_file, I2C_RDWR, &packets) < 0) {
+        perror("Unable to communicate with i2c device");
+        close(device_file);
+        return 1;
+    }
+    
+    close(device_file);
+    return 0;
+}
+
+int read_eeprom(char *i2c_device, int addr, int start_reg,
+                unsigned char *buffer, int bytes) {
+    int                         byte;
+    int                         device_file;
+    //int page = 0;
+    struct i2c_rdwr_ioctl_data  packets;
+    struct i2c_msg              messages[2];
+    unsigned char               output;
+
+    // On this chip, the upper two bits of the memory address are
+    // represented in the i2c address, and the lower eight are clocked in
+    // as the memory address.  This gives a crude mechanism for 4 pages of
+    // 256 bytes each.
+    byte = (start_reg   ) & 0xff;
+    //page = (start_reg>>8) & 0x03;
+
+    if((device_file = open(i2c_device, O_RDWR))==-1) {
+        perror("Unable to open i2c device");
+        return 1;
+    }
+
+    // Set the address we'll read to the start address.
+    output = byte;
+
+    messages[0].addr    = addr;
+    messages[0].flags   = 0;
+    messages[0].len     = sizeof(output);
+    messages[0].buf     = &output;
+
+    messages[1].addr    = addr;
+    messages[1].flags   = I2C_M_RD;
+    messages[1].len     = bytes;
+    messages[1].buf     = (unsigned char *)buffer;
+
+    packets.msgs        = messages;
+    packets.nmsgs       = 2;
+
+    if(ioctl(device_file, I2C_RDWR, &packets) < 0) {
+        perror("Unable to communicate with i2c device");
+        close(device_file);
+        return 1;
+    }
+    
+    close(device_file);
+    return 0;
+}
+
+/////////////////////// this stuff should go in a header file eventually
+#define REFCLK_FREQ_HZ  26000000
+
+struct timinginfo {
+  unsigned int hactive;
+  unsigned int vactive;
+  int htotal;
+  unsigned int vtotal_pix;
+  unsigned int vtotal_lines;
+  unsigned int h_fp;
+  unsigned int h_bp;
+  unsigned int v_fp_pix;
+  unsigned int v_fp_lines;
+  unsigned int v_bp_pix;
+  unsigned int v_bp_lines;
+  unsigned int hsync_width;
+  unsigned int vsync_width_pix;
+  unsigned int vsync_width_lines;
+  unsigned int refclock_count;
+  unsigned int lcd_de_latency_lines;
+  unsigned int lcd_vsync_latency_lines;
+  double pixclk_in_MHz;
+};
+
+// this is the I2C device address (host-side) of the FPGA
+#define DEVADDR 0x3C
+
+// this list of I2C register addresses should be filled out when I have more time...
+#define FPGA_SNOOP_CTL_ADR 0x00
+#define FPGA_COMP_CTL_ADR  0x03
+#define FPGA_GENSTAT_ADR   0x10
+#define FPGA_MINOR_ADR     0x3e
+#define FPGA_MAJOR_ADR     0x3f
+
+/////////////////////// probably this stuff might want to go in a helper .c file
+void print_fpga_version() {
+  unsigned char minor = 0xff;
+  unsigned char major = 0xff;
+
+  if(read_eeprom("/dev/i2c-0", DEVADDR>>1, FPGA_MINOR_ADR, &minor, 1)) {
+    printf( "can't access FPGA.\n" );
+    return;
+  }
+  if(read_eeprom("/dev/i2c-0", DEVADDR>>1, FPGA_MAJOR_ADR, &major, 1)) {
+    printf( "can't access FPGA.\n" );
+    return;
+  }
+  
+  printf( "FPGA reports a version code of: %d.%d\n", major, minor );
+}
+
+int dump_hdmi_timings() {
+    unsigned char buffer[32];
+    int i;
+    struct timinginfo t;
+    double ns_per_pix;
+    unsigned char sync;
+
+    // grab the buffer in
+    if(read_eeprom("/dev/i2c-0", DEVADDR>>1, 32, buffer, sizeof(buffer))) {
+        return 1;
+    }
+    
+    t.hactive = buffer[0] | ((buffer[1] & 0xf) << 8);
+    t.vactive = buffer[2] | ((buffer[3] & 0xf) << 8);
+    t.htotal  = buffer[4] | ((buffer[5] & 0xf) << 8);
+    if( t.htotal == 0 ) {
+      t.htotal = -1;
+    }
+    t.vtotal_pix = buffer[6] | (buffer[7] << 8) | (buffer[8] << 16);
+    t.vtotal_lines = t.vtotal_pix / t.htotal;
+    t.h_fp = buffer[9];
+    t.h_bp = buffer[0xa];
+    t.v_fp_pix = buffer[0xb] | (buffer[0xc] << 8) | (buffer[0xd] << 16);
+    t.v_fp_lines = t.v_fp_pix / t.htotal;
+    t.v_bp_pix = buffer[0xe] | (buffer[0xf] << 8) | (buffer[0x10] << 16);
+    t.v_bp_lines = t.v_bp_pix / t.htotal;
+    t.hsync_width = buffer[0x11];
+    t.vsync_width_pix = buffer[0x12] | (buffer[0x13] << 8) | (buffer[0x14] << 16);
+    t.vsync_width_lines = t.vsync_width_pix / t.htotal;
+    t.refclock_count = buffer[0x15] | (buffer[0x16] << 8) | (buffer[0x17] << 16);
+    //    printf( "Refclock raw value: 0x%08x\n", t.refclock_count );
+    if( (t.htotal * t.vtotal_lines) != 0 ) {
+      ns_per_pix = (((double) t.refclock_count) * (1.0 / (double) REFCLK_FREQ_HZ)) / ((double)(t.htotal * t.vtotal_lines));
+      t.pixclk_in_MHz = (1.0 / ns_per_pix) / 1000000.0;
+    } else {
+      ns_per_pix = -1.0;
+      t.pixclk_in_MHz = -1.0;
+    }
+
+    //    t.lcd_de_latency_lines = buffer[0x18] | ((buffer[0x19] & 0xf) << 8);
+
+    //    t.lcd_vsync_latency_lines = buffer[0x1a] | ((buffer[0x1b] & 0xf) << 8);
+
+    printf( "Horizontal active pixels: %d\n", t.hactive );
+    printf( "Vertical active lines: %d\n", t.vactive );
+    printf( "Horizontal total pixels: %d\n", t.htotal );
+    printf( "Vertical total lines: %d\n", t.vtotal_lines );
+    printf( "Horizontal fp, bp: %d, %d\n", t.h_fp, t.h_bp );
+    printf( "Vertical fp, bp in lines: %d, %d\n", t.v_fp_lines, t.v_bp_lines );
+    printf( "Hsync width: %d\n", t.hsync_width );
+    printf( "Vsync width in lines: %d\n", t.vsync_width_lines );
+    printf( "Pixclock in MHz: %g\n", t.pixclk_in_MHz );
+
+    read_eeprom("/dev/i2c-0", DEVADDR>>1, 0x10, &sync, 1);
+    printf( "VSYNC polarity is " );
+    if( sync & 0x40 ) {
+      printf( "positive\n" );
+    } else {
+      printf( "negative\n" );
+    }
+
+    printf( "HSYNC polarity is " );
+    if( sync & 0x20 ) {
+      printf( "positive\n" );
+    } else {
+      printf( "negative\n" );
+    }
+
+    //    printf( "\n" );
+    //    printf( "LCD_Vsync latency in lines: %d\n", t.lcd_vsync_latency_lines );
+    //    printf( "LCD_de latency in lines: %d\n", t.lcd_de_latency_lines );
+
+    printf( "\nRecommended LCD timings:\n" );
+    printf( "regutil -w LCD_SPUT_V_H_TOTAL=0x%08x\n", 
+	    (t.vtotal_lines << 16) | (t.htotal & 0xffff) );
+    printf( "regutil -w LCD_SPU_V_H_ACTIVE=0x%08x\n", 
+	    (t.vactive << 16) | (t.hactive & 0xffff) );
+    printf( "regutil -w LCD_SPU_H_PORCH=0x%08x\n", 
+	    (t.h_bp << 16) | (t.h_fp & 0xffff) );
+    printf( "regutil -w LCD_SPU_V_PORCH=0x%08x\n",
+	    (t.v_bp_lines << 16) | (t.v_fp_lines & 0xffff) );
+    printf( "regutil -w LCD_CFG_SCLK_DIV=0x%08x\n", 0x90000001 ); // get clock from FPGA
+    printf( "set lower nibble of LCD_SPU_DUMB_CTRL to 0x3 (don't ever invert sync)\n" );
+    
+    return 0;
+}
+
+#define STATS_CORRECT_MINOR 2
+#define STATS_CORRECT_MAJOR 0
+int dump_registers(int stats) {
+    unsigned char buffer[32];
+    int i;
+    int bytes_per_line = 4;
+
+    unsigned char minor = 0xff;
+    unsigned char major = 0xff;
+    
+    if(read_eeprom("/dev/i2c-0", DEVADDR>>1, FPGA_MINOR_ADR, &minor, 1)) {
+      printf( "can't access FPGA.\n" );
+      return;
+    }
+    if(read_eeprom("/dev/i2c-0", DEVADDR>>1, FPGA_MAJOR_ADR, &major, 1)) {
+      printf( "can't access FPGA.\n" );
+      return;
+    }
+
+    if(read_eeprom("/dev/i2c-0", DEVADDR>>1, 0, buffer, sizeof(buffer))) {
+        return 1;
+    }
+
+    if( stats ) {
+      bytes_per_line = 16;
+      printf("Raw dump of register bank:\n" );
+    }
+
+    for(i=0; i<sizeof(buffer)/sizeof(*buffer); i++) {
+      if( (i % bytes_per_line) == 0 ) {
+	printf( "\n0x%02x: ", i );
+      }
+      printf("%02x ", buffer[i]);
+    }
+    printf("\n");
+
+    if( stats ) {
+      if( (STATS_CORRECT_MAJOR != major) || (STATS_CORRECT_MINOR != minor) ) {
+	printf( "Stats interpretations do not match FPGA version (expected: %d.%d, got: %d.%d",
+		STATS_CORRECT_MAJOR, STATS_CORRECT_MINOR,
+		major, minor);
+	printf( "Going on anyways, but caveat hacker.\n" );
+      } 
+      printf( "Select stats (as of version %d.%d): \n", STATS_CORRECT_MAJOR, STATS_CORRECT_MINOR );
+      if( buffer[FPGA_SNOOP_CTL_ADR] & 0x4 ) {
+	printf( "EDID squashing is on.\n" );
+      }
+      if( buffer[FPGA_SNOOP_CTL_ADR] & 0x8 ) {
+	printf( "Hot plug detect is forced into an unplugged state.\n" );
+      }
+
+      if( buffer[FPGA_COMP_CTL_ADR] & 0x1 ) {
+	printf( "HDCP encryption will be applied when cipher is initialized & requested.\n" );
+      }
+      if( buffer[FPGA_COMP_CTL_ADR] & 0x4 ) {
+	printf( "Compositing of LCD over HDMI stream is enabled.\n" );
+      }
+      if( buffer[FPGA_COMP_CTL_ADR] & 0x18 == 0x18 ) {
+	printf( "LCD forcing HDMI stream, but transmitter commanded to reset.\n" );
+      } else if( buffer[FPGA_COMP_CTL_ADR] & 0x8 ) {
+	printf( "Contents of LCD forced to HDMI stream (all other settings ignored.\n" );
+      }
+      
+      if( buffer[FPGA_COMP_CTL_ADR] & 0x20 ) {
+	printf( "Smart genlock is selected.\n" );
+      }
+
+      if( buffer[FPGA_COMP_CTL_ADR] & 0x40 ) {
+	printf( "Genlock machine is commanded into reset state.\n" );
+      }
+      
+      if( buffer[FPGA_GENSTAT_ADR] & 0x2 ) {
+	printf( "Genlock is locked.\n" );
+      } else {
+	printf( "Genlock is not locked.\n" );
+      }
+
+      if( buffer[FPGA_GENSTAT_ADR] & 0x80 ) {
+	printf( "This stream is probably HDCP encrypted.\n" );
+      } else {
+	printf( "This stream is probably not HDCP encrypted.\n" );
+      }
+    }
+    
+    return 0;
+}
+
+int dump_register(unsigned char address) {
+  unsigned char buffer;
+
+  read_eeprom("/dev/i2c-0", DEVADDR>>1, (unsigned long) address, &buffer, 1);
+  printf("0x%02x: %02hx\n", (unsigned long) address, buffer);
+  
+  return 0;
+}
+
+void print_help(char code) {
+    printf( "FPGA control routine.\n" );
+    printf( "Command character %c not recognized.\n", code );
+    printf( "r       hardware reset of the FPGA to clean state for reconfiguration\n");
+    printf( "o       return the state of the FPGA programming done pin\n" );
+    printf( "V       print the version number of the FPGA\n" );
+    printf( "t       dump the timing state of the HDMI stream\n" );
+    printf( "d       dump the control set registers (raw values)\n" );
+    printf( "d [adr] dump the the raw value at [adr]\n" );
+    printf( "s       print basic stats on FPGA\n" );
+    printf( "H       force hot plug detect to disconnect sink\n" );
+    printf( "h       return hot plug detect to normal operation\n" );
+    printf( "E       turn on EDID squashing (be sure to program modeline first\n" );
+    printf( "e       turn off EDID squashing\n" );
+    printf( "w [adr] [dat] write data [dat] to address [adr]\n" );
+}
+
 int main(int argc, char **argv)
 {
   int file_desc, retval;
   char code;
+  unsigned char buffer, adr;
   
   if(argc < 2) {
     fprintf(stderr, "Usage: %s <op>\n", argv[0]);
+    print_help('_');
     return 1;
   }
   code = *(argv[1]);
@@ -111,7 +449,7 @@ int main(int argc, char **argv)
   case '3':
     ioctl_led1(file_desc, 1 );
     break;
-  case 'd':
+  case 'o':
     ioctl_done(file_desc, &retval);
     printf( "Done pin state: %d\n", retval );;
     break;
@@ -119,8 +457,60 @@ int main(int argc, char **argv)
     ioctl_init(file_desc, &retval);
     printf( "Init pin state: %d\n", retval );;
     break;
+  case 'V':
+    print_fpga_version();
+    break;
+  case 't':
+    dump_hdmi_timings();
+    break;
+  case 'd':
+    if( argc == 2 ) {
+      dump_registers(0);
+    }
+    if( argc == 3 ) {
+      dump_register((unsigned char) strtol(argv[2],NULL,0));
+    }
+    break;
+  case 's':
+    dump_registers(1);
+    break;
+  case 'H':
+    read_eeprom("/dev/i2c-0", DEVADDR>>1, FPGA_SNOOP_CTL_ADR, &buffer, 1);
+    buffer |= 0x8;
+    write_eeprom("/dev/i2c-0", DEVADDR>>1, FPGA_SNOOP_CTL_ADR, &buffer, sizeof(buffer));
+    break;
+  case 'h':
+    read_eeprom("/dev/i2c-0", DEVADDR>>1, FPGA_SNOOP_CTL_ADR, &buffer, 1);
+    buffer &= ~0x8;
+    write_eeprom("/dev/i2c-0", DEVADDR>>1, FPGA_SNOOP_CTL_ADR, &buffer, sizeof(buffer));
+    break;
+
+  case 'E':
+    read_eeprom("/dev/i2c-0", DEVADDR>>1, FPGA_SNOOP_CTL_ADR, &buffer, 1);
+    buffer |= 0x4;
+    write_eeprom("/dev/i2c-0", DEVADDR>>1, FPGA_SNOOP_CTL_ADR, &buffer, sizeof(buffer));
+    break;
+  case 'e':
+    read_eeprom("/dev/i2c-0", DEVADDR>>1, FPGA_SNOOP_CTL_ADR, &buffer, 1);
+    buffer &= ~0x4;
+    write_eeprom("/dev/i2c-0", DEVADDR>>1, FPGA_SNOOP_CTL_ADR, &buffer, sizeof(buffer));
+    break;
+
+  case 'w':
+    if( argc != 4 ) {
+      printf( "Write requires [adr] and [dat] arguments.\n" );
+    } else {
+      adr = (unsigned char) strtol(argv[2],NULL,0);
+      read_eeprom("/dev/i2c-0", DEVADDR>>1, adr, &buffer, 1);
+      printf( "0x%02x: 0x%02x -> ", adr, buffer );
+      buffer = (unsigned char) strtol(argv[3],NULL,0);
+      write_eeprom("/dev/i2c-0", DEVADDR>>1, adr, &buffer, sizeof(buffer));
+      read_eeprom("/dev/i2c-0", DEVADDR>>1, adr, &buffer, 1);
+      printf( "0x%02x\n", buffer );
+    }
+    break;
   default:
-    printf( "Command character %c not recognized.\n", code );
+    print_help(code);
   }
 
   close(file_desc);

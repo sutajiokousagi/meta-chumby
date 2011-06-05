@@ -80,6 +80,7 @@ int main(int argc, char **argv) {
     unsigned char buffer[32];
     int i;
 
+    printf( "--DEPRACATED-- please use fpga_ctl d\n" );
     if(argc == 2) {
       read_eeprom("/dev/i2c-0", DEVADDR>>1, strtol(argv[1], NULL, 0), buffer, 1);
       printf("0x%02x: %02hx\n", strtol(argv[1], NULL, 0), buffer[0]);

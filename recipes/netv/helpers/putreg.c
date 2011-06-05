@@ -58,7 +58,6 @@ int write_eeprom(char *i2c_device, int addr, int start_reg,
     return 0;
 }
 
-
 int read_eeprom(char *i2c_device, int addr, int start_reg,
                 unsigned char *buffer, int bytes) {
     unsigned char               byte;
