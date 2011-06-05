@@ -381,10 +381,9 @@ int dump_registers(int stats) {
       if( buffer[FPGA_COMP_CTL_ADR] & 0x4 ) {
 	printf( "Compositing of LCD over HDMI stream is enabled.\n" );
       }
-      if( buffer[FPGA_COMP_CTL_ADR] & 0x18 == 0x18 ) {
-	printf( "LCD forcing HDMI stream, but transmitter commanded to reset.\n" );
-      } else if( buffer[FPGA_COMP_CTL_ADR] & 0x8 ) {
-	printf( "Contents of LCD forced to HDMI stream (all other settings ignored.\n" );
+
+      if( buffer[FPGA_COMP_CTL_ADR] & 0x10 ) {
+	printf( "Transmitter commanded to reset during self-mode.\n" );
       }
       
       if( buffer[FPGA_COMP_CTL_ADR] & 0x20 ) {
