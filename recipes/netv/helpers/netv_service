@@ -39,8 +39,16 @@ case "$1" in
 	      
 	      echo "setting box and sync"
 	      sleep 2
-	      putreg 3 0x45  # reset the line sync state machine
-	      putreg 3 0x5   # now run int normal overlay mode, with HDCP on
+
+	      echo "setting genlock lead and margin"
+	      # the following magic numbers are chosen to pick about 6 line's depth buffering
+	      # and "locked" to within about 2 lines depth
+	      # these numbers changed based on resolution -- if not 720p, it's different
+	      putreg 0x16 0x30  # 0x3000 pixels times to buffer
+	      putreg 0x12 0x10  # within 0x1000 we'll call "locked"
+
+	      putreg 3 0x45  # reset the genlock machine
+	      putreg 3 0x25  # now run in normal mode with "smart genlocking" on
 	      setbox 100 100 1080 520 # center an opening
 	      
 		;;
