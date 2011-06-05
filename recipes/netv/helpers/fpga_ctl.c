@@ -194,6 +194,18 @@ struct timinginfo {
 #define FPGA_SNOOP_CTL_ADR 0x00
 #define FPGA_COMP_CTL_ADR  0x03
 #define FPGA_GENSTAT_ADR   0x10
+#define FPGA_LOCKTOL_0     0x11
+#define FPGA_LOCKTOL_1     0x12
+#define FPGA_LOCKTGT_0     0x15
+#define FPGA_LOCKTGT_1     0x16
+#define FPGA_LOCKTGT_2     0x17
+#define FPGA_KM_0          0x19
+#define FPGA_KM_1          0x1A
+#define FPGA_KM_2          0x1B
+#define FPGA_KM_3          0x1C
+#define FPGA_KM_4          0x1D
+#define FPGA_KM_5          0x1E
+#define FPGA_KM_6          0x1F
 #define FPGA_MINOR_ADR     0x3e
 #define FPGA_MAJOR_ADR     0x3f
 
@@ -306,10 +318,12 @@ int dump_hdmi_timings() {
 int dump_registers(int stats) {
     unsigned char buffer[32];
     int i;
+    int zero;
     int bytes_per_line = 4;
 
     unsigned char minor = 0xff;
     unsigned char major = 0xff;
+    unsigned int locktol, locktgt;
     
     if(read_eeprom("/dev/i2c-0", DEVADDR>>1, FPGA_MINOR_ADR, &minor, 1)) {
       printf( "can't access FPGA.\n" );
@@ -326,7 +340,7 @@ int dump_registers(int stats) {
 
     if( stats ) {
       bytes_per_line = 16;
-      printf("Raw dump of register bank:\n" );
+      printf("Raw dump of register bank:" );
     }
 
     for(i=0; i<sizeof(buffer)/sizeof(*buffer); i++) {
@@ -335,7 +349,7 @@ int dump_registers(int stats) {
       }
       printf("%02x ", buffer[i]);
     }
-    printf("\n");
+    printf("\n\n");
 
     if( stats ) {
       if( (STATS_CORRECT_MAJOR != major) || (STATS_CORRECT_MINOR != minor) ) {
@@ -346,7 +360,7 @@ int dump_registers(int stats) {
       } 
       printf( "Select stats (as of version %d.%d): \n", STATS_CORRECT_MAJOR, STATS_CORRECT_MINOR );
       if( buffer[FPGA_SNOOP_CTL_ADR] & 0x4 ) {
-	printf( "EDID squashing is on.\n" );
+	printf( "EDID squashing is on, run 'snoop 0' to check result.\n" );
       }
       if( buffer[FPGA_SNOOP_CTL_ADR] & 0x8 ) {
 	printf( "Hot plug detect is forced into an unplugged state.\n" );
@@ -354,7 +368,16 @@ int dump_registers(int stats) {
 
       if( buffer[FPGA_COMP_CTL_ADR] & 0x1 ) {
 	printf( "HDCP encryption will be applied when cipher is initialized & requested.\n" );
+	zero = 1;
+	for( i = 0; i < 7; i++ ) {
+	  if( buffer[FPGA_KM_0 + i] != 0 )
+	    zero = 0;
+	}
+	if( zero ) {
+	  printf("...but Km is set to zero, which means you probably need to run derive_km.\n" );
+	}
       }
+
       if( buffer[FPGA_COMP_CTL_ADR] & 0x4 ) {
 	printf( "Compositing of LCD over HDMI stream is enabled.\n" );
       }
@@ -376,6 +399,18 @@ int dump_registers(int stats) {
 	printf( "Genlock is locked.\n" );
       } else {
 	printf( "Genlock is not locked.\n" );
+      }
+
+      locktol = 0;
+      locktgt = 0;
+      locktol = buffer[FPGA_LOCKTOL_0] | buffer[FPGA_LOCKTOL_1] << 8;
+      locktgt = buffer[FPGA_LOCKTGT_0] | buffer[FPGA_LOCKTGT_1] << 8 |
+	buffer[FPGA_LOCKTGT_2] << 16;
+      if( locktol == 0 ) {
+	printf( "Lock tolerance is 0; you probably didn't mean for that.\n" );
+      }
+      if( locktgt == 0 ) {
+	printf( "Lock target is 0; you probably didn't mean for that.\n" );
       }
 
       if( buffer[FPGA_GENSTAT_ADR] & 0x80 ) {
@@ -411,6 +446,8 @@ void print_help(char code) {
     printf( "h       return hot plug detect to normal operation\n" );
     printf( "E       turn on EDID squashing (be sure to program modeline first\n" );
     printf( "e       turn off EDID squashing\n" );
+    printf( "l [val] set lock target\n" );
+    printf( "L [val] set lock tolerance\n" );
     printf( "w [adr] [dat] write data [dat] to address [adr]\n" );
 }
 
@@ -419,6 +456,7 @@ int main(int argc, char **argv)
   int file_desc, retval;
   char code;
   unsigned char buffer, adr;
+  unsigned int temp;
   
   if(argc < 2) {
     fprintf(stderr, "Usage: %s <op>\n", argv[0]);
@@ -509,6 +547,33 @@ int main(int argc, char **argv)
       printf( "0x%02x\n", buffer );
     }
     break;
+
+  case 'l':
+    if( argc != 3 ) {
+      printf( "Missing mandatory target argument\n" );
+    } else {
+      temp = strtol(argv[2],NULL,0);
+      buffer = temp & 0xFF;
+      write_eeprom("/dev/i2c-0", DEVADDR>>1, FPGA_LOCKTGT_0, &buffer, sizeof(buffer));
+      buffer = (temp >> 8) & 0xFF;
+      write_eeprom("/dev/i2c-0", DEVADDR>>1, FPGA_LOCKTGT_1, &buffer, sizeof(buffer));
+      buffer = (temp >> 16) & 0xFF;
+      write_eeprom("/dev/i2c-0", DEVADDR>>1, FPGA_LOCKTGT_2, &buffer, sizeof(buffer));
+    }
+    break;
+
+  case 'L':
+    if( argc != 3 ) {
+      printf( "Missing mandatory tolerance argument\n" );
+    } else {
+      temp = strtol(argv[2],NULL,0);
+      buffer = temp & 0xFF;
+      write_eeprom("/dev/i2c-0", DEVADDR>>1, FPGA_LOCKTOL_0, &buffer, sizeof(buffer));
+      buffer = (temp >> 8) & 0xFF;
+      write_eeprom("/dev/i2c-0", DEVADDR>>1, FPGA_LOCKTOL_1, &buffer, sizeof(buffer));
+    }
+    break;
+
   default:
     print_help(code);
   }
