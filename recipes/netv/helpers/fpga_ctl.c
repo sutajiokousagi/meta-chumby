@@ -204,7 +204,7 @@ struct timinginfo {
 #define FPGA_KM_2          0x1B
 #define FPGA_KM_3          0x1C
 #define FPGA_KM_4          0x1D
-#define FPGA_KM_5          0x1E
+#define FPGA_KM_5          0x1E	/*  */
 #define FPGA_KM_6          0x1F
 #define FPGA_MINOR_ADR     0x3e
 #define FPGA_MAJOR_ADR     0x3f
@@ -258,7 +258,7 @@ int dump_hdmi_timings() {
     t.refclock_count = buffer[0x15] | (buffer[0x16] << 8) | (buffer[0x17] << 16);
     //    printf( "Refclock raw value: 0x%08x\n", t.refclock_count );
     if( (t.htotal * t.vtotal_lines) != 0 ) {
-      ns_per_pix = (((double) t.refclock_count) * (1.0 / (double) REFCLK_FREQ_HZ)) / ((double)(t.htotal * t.vtotal_lines));
+      ns_per_pix = (((double) t.refclock_count) * (1.0 / (double) REFCLK_FREQ_HZ)) / ((double)t.vtotal_pix);
       t.pixclk_in_MHz = (1.0 / ns_per_pix) / 1000000.0;
     } else {
       ns_per_pix = -1.0;
@@ -309,7 +309,11 @@ int dump_hdmi_timings() {
 	    (t.v_bp_lines << 16) | (t.v_fp_lines & 0xffff) );
     printf( "regutil -w LCD_CFG_SCLK_DIV=0x%08x\n", 0x90000001 ); // get clock from FPGA
     printf( "set lower nibble of LCD_SPU_DUMB_CTRL to 0x3 (don't ever invert sync)\n" );
-    
+
+    printf( "\nSupplemental debug info: \n" );
+    printf( "Field time in pixels: %d\n", t.vtotal_pix );
+    printf( "Field time in 26 MHz refclks: %d\n", t.refclock_count );
+
     return 0;
 }
 
@@ -353,7 +357,7 @@ int dump_registers(int stats) {
 
     if( stats ) {
       if( (STATS_CORRECT_MAJOR != major) || (STATS_CORRECT_MINOR != minor) ) {
-	printf( "Stats interpretations do not match FPGA version (expected: %d.%d, got: %d.%d",
+	printf( "Stats interpretations do not match FPGA version (expected: %d.%d, got: %d.%d)\n",
 		STATS_CORRECT_MAJOR, STATS_CORRECT_MINOR,
 		major, minor);
 	printf( "Going on anyways, but caveat hacker.\n" );
@@ -445,6 +449,8 @@ void print_help(char code) {
     printf( "h       return hot plug detect to normal operation\n" );
     printf( "E       turn on EDID squashing (be sure to program modeline first\n" );
     printf( "e       turn off EDID squashing\n" );
+    printf( "c       turn off compositing\n" );
+    printf( "C       turn on compositing\n" );
     printf( "l [val] set lock target\n" );
     printf( "L [val] set lock tolerance\n" );
     printf( "w [adr] [dat] write data [dat] to address [adr]\n" );
@@ -571,6 +577,17 @@ int main(int argc, char **argv)
       buffer = (temp >> 8) & 0xFF;
       write_eeprom("/dev/i2c-0", DEVADDR>>1, FPGA_LOCKTOL_1, &buffer, sizeof(buffer));
     }
+    break;
+
+  case 'C':
+    read_eeprom("/dev/i2c-0", DEVADDR>>1, FPGA_COMP_CTL_ADR, &buffer, 1);
+    buffer |= 0x4;
+    write_eeprom("/dev/i2c-0", DEVADDR>>1, FPGA_COMP_CTL_ADR, &buffer, sizeof(buffer));
+    break;
+  case 'c':
+    read_eeprom("/dev/i2c-0", DEVADDR>>1, FPGA_COMP_CTL_ADR, &buffer, 1);
+    buffer &= ~0x4;
+    write_eeprom("/dev/i2c-0", DEVADDR>>1, FPGA_COMP_CTL_ADR, &buffer, sizeof(buffer));
     break;
 
   default:
