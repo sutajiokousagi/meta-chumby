@@ -1,0 +1,77 @@
+diff -ur NetworkManager-0.8.1-stock/system-settings/plugins/chumby/nm-chumby-connection.c NetworkManager-0.8.1/system-settings/plugins/chumby/nm-chumby-connection.c
+--- NetworkManager-0.8.1-stock/system-settings/plugins/chumby/nm-chumby-connection.c	2011-06-07 18:14:25.516242311 +0800
++++ NetworkManager-0.8.1/system-settings/plugins/chumby/nm-chumby-connection.c	2011-06-07 18:48:21.020242627 +0800
+@@ -100,7 +100,8 @@
+ 	NMChumbyConnectionPrivate *priv;
+ 
+ 	object = G_OBJECT_CLASS (nm_chumby_connection_parent_class)->constructor (type, n_construct_params, construct_params);
+-	g_return_val_if_fail (object, NULL);
++	if (!object)
++		return NULL;
+ 
+ 	priv = NM_CHUMBY_CONNECTION_GET_PRIVATE (object);
+ 	if (!priv) {
+@@ -112,22 +113,15 @@
+ 		goto err;
+ 	}
+ 
+-	connection_to_nmconnection(NM_CONNECTION(object), priv->cconnection);
+-	/*
+-	if (!chumby_update_connection_from_if_block (NM_CONNECTION (object), priv->cconnection, &error)) {
+-		g_warning ("%s.%d - invalid connection read from /etc/network/interfaces: (%d) %s",
+-		           __FILE__,
+-		           __LINE__,
+-		           error ? error->code : -1,
+-		           error && error->message ? error->message : "(unknown)");
++	if (connection_to_nmconnection(NM_CONNECTION(object), priv->cconnection)) {
++		g_warning ("(chumby) unable to convert cconnection to nmconnection.");
+ 		goto err;
+ 	}
+-	*/
+ 
+ 	return object;
+ 
+  err:
+-	g_object_unref (object);
++	/* For some reason this crashes things: g_object_unref (object); */
+ 	return NULL;
+ }
+ 
+diff -ur NetworkManager-0.8.1-stock/system-settings/plugins/chumby/plugin.c NetworkManager-0.8.1/system-settings/plugins/chumby/plugin.c
+--- NetworkManager-0.8.1-stock/system-settings/plugins/chumby/plugin.c	2011-06-07 18:14:25.516242311 +0800
++++ NetworkManager-0.8.1/system-settings/plugins/chumby/plugin.c	2011-06-07 18:39:45.636243250 +0800
+@@ -334,7 +334,7 @@
+ 	return;
+ }
+ 
+-void
++int
+ connection_to_nmconnection (NMConnection *connection, struct connection *conn)
+ {
+ 	NMSettingConnection *s_con;
+@@ -450,11 +450,11 @@
+ 	if (!nm_connection_verify (connection, &error)) {
+ 		PLUGIN_PRINT("chumby", "Not a connection: %s", error->message);
+ 		g_object_unref (connection);
+-		connection = NULL;
++		return 1;
+ 	}
+ 
+ 
+-	return;
++	return 0;
+ }
+ 
+ 
+diff -ur NetworkManager-0.8.1-stock/system-settings/plugins/chumby/plugin.h NetworkManager-0.8.1/system-settings/plugins/chumby/plugin.h
+--- NetworkManager-0.8.1-stock/system-settings/plugins/chumby/plugin.h	2011-06-07 18:14:25.516242311 +0800
++++ NetworkManager-0.8.1/system-settings/plugins/chumby/plugin.h	2011-06-07 18:39:57.312244361 +0800
+@@ -49,7 +49,7 @@
+ 
+ GQuark chumby_plugin_error_quark (void);
+ 
+-void
++int
+ connection_to_nmconnection (NMConnection *connection, struct connection *conn);
+ 
+ 
