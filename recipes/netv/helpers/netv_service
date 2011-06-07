@@ -50,13 +50,51 @@ case "$1" in
 	      putreg 3 0x45  # reset the genlock machine
 	      putreg 3 0x25  # now run in normal mode with "smart genlocking" on
 	      setbox 100 100 1080 520 # center an opening
+
+	      ##############################
+	      # Temporary hacks to get the board 'just work' for demo purpose
+	      # See documentation here https://internal.chumby.com/wiki/index.php/NeTV
+
+	      echo "resizing framebuffer using Flashplayer trick"
+	      /etc/init.d/chumby-controlpanel.sh stop
+	      mkfifo /dev/ts
+	      chumbyflashplayer.x -x 1280 -y 720 -i /usr/widgets/controlpanel.swf &
+	      regutil -w LCD_SPU_DMA_PITCH_YC=0x1400
+	      sleep 2
+	      killall chumbyflashplayer.x
+	      sleep 1
+
+	      echo "starting NeTVServer"
+	      # hardcode the path for now until we have better place to put it
+	      if [ -x /psp/netvserver/start_netvserver.sh ]; then
+	          /psp/netvserver/start_netvserver.sh
+	      fi
 	      
+	      echo "starting NeTVBrowser"
+	      # hardcode the path for now until we have better place to put it
+	      if [ -x /psp/netvbrowser/start_netvbrowser.sh ]; then
+	          /psp/netvbrowser/start_netvbrowser.sh
+	      fi
 		;;
+
 	stop)
 	      echo "resetting FPGA and stopping"
 	      fpga_ctl r
 	      rmmod chumby_xilinx
+
+	      echo "stopping NeTVServer"
+	      # hardcode the path for now until we have better place to put it
+	      if [ -x /psp/netvserver/stop_netvserver.sh ]; then
+	          /psp/netvserver/stop_netvserver.sh
+	      fi
+	      
+	      echo "stopping NeTVBrowser"
+	      # hardcode the path for now until we have better place to put it
+	      if [ -x /psp/netvbrowser/stop_netvbrowser.sh ]; then
+	          /psp/netvbrowser/stop_netvbrowser.sh
+	      fi
 		;;
+
 	*)
 		echo "Usage: netv {start|stop}" >&2
 		;;
