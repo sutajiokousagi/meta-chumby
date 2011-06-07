@@ -64,16 +64,17 @@ case "$1" in
 	      killall chumbyflashplayer.x
 	      sleep 1
 
-	      # keep the framebuffer file handle open
-	      cat > /dev/fb0 &
-
 	      echo "starting NeTVServer"
 	      # hardcode the path for now until we have better place to put it
-	      /psp/netvserver/start_netvserver.sh
+	      if [ -x /psp/netvserver/start_netvserver.sh ]; then
+	          /psp/netvserver/start_netvserver.sh
+	      fi
 	      
 	      echo "starting NeTVBrowser"
 	      # hardcode the path for now until we have better place to put it
-	      /psp/netvbrowser/start_netvbrowser.sh
+	      if [ -x /psp/netvbrowser/start_netvbrowser.sh ]; then
+	          /psp/netvbrowser/start_netvbrowser.sh
+	      fi
 		;;
 
 	stop)
@@ -83,11 +84,15 @@ case "$1" in
 
 	      echo "stopping NeTVServer"
 	      # hardcode the path for now until we have better place to put it
-	      /psp/netvserver/stop_netvserver.sh
+	      if [ -x /psp/netvserver/stop_netvserver.sh ]; then
+	          /psp/netvserver/stop_netvserver.sh
+	      fi
 	      
 	      echo "stopping NeTVBrowser"
 	      # hardcode the path for now until we have better place to put it
-	      /psp/netvbrowser/stop_netvbrowser.sh
+	      if [ -x /psp/netvbrowser/stop_netvbrowser.sh ]; then
+	          /psp/netvbrowser/stop_netvbrowser.sh
+	      fi
 		;;
 
 	*)
