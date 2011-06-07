@@ -532,7 +532,7 @@ int main(int argc, char **argv)
     break;
   case 'h':
     read_eeprom("/dev/i2c-0", DEVADDR>>1, FPGA_SNOOP_CTL_ADR, &buffer, 1);
-    buffer &= ~0x8;
+    buffer &= 0xF7;
     write_eeprom("/dev/i2c-0", DEVADDR>>1, FPGA_SNOOP_CTL_ADR, &buffer, sizeof(buffer));
     break;
 
@@ -543,7 +543,7 @@ int main(int argc, char **argv)
     break;
   case 'e':
     read_eeprom("/dev/i2c-0", DEVADDR>>1, FPGA_SNOOP_CTL_ADR, &buffer, 1);
-    buffer &= ~0x4;
+    buffer &= 0xFB;
     write_eeprom("/dev/i2c-0", DEVADDR>>1, FPGA_SNOOP_CTL_ADR, &buffer, sizeof(buffer));
     break;
 
@@ -636,6 +636,7 @@ int main(int argc, char **argv)
     } else {
       printf( "Not enough or invalid arguments to chroma command.\n" );
     }
+    break;
 
   default:
     print_help(code);
