@@ -193,6 +193,10 @@ struct timinginfo {
 // this list of I2C register addresses should be filled out when I have more time...
 #define FPGA_SNOOP_CTL_ADR 0x00
 #define FPGA_COMP_CTL_ADR  0x03
+#define FPGA_EXT1_CTL_ADR  0x0c
+#define FPGA_CHROMA_R_ADR  0x0d
+#define FPGA_CHROMA_G_ADR  0x0e
+#define FPGA_CHROMA_B_ADR  0x0f
 #define FPGA_GENSTAT_ADR   0x10
 #define FPGA_LOCKTOL_0     0x11
 #define FPGA_LOCKTOL_1     0x12
@@ -454,13 +458,17 @@ void print_help(char code) {
     printf( "l [val] set lock target\n" );
     printf( "L [val] set lock tolerance\n" );
     printf( "w [adr] [dat] write data [dat] to address [adr]\n" );
+    printf( "x [r,g,b] [value] set chroma key of r/g/b to [value]\n" );
+    printf( "x o     turn off chroma key\n" );
+    printf( "x i     turn on chroma key\n" );
 }
 
 int main(int argc, char **argv)
 {
   int file_desc, retval;
   char code;
-  unsigned char buffer, adr;
+  unsigned char buffer, adr, data;
+  char supplement;
   unsigned int temp;
   
   if(argc < 2) {
@@ -589,6 +597,45 @@ int main(int argc, char **argv)
     buffer &= ~0x4;
     write_eeprom("/dev/i2c-0", DEVADDR>>1, FPGA_COMP_CTL_ADR, &buffer, sizeof(buffer));
     break;
+
+  case 'x':
+    if( argc == 3 ) {
+      supplement = *(argv[2]);
+      if( supplement == 'o' ) {
+	read_eeprom("/dev/i2c-0", DEVADDR>>1, FPGA_EXT1_CTL_ADR, &buffer, 1);
+	buffer &= ~0x2;
+	write_eeprom("/dev/i2c-0", DEVADDR>>1, FPGA_EXT1_CTL_ADR, &buffer, sizeof(buffer));
+      } else if( supplement == 'i' ) {
+	read_eeprom("/dev/i2c-0", DEVADDR>>1, FPGA_EXT1_CTL_ADR, &buffer, 1);
+	buffer |= 0x2;
+	write_eeprom("/dev/i2c-0", DEVADDR>>1, FPGA_EXT1_CTL_ADR, &buffer, sizeof(buffer));
+      } else {
+	printf( "unrecognized chroma extension code\n" );
+      }
+    } else if( argc == 4 ) {
+      supplement = *(argv[2]);
+      data = (unsigned char) strtol(argv[3],NULL,0);
+      if( (data & 0x3) != 0 ) {
+	printf( "Note: only bits 7-2 are used in chroma key computation.\n" );
+	printf( "Also, LSB is extended, so to chroma 0x4, you must specify 0x7.\n" );
+      }
+      switch( supplement ) {
+      case 'r':
+	adr = FPGA_CHROMA_R_ADR;
+	break;
+      case 'g':
+	adr = FPGA_CHROMA_G_ADR;
+	break;
+      case 'b':
+	adr = FPGA_CHROMA_B_ADR;
+	break;
+      default:
+	printf( "unrecognized chroma channel (r,g,b are only valid options)\n" );
+      }
+      write_eeprom("/dev/i2c-0", DEVADDR>>1, (int) adr, &data, 1);
+    } else {
+      printf( "Not enough or invalid arguments to chroma command.\n" );
+    }
 
   default:
     print_help(code);
