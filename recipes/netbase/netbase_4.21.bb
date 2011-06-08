@@ -2,16 +2,20 @@ DESCRIPTION = "This package provides the necessary \
 infrastructure for basic TCP/IP based networking."
 SECTION = "base"
 LICENSE = "GPLv2"
-PR = "r51"
+PR = "r52"
 
 SRC_URI_OVERRIDES_PACKAGE_ARCH = "1"
-
 
 SRC_URI = "\
   http://developer.irexnet.com/pub/iOn/Sources/1.0/Third%20party/all/netbase-${PV}.tar.gz \
   file://options \
   file://init \
   file://hosts \
+  file://interfaces \
+  file://if-pre-up.d \
+  file://if-up.d \
+  file://if-down.d \
+  file://if-post-down.d \
 "
 
 do_install () {
@@ -31,6 +35,8 @@ do_install () {
 		done
 	done
 		   
+	install -m 0644 ${WORKDIR}/options ${D}${sysconfdir}/network/options
+	install -m 0755 ${WORKDIR}/init ${D}${sysconfdir}/init.d/networking
 	install -m 0644 ${WORKDIR}/hosts ${D}${sysconfdir}/hosts
 	install -m 0644 etc-rpc ${D}${sysconfdir}/rpc
 	install -m 0644 etc-protocols ${D}${sysconfdir}/protocols
@@ -39,10 +45,11 @@ do_install () {
 	install -m 0755 update-inetd ${D}${sbindir}/
 	install -m 0644 update-inetd.8 ${D}${mandir}/man8/
         fi
+	install -m 0644 ${WORKDIR}/interfaces ${D}${sysconfdir}/network/interfaces
 }
 
-CONFFILES_${PN} = "${sysconfdir}/hosts \
-                   ${sysconfdir}/rpc \
+CONFFILES_${PN} = "${sysconfdir}/network/options ${sysconfdir}/hosts \
+                   ${sysconfdir}/network/interfaces ${sysconfdir}/rpc \
                    ${sysconfdir}/protocols ${sysconfdir}/services"
 
 SRC_URI[md5sum] = "b91eeb701d1733b3efb174b9463c5875"
