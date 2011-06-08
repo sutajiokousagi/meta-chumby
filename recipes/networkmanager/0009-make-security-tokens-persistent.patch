@@ -1,0 +1,79 @@
+diff -ur /home/user/chumby-oe/output-angstrom-.9/work/armv5te-angstrom-linux-gnueabi/networkmanager-0.8.1-r3-amend-r5/NetworkManager-0.8.1/system-settings/plugins/chumby/nm-chumby-connection.c NetworkManager-0.8.1/system-settings/plugins/chumby/nm-chumby-connection.c
+--- /home/user/chumby-oe/output-angstrom-.9/work/armv5te-angstrom-linux-gnueabi/networkmanager-0.8.1-r3-amend-r5/NetworkManager-0.8.1/system-settings/plugins/chumby/nm-chumby-connection.c	2011-06-08 11:58:00.884242999 +0800
++++ NetworkManager-0.8.1/system-settings/plugins/chumby/nm-chumby-connection.c	2011-06-08 11:48:16.456243510 +0800
+@@ -98,6 +98,7 @@
+ {
+ 	GObject *object;
+ 	NMChumbyConnectionPrivate *priv;
++        NMConnection *tmp;
+ 
+ 	object = G_OBJECT_CLASS (nm_chumby_connection_parent_class)->constructor (type, n_construct_params, construct_params);
+ 	if (!object)
+@@ -113,11 +114,15 @@
+ 		goto err;
+ 	}
+ 
+-	if (connection_to_nmconnection(NM_CONNECTION(object), priv->cconnection)) {
++	tmp = connection_to_nmconnection (priv->cconnection);
++	if (!tmp) {
+ 		g_warning ("(chumby) unable to convert cconnection to nmconnection.");
+ 		goto err;
+ 	}
+ 
++        nm_sysconfig_connection_update (NM_SYSCONFIG_CONNECTION (object), tmp, FALSE, NULL);
++        g_object_unref (tmp);
++
+ 	return object;
+ 
+  err:
+diff -ur /home/user/chumby-oe/output-angstrom-.9/work/armv5te-angstrom-linux-gnueabi/networkmanager-0.8.1-r3-amend-r5/NetworkManager-0.8.1/system-settings/plugins/chumby/plugin.c NetworkManager-0.8.1/system-settings/plugins/chumby/plugin.c
+--- /home/user/chumby-oe/output-angstrom-.9/work/armv5te-angstrom-linux-gnueabi/networkmanager-0.8.1-r3-amend-r5/NetworkManager-0.8.1/system-settings/plugins/chumby/plugin.c	2011-06-08 11:58:00.884242999 +0800
++++ NetworkManager-0.8.1/system-settings/plugins/chumby/plugin.c	2011-06-08 11:49:27.016242804 +0800
+@@ -334,14 +334,16 @@
+ 	return;
+ }
+ 
+-int
+-connection_to_nmconnection (NMConnection *connection, struct connection *conn)
++NMConnection *
++connection_to_nmconnection (struct connection *conn)
+ {
++	NMConnection *connection;
+ 	NMSettingConnection *s_con;
+ 	NMSetting *setting;
+ 	gchar id[40];
+ 	GError *error = NULL;
+ 
++	connection = nm_connection_new ();
+ 
+ 	generate_uuid(conn, id, sizeof(id));
+ 
+@@ -450,11 +452,11 @@
+ 	if (!nm_connection_verify (connection, &error)) {
+ 		PLUGIN_PRINT("chumby", "Not a connection: %s", error->message);
+ 		g_object_unref (connection);
+-		return 1;
++		return NULL;
+ 	}
+ 
+ 
+-	return 0;
++	return connection;
+ }
+ 
+ 
+diff -ur /home/user/chumby-oe/output-angstrom-.9/work/armv5te-angstrom-linux-gnueabi/networkmanager-0.8.1-r3-amend-r5/NetworkManager-0.8.1/system-settings/plugins/chumby/plugin.h NetworkManager-0.8.1/system-settings/plugins/chumby/plugin.h
+--- /home/user/chumby-oe/output-angstrom-.9/work/armv5te-angstrom-linux-gnueabi/networkmanager-0.8.1-r3-amend-r5/NetworkManager-0.8.1/system-settings/plugins/chumby/plugin.h	2011-06-08 11:58:00.884242999 +0800
++++ NetworkManager-0.8.1/system-settings/plugins/chumby/plugin.h	2011-06-08 11:48:56.184241734 +0800
+@@ -49,8 +49,9 @@
+ 
+ GQuark chumby_plugin_error_quark (void);
+ 
+-int
+-connection_to_nmconnection (NMConnection *connection, struct connection *conn);
++NMConnection *
++connection_to_nmconnection (struct connection *conn);
++
+ 
+ 
+ #endif	/* _PLUGIN_H_ */
