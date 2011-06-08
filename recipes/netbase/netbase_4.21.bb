@@ -11,7 +11,7 @@ SRC_URI = "\
   file://options \
   file://init \
   file://hosts \
-  file://interfaces \
+  file://interfaces-chumby \
   file://if-pre-up.d \
   file://if-up.d \
   file://if-down.d \
@@ -45,7 +45,7 @@ do_install () {
 	install -m 0755 update-inetd ${D}${sbindir}/
 	install -m 0644 update-inetd.8 ${D}${mandir}/man8/
         fi
-	install -m 0644 ${WORKDIR}/interfaces ${D}${sysconfdir}/network/interfaces
+	install -m 0644 ${WORKDIR}/interfaces-chumby ${D}${sysconfdir}/network/interfaces
 }
 
 CONFFILES_${PN} = "${sysconfdir}/network/options ${sysconfdir}/hosts \
