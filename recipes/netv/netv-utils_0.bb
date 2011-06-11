@@ -66,4 +66,4 @@ FILES_${PN} += "${sysconfdir}/init.d/"
 PACKAGE_ARCH = "${MACHINE}"
 
 INITSCRIPT_NAME = "netv_service"
-INITSCRIPT_PARAMS = "defaults 98 99"
+INITSCRIPT_PARAMS = "defaults 50 50"
