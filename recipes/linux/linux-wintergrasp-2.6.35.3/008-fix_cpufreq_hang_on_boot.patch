@@ -1,0 +1,28 @@
+diff -Nur linux-2.6.35.3.orig/arch/arm/mach-mx28/clock.c linux-2.6.35.3/arch/arm/mach-mx28/clock.c
+--- linux-2.6.35.3.orig/arch/arm/mach-mx28/clock.c	2011-04-05 12:02:15.785668748 +0800
++++ linux-2.6.35.3/arch/arm/mach-mx28/clock.c	2011-06-07 12:45:12.249382845 +0800
+@@ -884,6 +884,15 @@
+ 	struct mxs_emi_scaling_data emi;
+ 	unsigned long iram_phy;
+ 	void (*f) (struct mxs_emi_scaling_data *, unsigned int *);
++
++  {
++    //BLL to fix intermittent hang issue during boot up
++    int m = emi_get_rate(clk);
++    int n = (m > rate) ? m - rate : rate - m;
++    if (n < 10000000)
++	    return 0;
++  }
++
+ 	f = iram_alloc((unsigned int)mxs_ram_freq_scale_end -
+ 		(unsigned int)mxs_ram_freq_scale, &iram_phy);
+ 	if (NULL == f) {
+@@ -931,7 +940,7 @@
+ 
+ 	local_irq_disable();
+ 	local_fiq_disable();
+-	f(&emi, get_current_emidata());
++	f(&emi, get_current_emidata()); //BLL this is the part causing intermittent hang
+ 	local_fiq_enable();
+ 	local_irq_enable();
+ 	iram_free(iram_phy,
