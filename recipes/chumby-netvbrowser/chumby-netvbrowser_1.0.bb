@@ -4,8 +4,9 @@ DESCRIPTION = "Chromeless web browser for NeTV with some added sugar"
 HOMEPAGE = "http://www.chumby.com/"
 AUTHOR = "Torin"
 LICENSE = "GPLv3"
-PR = "r2"
+PR = "r3"
 DEPENDS = "qt4-embedded"
+RDEPENDS_${PN} = "task-qt4e-base"
 
 SRC_URI = "${CHUMBYSG_GIT_HOST}/chumby-sg/${PN}${CHUMBYSG_GIT_EXTENSION};protocol=${CHUMBYSG_GIT_PROTOCOL}"
 # add SRC_URIs here for more files
