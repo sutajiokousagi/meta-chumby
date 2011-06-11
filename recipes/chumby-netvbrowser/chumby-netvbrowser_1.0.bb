@@ -1,35 +1,26 @@
 inherit chumbysg-git chumby-info qt4e
+inherit update-rc.d
 
 DESCRIPTION = "Chromeless web browser for NeTV with some added sugar"
 HOMEPAGE = "http://www.chumby.com/"
 AUTHOR = "Torin"
 LICENSE = "GPLv3"
-PR = "r3"
+PR = "r4"
 DEPENDS = "qt4-embedded"
 RDEPENDS_${PN} = "task-qt4e-base"
 
 SRC_URI = "${CHUMBYSG_GIT_HOST}/chumby-sg/${PN}${CHUMBYSG_GIT_EXTENSION};protocol=${CHUMBYSG_GIT_PROTOCOL}"
-# add SRC_URIs here for more files
 
 SRCREV = "${AUTOREV}"
 S = "${WORKDIR}/git"
 
-#
-# Create copy files to /usr/bin
-#
+INITSCRIPT_NAME = "chumby-netvbrowser"
+INITSCRIPT_PARAMS = "defaults 80 20"
+
 do_install() {
     install -d ${D}${bindir}
+    install -m 0755 ${S}/bin/NeTVBrowser ${D}${bindir}
 
-    install -m 0755 ${WORKDIR}/git/bin/NeTVBrowser		${D}${bindir}
-    install -m 0755 ${WORKDIR}/git/start_netvbrowser.sh		${D}${bindir}
-    install -m 0755 ${WORKDIR}/git/stop_netvbrowser.sh		${D}${bindir}
-
-    # Should not perform a normal qmake install
-    #export INSTALL_ROOT=${D}
-    #make install
+    install -d ${D}${sysconfdir}/init.d/
+    install -m 0755 ${S}/chumby-netvbrowser.sh ${D}${sysconfdir}/init.d/${INITSCRIPT_NAME}
 }
-
-# this puts it into a tidy package
-#FILES_${PN}-dbg += "/psp/netvbrowser/.debug"
-#FILES_${PN} += "/psp/netvbrowser"
-
