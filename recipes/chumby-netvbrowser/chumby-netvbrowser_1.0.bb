@@ -6,7 +6,6 @@ AUTHOR = "Torin"
 LICENSE = "GPLv3"
 PR = "r2"
 DEPENDS = "qt4-embedded"
-#RDEPENDS_${PN} = "qt4-embedded"
 
 SRC_URI = "${CHUMBYSG_GIT_HOST}/chumby-sg/${PN}${CHUMBYSG_GIT_EXTENSION};protocol=${CHUMBYSG_GIT_PROTOCOL}"
 # add SRC_URIs here for more files
