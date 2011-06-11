@@ -2,7 +2,7 @@ inherit chumbysg-git chumby-info
 
 require u-boot.inc
 
-PR = "r2"
+PR = "r3"
 
 PROVIDES = "virtual/bootloader virtual/chumby-bootimage"
 RPROVIDES_${PN} = "virtual/bootloader virtual/chumby-bootimage"
@@ -15,7 +15,10 @@ SRC_URI = "${CHUMBYSG_GIT_HOST}/chumby-clone/https_internal.chumby.com_firmware_
            file://0001-fix-makefile.patch \
            file://0002-fix-cmdline.patch \
 "
-SRC_URI_append_chumby-silvermoon-netv = "file://netv-0003-remove-touchscreen.patch"
+
+SRC_URI_append_chumby-silvermoon-netv = "file://netv-0003-remove-touchscreen.patch \
+                                         file://netv-0004-disable-wifi-on-boot.patch \
+"
 
 SRCREV = "${AUTOREV}"
 S = "${WORKDIR}/src"
