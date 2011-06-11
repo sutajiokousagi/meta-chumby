@@ -15,7 +15,7 @@ SRCREV = "${AUTOREV}"
 S = "${WORKDIR}/git"
 
 INITSCRIPT_NAME = "chumby-netvbrowser"
-INITSCRIPT_PARAMS = "defaults 80 20"
+INITSCRIPT_PARAMS = "defaults 30 70"
 
 do_install() {
     install -d ${D}${bindir}
