@@ -4,7 +4,7 @@ LICENSE = "BSD"
 
 #inherit update-rc.d
 
-PR = "r0"
+PR = "r1"
 
 SRC_URI = "${CHUMBYSG_GIT_HOST}/chumby-clone/${PN}${CHUMBYSG_GIT_EXTENSION};protocol=${CHUMBYSG_GIT_PROTOCOL}"
 SRCREV = "${AUTOREV}"
