@@ -10,14 +10,10 @@ COMPATIBLE_MACHINE = "chumby-silvermoon-*"
 DEPENDS = "virtual/kernel chumby-blobs config-util-native"
 
 
+BRANCH_NAME = "master"
+BRANCH_NAME_chumby-silvermoon-netv = "netv"
 
-SRC_URI = "${CHUMBYSG_GIT_HOST}/chumby-clone/https_internal.chumby.com_firmware_u-boot-2009.07_${RVERSION}${CHUMBYSG_GIT_EXTENSION};subpath=src;protocol=${CHUMBYSG_GIT_PROTOCOL} \
-           file://0001-fix-makefile.patch \
-           file://0002-fix-cmdline.patch \
-"
-
-SRC_URI_append_chumby-silvermoon-netv = "file://netv-0003-remove-touchscreen.patch \
-                                         file://netv-0004-disable-wifi-on-boot.patch \
+SRC_URI = "${CHUMBYSG_GIT_HOST}/chumby-sg/u-boot-2009.07-silvermoon${CHUMBYSG_GIT_EXTENSION};subpath=src;protocol=${CHUMBYSG_GIT_PROTOCOL};branch=${BRANCH_NAME} \
 "
 
 SRCREV = "${AUTOREV}"
