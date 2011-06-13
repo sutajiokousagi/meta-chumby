@@ -2,12 +2,14 @@ inherit chumbysg-git chumby-info
 
 require u-boot.inc
 
-PR = "r3"
+PR = "r4"
 
 PROVIDES = "virtual/bootloader virtual/chumby-bootimage"
 RPROVIDES_${PN} = "virtual/bootloader virtual/chumby-bootimage"
+RREPLACES_${PN} = "u-boot-2009.07-silvermoon"
 COMPATIBLE_MACHINE = "chumby-silvermoon-*"
 DEPENDS = "virtual/kernel chumby-blobs config-util-native"
+RDEPENDS_${PN} = "config-util"
 
 
 BRANCH_NAME = "master"
@@ -58,3 +60,7 @@ do_deploy () {
     package_stagefile_shell ${DEPLOY_DIR_IMAGE}/boot-${MACHINE}.bin
 }
 addtask deploy_bootimage after do_install
+
+pkg_postinst_${PN}() {
+    config_util --cmd=putblock --dev=/dev/mmcblk0p1 --block=u-bt < /boot/u-boot.bin
+}
