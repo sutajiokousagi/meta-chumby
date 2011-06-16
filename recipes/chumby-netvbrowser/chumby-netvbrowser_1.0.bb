@@ -15,14 +15,14 @@ SRCREV = "${AUTOREV}"
 S = "${WORKDIR}/git"
 
 #
-# Create directories and copy files
+# Create copy files to /usr/bin
 #
 do_install() {
-    install -d ${D}/psp/netvbrowser
+    install -d ${D}${bindir}
 
-    install -m 0755 ${WORKDIR}/git/bin/NeTVBrowser		${D}/psp/netvbrowser
-    install -m 0755 ${WORKDIR}/git/start_netvbrowser.sh		${D}/psp/netvbrowser
-    install -m 0755 ${WORKDIR}/git/stop_netvbrowser.sh		${D}/psp/netvbrowser
+    install -m 0755 ${WORKDIR}/git/bin/NeTVBrowser		${D}${bindir}
+    install -m 0755 ${WORKDIR}/git/start_netvbrowser.sh		${D}${bindir}
+    install -m 0755 ${WORKDIR}/git/stop_netvbrowser.sh		${D}${bindir}
 
     # Should not perform a normal qmake install
     #export INSTALL_ROOT=${D}
@@ -30,6 +30,6 @@ do_install() {
 }
 
 # this puts it into a tidy package
-FILES_${PN}-dbg += "/psp/netvbrowser/.debug"
-FILES_${PN} += "/psp/netvbrowser"
+#FILES_${PN}-dbg += "/psp/netvbrowser/.debug"
+#FILES_${PN} += "/psp/netvbrowser"
 
