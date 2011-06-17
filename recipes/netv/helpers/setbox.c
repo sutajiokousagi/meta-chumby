@@ -135,9 +135,17 @@ int main(int argc, char **argv) {
     }
 
     x  = strtol(argv[1], NULL, 0);
+    if( x > 0 )
+      x = x - 1;
     y  = strtol(argv[2], NULL, 0);
-    w  = strtol(argv[3], NULL, 0);
-    h  = strtol(argv[4], NULL, 0);
+    if( y > 0 )
+      y = y - 1;
+    w  = strtol(argv[3], NULL, 0) - 1;
+    if( w > 0 )
+      w = w - 1; // correct for "start from zero" 
+    h  = strtol(argv[4], NULL, 0) - 1;
+    if( h > 0 )
+      h = h - 1;
 
     //    val=swab_16(val);
     puti2c(REG_X_H, (x >> 8) & 0xff);

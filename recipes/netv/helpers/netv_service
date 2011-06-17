@@ -72,8 +72,8 @@ case "$1" in
 	      
 	      echo "starting NeTVBrowser"
 	      # hardcode the path for now until we have better place to put it
-	      if [ -x /psp/netvbrowser/start_netvbrowser.sh ]; then
-	          /psp/netvbrowser/start_netvbrowser.sh
+	      if [ -x /usr/bin/start_netvbrowser.sh ]; then
+	          /usr/bin/start_netvbrowser.sh
 	      fi
 		;;
 
@@ -90,8 +90,8 @@ case "$1" in
 	      
 	      echo "stopping NeTVBrowser"
 	      # hardcode the path for now until we have better place to put it
-	      if [ -x /psp/netvbrowser/stop_netvbrowser.sh ]; then
-	          /psp/netvbrowser/stop_netvbrowser.sh
+	      if [ -x /usr/bin/stop_netvbrowser.sh ]; then
+	          /usr/bin/stop_netvbrowser.sh
 	      fi
 		;;
 

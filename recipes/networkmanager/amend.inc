@@ -1,4 +1,4 @@
-PR .= "-amend-r4"
+PR .= "-amend-r5"
 SRC_URI += "file://0001-add-chumby-plugin.patch \
             file://0002-fix-username-attribute.patch \
             file://0003-add-config-file.patch \
@@ -7,6 +7,7 @@ SRC_URI += "file://0001-add-chumby-plugin.patch \
             file://0006-add-psp-network_config-support.patch \
             file://0007-fix-wireless-security-config.patch \
             file://0008-make-xml-parser-more-robust.patch \
+            file://0009-make-security-tokens-persistent.patch \
             file://nm-system-settings-chumby.conf \
 "
 
