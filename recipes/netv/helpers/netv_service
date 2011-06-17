@@ -55,26 +55,40 @@ case "$1" in
 	      # Temporary hacks to get the board 'just work' for demo purpose
 	      # See documentation here https://internal.chumby.com/wiki/index.php/NeTV
 
-	      echo "resizing framebuffer using Flashplayer trick"
-	      /etc/init.d/chumby-controlpanel.sh stop
-	      mkfifo /dev/ts
-	      chumbyflashplayer.x -x 1280 -y 720 -i /usr/widgets/controlpanel.swf &
-	      regutil -w LCD_SPU_DMA_PITCH_YC=0x1400
-	      sleep 2
-	      killall chumbyflashplayer.x
-	      sleep 1
+	      # If this is a NeTV image
+	      if [ -e /psp/netvserver/NeTVServer ]; then
 
-	      echo "starting NeTVServer"
-	      # hardcode the path for now until we have better place to put it
-	      if [ -x /psp/netvserver/start_netvserver.sh ]; then
-	          /psp/netvserver/start_netvserver.sh
+		      # hide the ugly initialization sequence
+		      setbox 0 0 1 1
+
+		      # prefix chroma key
+		      fpga_ctl w 0xc 2
+		      fpga_ctl w 0xd 0
+		      fpga_ctl w 0xe 7
+		      fpga_ctl w 0xf 0
+
+		      echo "resizing framebuffer using Flashplayer trick"
+		      /etc/init.d/chumby-controlpanel.sh stop
+		      mkfifo /dev/ts
+		      chumbyflashplayer.x -x 1280 -y 720 -i /psp/netvserver/docroot/widget_engine.swf &
+		      regutil -w LCD_SPU_DMA_PITCH_YC=0x1400
+		      sleep 1
+		      setplayer 0 0 1 1
+
+		      echo "starting NeTVServer"
+		      # hardcode the path for now until we have better place to put it
+		      /psp/netvserver/start_netvserver.sh
+		      sleep 2
+		      
+		      echo "starting NeTVBrowser"
+		      start_netvbrowser.sh
+		      sleep 3
+	
+		      # fullscreen
+		      setbox 0 0 1279 719
+
 	      fi
-	      
-	      echo "starting NeTVBrowser"
-	      # hardcode the path for now until we have better place to put it
-	      if [ -x /usr/bin/start_netvbrowser.sh ]; then
-	          /usr/bin/start_netvbrowser.sh
-	      fi
+
 		;;
 
 	stop)
