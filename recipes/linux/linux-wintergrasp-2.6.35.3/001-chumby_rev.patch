@@ -1,0 +1,37 @@
+diff -Nur linux-2.6.35.3.orig/arch/arm/mach-mx28/mx28evk.c linux-2.6.35.3/arch/arm/mach-mx28/mx28evk.c
+--- linux-2.6.35.3.orig/arch/arm/mach-mx28/mx28evk.c	2011-04-05 12:02:15.785668748 +0800
++++ linux-2.6.35.3/arch/arm/mach-mx28/mx28evk.c	2011-04-13 10:39:01.239491091 +0800
+@@ -148,6 +154,23 @@
+ 	mx28evk_device_init();
+ }
+ 
++static int global_chumbyrev = 0;
++
++int chumby_revision(void)
++{
++        return global_chumbyrev;
++}
++EXPORT_SYMBOL(chumby_revision);
++
++static int __init chumbyrev_setup(char *str)
++{
++        global_chumbyrev = simple_strtoul(str, NULL, 16);
++        printk("Detected chumby version %d (from str %s)\n", global_chumbyrev, str);
++        return 0;
++}
++
++__setup("chumbyrev=", chumbyrev_setup);
++
+ MACHINE_START(MX28EVK, "Freescale MX28EVK board")
+ 	.phys_io	= 0x80000000,
+ 	.io_pg_offst	= ((0xf0000000) >> 18) & 0xfffc,
+diff -Nur linux-2.6.35.3.orig/arch/arm/plat-mxs/include/mach/system.h linux-2.6.35.3/arch/arm/plat-mxs/include/mach/system.h
+--- linux-2.6.35.3.orig/arch/arm/plat-mxs/include/mach/system.h	2011-04-05 12:02:13.569415104 +0800
++++ linux-2.6.35.3/arch/arm/plat-mxs/include/mach/system.h	2011-04-11 15:07:56.950939757 +0800
+@@ -27,4 +27,6 @@
+ int mxs_reset_block(void __iomem *hwreg, int just_enable);
+ int get_evk_board_version(void);
+ 
++extern int chumby_revision(void);
++
+ #endif /* __ASM_ARCH_SYSTEM_H__ */

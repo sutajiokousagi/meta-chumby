@@ -1,32 +1,7 @@
-From 1596e3ae0000b3ec81ad9db5f39998e5260c50f2 Mon Sep 17 00:00:00 2001
-From: Sean Cross <sean@chumby.com>
-Date: Sat, 7 May 2011 12:58:45 +0800
-Subject: [PATCH 4/5] u-boot: Speedup ext2 access
-
----
- fs/ext2/Makefile |    2 +-
- fs/ext2/ext2fs.c |   58 +++++++++++++++++++++++++++++++++++++++++++----------
- include/ext2fs.h |    4 +-
- 3 files changed, 50 insertions(+), 14 deletions(-)
-
-diff --git a/fs/ext2/Makefile b/fs/ext2/Makefile
-index 712e348..cbe7cfa 100644
---- a/fs/ext2/Makefile
-+++ b/fs/ext2/Makefile
-@@ -35,7 +35,7 @@ COBJS-$(CONFIG_CMD_EXT2) := ext2fs.o dev.o
- SRCS	:= $(AOBJS:.o=.S) $(COBJS-y:.o=.c)
- OBJS	:= $(addprefix $(obj),$(AOBJS) $(COBJS-y))
- 
--#CPPFLAGS +=
-+CFLAGS += -O -fno-forward-propagate
- 
- all:	$(LIB) $(AOBJS)
- 
-diff --git a/fs/ext2/ext2fs.c b/fs/ext2/ext2fs.c
-index d54f60b..1bad52f 100644
---- a/fs/ext2/ext2fs.c
-+++ b/fs/ext2/ext2fs.c
-@@ -178,6 +178,7 @@ int indir1_blkno = -1;
+diff -Nur u-boot-2009.08.orig/fs/ext2/ext2fs.c u-boot-2009.08/fs/ext2/ext2fs.c
+--- u-boot-2009.08.orig/fs/ext2/ext2fs.c	2011-03-17 12:40:51.134601956 +0800
++++ u-boot-2009.08/fs/ext2/ext2fs.c	2011-05-24 16:47:12.520639138 +0800
+@@ -178,6 +178,7 @@
  uint32_t *indir2_block = NULL;
  int indir2_size = 0;
  int indir2_blkno = -1;
@@ -34,7 +9,7 @@ index d54f60b..1bad52f 100644
  
  
  static int ext2fs_blockgroup
-@@ -212,7 +213,7 @@ static int ext2fs_read_inode
+@@ -212,7 +213,7 @@
  	unsigned int blkoff;
  
  #ifdef DEBUG
@@ -43,7 +18,7 @@ index d54f60b..1bad52f 100644
  #endif
  	/* It is easier to calculate if the first inode is 0.  */
  	ino--;
-@@ -222,16 +223,12 @@ static int ext2fs_read_inode
+@@ -222,16 +223,12 @@
  		return (0);
  	}
  
@@ -62,7 +37,7 @@ index d54f60b..1bad52f 100644
  #ifdef DEBUG
  	printf ("ext2fs read inode blkno %d blkoff %d\n", blkno, blkoff);
  #endif
-@@ -367,7 +364,7 @@ static int ext2fs_read_block (ext2fs_node_t node, int fileblock) {
+@@ -367,7 +364,7 @@
  			indir2_size = blksz;
  		}
  		if ((__le32_to_cpu (indir1_block[rblock / perblock]) <<
@@ -71,7 +46,7 @@ index d54f60b..1bad52f 100644
  			status = ext2fs_devread (__le32_to_cpu(indir1_block[rblock / perblock]) << log2_blksz,
  						 0, blksz,
  						 (char *) indir2_block);
-@@ -417,6 +414,36 @@ int ext2fs_read_file
+@@ -417,6 +414,36 @@
  		if (blknr < 0) {
  			return (-1);
  		}
@@ -80,7 +55,7 @@ index d54f60b..1bad52f 100644
 +                    (i != (blockcnt - 1)) &&
 +                    blknr)
 +                {
-+                  #define MAX_CONT_BLK 1000
++                  #define MAX_CONT_BLK 2000
 +
 +                  int m, n, p, q;
 +
@@ -108,7 +83,7 @@ index d54f60b..1bad52f 100644
  		blknr = blknr << log2blocksize;
  
  		/* Last block.  */
-@@ -447,7 +474,7 @@ int ext2fs_read_file
+@@ -447,7 +474,7 @@
  		} else {
  			memset (buf, 0, blocksize - skipfirst);
  		}
@@ -117,7 +92,7 @@ index d54f60b..1bad52f 100644
  	}
  	return (len);
  }
-@@ -752,7 +779,7 @@ int ext2fs_find_file
+@@ -752,7 +779,7 @@
  }
  
  
@@ -126,7 +101,7 @@ index d54f60b..1bad52f 100644
  	ext2fs_node_t dirnode;
  	int status;
  
-@@ -772,7 +799,7 @@ int ext2fs_ls (char *dirname) {
+@@ -772,7 +799,7 @@
  }
  
  
@@ -135,7 +110,7 @@ index d54f60b..1bad52f 100644
  	ext2fs_node_t fdiro = NULL;
  	int status;
  	int len;
-@@ -863,6 +890,15 @@ int ext2fs_mount (unsigned part_length) {
+@@ -863,6 +890,15 @@
  	if (__le16_to_cpu (data->sblock.magic) != EXT2_MAGIC) {
  		goto fail;
  	}
@@ -151,11 +126,22 @@ index d54f60b..1bad52f 100644
  	data->diropen.data = data;
  	data->diropen.ino = 2;
  	data->diropen.inode_read = 1;
-diff --git a/include/ext2fs.h b/include/ext2fs.h
-index de935b0..163a9bb 100644
---- a/include/ext2fs.h
-+++ b/include/ext2fs.h
-@@ -74,8 +74,8 @@ typedef enum
+diff -Nur u-boot-2009.08.orig/fs/ext2/Makefile u-boot-2009.08/fs/ext2/Makefile
+--- u-boot-2009.08.orig/fs/ext2/Makefile	2011-03-17 12:40:51.134601956 +0800
++++ u-boot-2009.08/fs/ext2/Makefile	2011-03-25 11:06:32.775550439 +0800
+@@ -35,7 +35,7 @@
+ SRCS	:= $(AOBJS:.o=.S) $(COBJS-y:.o=.c)
+ OBJS	:= $(addprefix $(obj),$(AOBJS) $(COBJS-y))
+ 
+-#CPPFLAGS +=
++CFLAGS += -O -fno-forward-propagate
+ 
+ all:	$(LIB) $(AOBJS)
+ 
+diff -Nur u-boot-2009.08.orig/include/ext2fs.h u-boot-2009.08/include/ext2fs.h
+--- u-boot-2009.08.orig/include/ext2fs.h	2011-03-17 12:40:54.327924976 +0800
++++ u-boot-2009.08/include/ext2fs.h	2011-03-25 11:09:00.618228062 +0800
+@@ -74,8 +74,8 @@
  
  
  extern int ext2fs_set_blk_dev(block_dev_desc_t *rbdd, int part);
@@ -166,6 +152,3 @@ index de935b0..163a9bb 100644
  extern int ext2fs_read (char *buf, unsigned len);
  extern int ext2fs_mount (unsigned part_length);
  extern int ext2fs_close(void);
--- 
-1.7.1
-

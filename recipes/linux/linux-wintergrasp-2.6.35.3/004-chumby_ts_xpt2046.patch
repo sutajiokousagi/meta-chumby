@@ -1,0 +1,834 @@
+diff -Nur linux-2.6.35.3.orig/arch/arm/mach-mx28/device.c linux-2.6.35.3/arch/arm/mach-mx28/device.c
+--- linux-2.6.35.3.orig/arch/arm/mach-mx28/device.c	2011-04-05 12:02:15.785668748 +0800
++++ linux-2.6.35.3/arch/arm/mach-mx28/device.c	2011-05-31 15:56:28.612597490 +0800
+@@ -659,7 +689,9 @@
+ }
+ #endif
+ 
+-#if defined(CONFIG_SPI_MXS) || defined(CONFIG_SPI_MXS_MODULE)
++#if !defined(CONFIG_TOUCHSCREEN_XPT2046) && \
++    !defined(CONFIG_TOUCHSCREEN_XPT2046_MODULE)  && \
++    (defined(CONFIG_SPI_MXS) || defined(CONFIG_SPI_MXS_MODULE))
+ static struct mxs_spi_platform_data spi_data = {
+ 	.clk = "ssp.2",
+ };
+@@ -1578,6 +1642,21 @@
+ 	mx28_init_fec();
+ 	mx28_init_l2switch();
+ 	mx28_init_flexcan();
++
++#if (defined(CONFIG_TOUCHSCREEN_XPT2046) || \
++     defined(CONFIG_TOUCHSCREEN_XPT2046_MODULE)) && \
++    !defined(CONFIG_SPI_MXS) && \
++    !defined(CONFIG_SPI_MXS_MODULE)
++  {
++    struct platform_device *PlatDev;
++
++    PlatDev = mxs_get_device("xpt2046", 0);
++
++    if ((PlatDev != NULL) && !IS_ERR(PlatDev))
++      mxs_add_device(PlatDev, 3);
++  }
++#endif
++
+ 	mx28_init_kbd();
+ 	mx28_init_ts();
+ 	mx28_init_audio();
+diff -Nur linux-2.6.35.3.orig/arch/arm/mach-mx28/mx28evk_pins.c linux-2.6.35.3/arch/arm/mach-mx28/mx28evk_pins.c
+--- linux-2.6.35.3.orig/arch/arm/mach-mx28/mx28evk_pins.c	2011-04-05 12:02:15.789413658 +0800
++++ linux-2.6.35.3/arch/arm/mach-mx28/mx28evk_pins.c	2011-05-09 15:28:46.367831147 +0800
+@@ -336,6 +336,9 @@
+ 	 .voltage	= PAD_3_3V,
+ 	 .drive	= 1,
+ 	 },
++
++#if !defined(CONFIG_TOUCHSCREEN_XPT2046) && \
++    !defined(CONFIG_TOUCHSCREEN_XPT2046_MODULE)
+ 	{
+ 	 .name  = "LCD_D19",
+ 	 .id	= PINID_LCD_D19,
+@@ -344,6 +347,8 @@
+ 	 .voltage	= PAD_3_3V,
+ 	 .drive	= 1,
+ 	 },
++#endif
++
+ 	{
+ 	 .name  = "LCD_D20",
+ 	 .id	= PINID_LCD_D20,
+@@ -360,6 +365,9 @@
+ 	 .voltage	= PAD_3_3V,
+ 	 .drive	= 1,
+ 	 },
++
++#if !defined(CONFIG_TOUCHSCREEN_XPT2046) && \
++    !defined(CONFIG_TOUCHSCREEN_XPT2046_MODULE)
+ 	{
+ 	 .name  = "LCD_D22",
+ 	 .id	= PINID_LCD_D22,
+@@ -368,6 +376,8 @@
+ 	 .voltage	= PAD_3_3V,
+ 	 .drive	= 1,
+ 	 },
++#endif
++
+ 	{
+ 	 .name  = "LCD_D23",
+ 	 .id	= PINID_LCD_D23,
+@@ -1072,7 +1119,11 @@
+ 	 },
+ };
+ 
+-#if defined(CONFIG_SPI_MXS) || defined(CONFIG_SPI_MXS_MODULE)
++#if (!defined(CONFIG_TOUCHSCREEN_XPT2046) && \
++     !defined(CONFIG_TOUCHSCREEN_XPT2046_MODULE) && \
++     (defined(CONFIG_SPI_MXS) || defined(CONFIG_SPI_MXS_MODULE))) || \
++    (defined(CONFIG_TOUCHSCREEN_XPT2046_SPI) || \
++     defined(CONFIG_TOUCHSCREEN_XPT2046_SPI_MODULE))
+ static struct pin_desc mx28evk_spi_pins[] = {
+ 	{
+ 	 .name	= "SSP2 MOSI",
+@@ -1218,7 +1269,12 @@
+ 						ARRAY_SIZE(mx28evk_gpmi_pins));
+ 	}
+ 
+-#if defined(CONFIG_SPI_MXS) || defined(CONFIG_SPI_MXS_MODULE)
++
++#if (!defined(CONFIG_TOUCHSCREEN_XPT2046) && \
++     !defined(CONFIG_TOUCHSCREEN_XPT2046_MODULE) && \
++     (defined(CONFIG_SPI_MXS) || defined(CONFIG_SPI_MXS_MODULE))) || \
++    (defined(CONFIG_TOUCHSCREEN_XPT2046_SPI) || \
++     defined(CONFIG_TOUCHSCREEN_XPT2046_SPI_MODULE))
+ 	mx28evk_init_pin_group(mx28evk_spi_pins,
+ 					ARRAY_SIZE(mx28evk_spi_pins));
+ #endif
+diff -Nur linux-2.6.35.3.orig/arch/arm/plat-mxs/device.c linux-2.6.35.3/arch/arm/plat-mxs/device.c
+--- linux-2.6.35.3.orig/arch/arm/plat-mxs/device.c	2011-04-05 12:02:13.569415104 +0800
++++ linux-2.6.35.3/arch/arm/plat-mxs/device.c	2011-05-31 15:56:15.652522558 +0800
+@@ -176,7 +176,9 @@
+ };
+ #endif
+ 
+-#if defined(CONFIG_SPI_MXS) || defined(CONFIG_SPI_MXS_MODULE)
++#if !defined(CONFIG_TOUCHSCREEN_XPT2046) && \
++    !defined(CONFIG_TOUCHSCREEN_XPT2046_MODULE)  && \
++    (defined(CONFIG_SPI_MXS) || defined(CONFIG_SPI_MXS_MODULE))
+ static struct platform_device mxs_spi[] = {
+ 	{
+ 	 .name	= "mxs-spi",
+@@ -288,6 +290,19 @@
+ };
+ #endif
+ 
++#if (defined(CONFIG_TOUCHSCREEN_XPT2046) || \
++     defined(CONFIG_TOUCHSCREEN_XPT2046_MODULE)) && \
++    !defined(CONFIG_SPI_MXS) && \
++    !defined(CONFIG_SPI_MXS_MODULE)
++static struct platform_device xpt2046 = {
++	.name = "xpt2046",
++	.id = 0,
++	.dev = {
++		.release = mxs_nop_release,
++		},
++};
++#endif
++
+ #if defined(CONFIG_KEYBOARD_MXS) || defined(CONFIG_KEYBOARD_MXS_MODULE)
+ static struct platform_device mxs_kbd = {
+ 	.name = "mxs-kbd",
+@@ -544,7 +571,9 @@
+ 	},
+ #endif
+ 
+-#if defined(CONFIG_SPI_MXS) || defined(CONFIG_SPI_MXS_MODULE)
++#if !defined(CONFIG_TOUCHSCREEN_XPT2046) && \
++    !defined(CONFIG_TOUCHSCREEN_XPT2046_MODULE)  && \
++    (defined(CONFIG_SPI_MXS) || defined(CONFIG_SPI_MXS_MODULE))
+ 	{
+ 	.name = "mxs-spi",
+ 	.size = ARRAY_SIZE(mxs_spi),
+@@ -641,6 +670,17 @@
+ 	 },
+ #endif
+ 
++#if (defined(CONFIG_TOUCHSCREEN_XPT2046) || \
++     defined(CONFIG_TOUCHSCREEN_XPT2046_MODULE)) && \
++    !defined(CONFIG_SPI_MXS) && \
++    !defined(CONFIG_SPI_MXS_MODULE)
++	{
++	 .name = "xpt2046",
++	 .size = 1,
++	 .pdev = &xpt2046,
++	 },
++#endif
++
+ #if defined(CONFIG_KEYBOARD_MXS) || defined(CONFIG_KEYBOARD_MXS_MODULE)
+ 	{
+ 	 .name = "mxs-kbd",
+diff -Nur linux-2.6.35.3.orig/drivers/input/touchscreen/Kconfig linux-2.6.35.3/drivers/input/touchscreen/Kconfig
+--- linux-2.6.35.3.orig/drivers/input/touchscreen/Kconfig	2011-04-05 12:02:56.059203785 +0800
++++ linux-2.6.35.3/drivers/input/touchscreen/Kconfig	2011-05-09 15:19:24.734901755 +0800
+@@ -643,4 +643,11 @@
+ 	  To compile this driver as a module, choose M here: the
+ 	  module will be called tps6507x_ts.
+ 
++config TOUCHSCREEN_XPT2046
++	tristate "XPT2046 based touchscreens"
++
++config TOUCHSCREEN_XPT2046_SPI
++	tristate "XPT2046 based touchscreens using SPI"
++	depends on TOUCHSCREEN_XPT2046
++
+ endif
+diff -Nur linux-2.6.35.3.orig/drivers/input/touchscreen/Makefile linux-2.6.35.3/drivers/input/touchscreen/Makefile
+--- linux-2.6.35.3.orig/drivers/input/touchscreen/Makefile	2011-04-05 12:02:56.059203785 +0800
++++ linux-2.6.35.3/drivers/input/touchscreen/Makefile	2011-04-18 15:34:30.150872710 +0800
+@@ -51,3 +51,4 @@
+ obj-$(CONFIG_TOUCHSCREEN_WM97XX_ZYLONITE)	+= zylonite-wm97xx.o
+ obj-$(CONFIG_TOUCHSCREEN_W90X900)	+= w90p910_ts.o
+ obj-$(CONFIG_TOUCHSCREEN_TPS6507X)	+= tps6507x-ts.o
++obj-$(CONFIG_TOUCHSCREEN_XPT2046)	+= xpt2046.o
+diff -Nur linux-2.6.35.3.orig/drivers/input/touchscreen/xpt2046.c linux-2.6.35.3/drivers/input/touchscreen/xpt2046.c
+--- linux-2.6.35.3.orig/drivers/input/touchscreen/xpt2046.c	1970-01-01 07:30:00.000000000 +0730
++++ linux-2.6.35.3/drivers/input/touchscreen/xpt2046.c	2011-06-01 14:23:59.060957039 +0800
+@@ -0,0 +1,640 @@
++/*
++ * The code contained herein is licensed under the GNU General Public
++ * License. You may obtain a copy of the GNU General Public License
++ * Version 2 or later at the following locations:
++ *
++ * http://www.opensource.org/licenses/gpl-license.html
++ * http://www.gnu.org/copyleft/gpl.html
++ */
++
++#include <linux/delay.h>
++#include <linux/freezer.h>
++#include <linux/input.h>
++#include <linux/kthread.h>
++#include <linux/platform_device.h>
++
++#define NAME "xpt2046"
++#define CHIP_CMD(a) (0x83 | (((a) & 0x07) << 4))
++
++#define SAMPLE_MAX 0x0fff
++#define SAMPLE_THRES_MAX 4080
++#define SAMPLE_WAIT_MS 2
++
++static int __devinit Probe(struct platform_device *a);
++static int __devexit Remove(struct platform_device *a);
++
++static struct platform_driver PlatDrv =
++  {
++    .probe = Probe,
++    .remove = __devexit_p(Remove),
++
++    .driver =
++      {
++        .name = NAME,
++      }
++  };
++
++static struct input_dev *Dev = NULL;
++static int ScaleIt = false;
++static int On = false;
++
++static DECLARE_COMPLETION(ThreadExit);
++
++#if !defined(CONFIG_TOUCHSCREEN_XPT2046_SPI) && \
++    !defined(CONFIG_TOUCHSCREEN_XPT2046_SPI_MODULE)
++#include <../../mach-mx28/mx28_pins.h>
++
++enum
++{
++  DIN = 0,
++  DOUT,
++  DCLK,
++  CS,
++  BUSY,
++  IRQ
++};
++
++static struct gpio GPIO[] =
++  {
++    [DIN] =
++      {
++        MXS_PIN_TO_GPIO(PINID_SSP2_MOSI),
++        GPIOF_OUT_INIT_LOW,
++        "DIN"
++      },
++
++    [DOUT] =
++      {
++        MXS_PIN_TO_GPIO(PINID_SSP2_MISO),
++        GPIOF_IN,
++        "DOUT"
++      },
++
++    [DCLK] =
++      {
++        MXS_PIN_TO_GPIO(PINID_SSP2_SCK),
++        GPIOF_OUT_INIT_LOW,
++        "DCLK"
++      },
++
++    [CS] =
++      {
++        MXS_PIN_TO_GPIO(PINID_SSP2_SS0),
++        GPIOF_OUT_INIT_HIGH,
++        "CS"
++      },
++
++    [BUSY] =
++      {
++        MXS_PIN_TO_GPIO(PINID_LCD_D19),
++        GPIOF_IN,
++        "BUSY"
++      },
++
++    [IRQ] =
++      {
++        MXS_PIN_TO_GPIO(PINID_LCD_D22),
++        GPIOF_IN,
++        "IRQ"
++      }
++  };
++
++static int ChipInit(void)
++{
++  int RetVal;
++
++  if ((RetVal = gpio_request_array(GPIO, ARRAY_SIZE(GPIO))) < 0)
++    pr_err("%s : request gpio fail\n", NAME);
++
++  return RetVal;
++}
++
++static void ChipFree(void)
++{
++  gpio_free_array(GPIO, ARRAY_SIZE(GPIO));
++}
++
++static void ChipClock(void)
++{
++  gpio_set_value(GPIO[DCLK].gpio, false);
++  udelay(1);
++
++  gpio_set_value(GPIO[DCLK].gpio, true);
++  udelay(1);
++}
++
++static unsigned char ChipIn(void)
++{
++  int m;
++  unsigned char Val;
++
++  Val = 0;
++
++  for (m = 7; m >= 0; m--)
++  {
++     ChipClock();
++
++     Val |= ((gpio_get_value(GPIO[DOUT].gpio) ? 1 : 0) << m);
++  }
++
++  return Val;
++}
++
++static void ChipOut(unsigned char Val)
++{
++  int m;
++
++  for (m = 7; m >= 0; m--)
++  {
++    gpio_set_value(GPIO[DIN].gpio, (Val & (0x01 << m)) ? true : false);
++
++    ChipClock();
++
++    //Settling time
++    if (m == 2)
++      msleep(1);
++  }
++}
++
++static int ChipGetSample(int Chn)
++{
++  int Val;
++
++  gpio_set_value(GPIO[CS].gpio, false);
++
++  ChipOut(CHIP_CMD(Chn));
++
++  Val = (ChipIn() & 0x7f) << 5;
++  Val |= (ChipIn() & 0xf8) >> 3;
++  
++  gpio_set_value(GPIO[CS].gpio, true);
++
++  return Val;
++}
++#else
++#include <linux/clk.h>
++#include <linux/io.h>
++
++#include <mach/mx28.h>
++#include <mach/regs-ssp.h>
++
++#define REG_SSP IO_ADDRESS(SSP2_PHYS_ADDR)
++#define CLK_SSP "ssp.2"
++
++#define CLK_RATE 4000
++
++static void ChipFree(void);
++
++static int ChipInit(void)
++{
++  struct clk *Clk;
++  int m, n;
++
++  //Reset
++  __raw_writel(
++    BM_SSP_CTRL0_CLKGATE,
++    REG_SSP + HW_SSP_CTRL0_CLR);
++  __raw_writel(
++    BM_SSP_CTRL0_SFTRST,
++    REG_SSP + HW_SSP_CTRL0_SET);
++
++  msleep(1);
++
++  __raw_writel(
++    BM_SSP_CTRL0_SFTRST,
++    REG_SSP + HW_SSP_CTRL0_CLR);
++
++  //Init clk
++  if (IS_ERR(Clk = clk_get(NULL, CLK_SSP)))
++  {
++    ChipFree();
++
++    pr_err("%s : request clock fail\n", NAME);
++
++    return -1;
++  }
++
++  clk_enable(Clk);
++  clk_set_rate(Clk, 120 * 1000 * 1000);
++
++  if (!(m = clk_get_rate(Clk)))
++  {
++    ChipFree();
++
++    pr_err("%s : clock is dead\n", NAME);
++
++    return -1;
++  }
++
++  if ((m = m / CLK_RATE) > (254 * 256))
++  {
++    ChipFree();
++
++    pr_err("%s : clock divider %d too big\n", NAME, m);
++
++    return -1;
++  }
++
++  n = 1;
++
++  while (m > 256)
++  {
++    m /= 2;
++    n *= 2;
++  }
++
++  __raw_writel(
++    BF_SSP_TIMING_CLOCK_RATE(m - 1) |
++    BF_SSP_TIMING_CLOCK_DIVIDE(n) |
++    BF_SSP_TIMING_TIMEOUT(1),
++    REG_SSP + HW_SSP_TIMING);
++
++  m = __raw_readl(REG_SSP + HW_SSP_TIMING);
++  n = (m & BM_SSP_TIMING_CLOCK_DIVIDE) >> BP_SSP_TIMING_CLOCK_DIVIDE;
++  m = (m & BM_SSP_TIMING_CLOCK_RATE) >> BP_SSP_TIMING_CLOCK_RATE;
++
++  if (!n)
++  {
++    ChipFree();
++
++    pr_err("%s : setup clock divide fail\n", NAME);
++
++    return -1;
++  }
++
++  pr_info(
++    "%s : clock %dKhz\n",
++    NAME,
++    (int) (clk_get_rate(Clk) / (n * (m + 1)) / 1000));
++
++  //Init engine
++  __raw_writel(
++    BF_SSP_CTRL1_SSP_MODE(BV_SSP_CTRL1_SSP_MODE__SPI) |
++    BF_SSP_CTRL1_WORD_LENGTH(BV_SSP_CTRL1_WORD_LENGTH__EIGHT_BITS),
++    REG_SSP + HW_SSP_CTRL1);
++  __raw_writel(
++    BF_SSP_CTRL0_BUS_WIDTH(BV_SSP_CTRL0_BUS_WIDTH__ONE_BIT) |
++    BM_SSP_CTRL0_LOCK_CS,
++    REG_SSP + HW_SSP_CTRL0); //SSn0, SSn always active
++
++  return 0;
++}
++
++static void ChipFree(void)
++{
++  struct clk *Clk;
++
++  __raw_writel(
++    BM_SSP_CTRL0_CLKGATE,
++    REG_SSP + HW_SSP_CTRL0_SET);
++
++  if (!IS_ERR(Clk = clk_get(NULL, CLK_SSP)))
++    clk_disable(Clk);
++}
++
++static int ChipRdWr(int Rd, int Val, int CSOff)
++{
++  int m;
++
++  m = 0;
++
++  __raw_writel(
++    BF_SSP_XFER_SIZE_XFER_COUNT(1),
++    REG_SSP + HW_SSP_XFER_SIZE);
++
++  __raw_writel(
++    BM_SSP_CTRL0_READ,
++    REG_SSP + ((Rd) ? HW_SSP_CTRL0_SET : HW_SSP_CTRL0_CLR));
++
++  __raw_writel(
++    BM_SSP_CTRL0_IGNORE_CRC,
++    REG_SSP + ((CSOff) ? HW_SSP_CTRL0_SET : HW_SSP_CTRL0_CLR));
++
++  __raw_writel(
++    BM_SSP_CTRL0_RUN,
++    REG_SSP + HW_SSP_CTRL0_SET);
++
++  while (!__raw_readl(REG_SSP + HW_SSP_CTRL0) & BM_SSP_CTRL0_RUN)
++    yield();
++
++  if (!Rd)
++    __raw_writel(Val, REG_SSP + HW_SSP_DATA);
++
++  __raw_writel(
++    BM_SSP_CTRL0_DATA_XFER,
++    REG_SSP + HW_SSP_CTRL0_SET);
++
++  if (Rd)
++  {
++    while (__raw_readl(REG_SSP + HW_SSP_STATUS) & BM_SSP_STATUS_FIFO_EMPTY)
++      yield();
++
++    m = __raw_readl(REG_SSP + HW_SSP_DATA) & 0xff;
++  }
++    
++  while (__raw_readl(REG_SSP + HW_SSP_CTRL0) & BM_SSP_CTRL0_RUN)
++    yield();
++
++  return m;
++}
++
++static int ChipGetSample(int Chn)
++{
++  int Val;
++
++  ChipRdWr(false, CHIP_CMD(Chn), false);
++
++  Val = (ChipRdWr(true, 0, false) & 0x7f) << 5;
++  Val |= (ChipRdWr(true, 0, true) & 0xf8) >> 3;
++
++  return Val;
++}
++#endif
++
++static int GetX(int *Val)
++{
++  #define X_THRES_MIN 110
++  #define X_THRES_MAX 4000
++  #define X_RES 320
++  #define X_TOLPCT 40
++
++  int m, n;
++
++  msleep(SAMPLE_WAIT_MS);
++
++  if ((m = ChipGetSample(5)) > SAMPLE_THRES_MAX)
++    return -1;
++
++  if (ScaleIt)
++  {
++    m = ((m - X_THRES_MIN) * X_RES) / (X_THRES_MAX - X_THRES_MIN);
++
++    n = ((X_RES * X_TOLPCT) / 100);
++
++    m = (m < -n) ? -n : m;
++    m = (m > (X_RES + n)) ? X_RES + n : m;
++  }
++
++  *Val = m;
++
++  return 0;
++}
++
++static int GetY(int *Val)
++{
++  #define Y_THRES_MIN 230
++  #define Y_THRES_MAX 3900
++  #define Y_RES 240
++  #define Y_TOLPCT 40
++
++  int m, n;
++
++  msleep(SAMPLE_WAIT_MS);
++
++  if ((m = ChipGetSample(1)) > SAMPLE_THRES_MAX)
++    return -1;
++
++  if (ScaleIt)
++  {
++    m = ((m - Y_THRES_MIN) * Y_RES) / (Y_THRES_MAX - Y_THRES_MIN);
++
++    n = ((Y_RES * Y_TOLPCT) / 100);
++    m = (m < -n) ? -n : m;
++    m = (m > (Y_RES + n)) ? Y_RES + n : m;
++  }
++
++  *Val = m;
++
++  return 0;
++}
++
++static int GetZ(int *Val)
++{
++  #define Z_THRES_MIN 100
++  #define Z_THRES_MAX 3300
++  #define Z_RES 100
++  #define Z_TOLPCT 40
++
++  int m, n, p;
++
++  msleep(SAMPLE_WAIT_MS);
++
++  if ((m = ChipGetSample(5)) > SAMPLE_THRES_MAX)
++    return -1;
++
++  msleep(SAMPLE_WAIT_MS);
++
++  if (((n = ChipGetSample(3)) > SAMPLE_THRES_MAX) || !n)
++    return -1;
++
++  msleep(SAMPLE_WAIT_MS);
++
++  if ((p = ChipGetSample(4)) > SAMPLE_THRES_MAX)
++    return -1;
++
++  m = ((m * p) / n) - m;
++  m = ((m - Z_THRES_MIN) * Z_RES) / (Z_THRES_MAX - Z_THRES_MIN);
++
++  n = ((Z_RES * Z_TOLPCT) / 100);
++
++  m = (m < -n) ? -n : m;
++  m = (m > (Z_RES + n)) ? Z_RES + n : m;
++
++  *Val = m;
++
++  return 0;
++}
++
++static int StableIt(int (*Func)(int *), int *Val, int Rng)
++{
++  #define STABLE_CNT 1
++
++  int m, n, p, q;
++
++  m = 0;
++
++  for (n = 0; n < STABLE_CNT; n++)
++  {
++    if ((*Func)(&p))
++      return -1;
++
++    if (n)
++    {
++      q = m / n;
++
++      if (p > (q + Rng))
++        break;
++
++      if (p < (q - Rng))
++        break;
++    }
++
++    m += p;
++  }
++
++  if (n < STABLE_CNT)
++    return -1;
++
++  *Val = m / n;
++
++  return 0;
++}
++
++static int Thread(void *a)
++{
++  #define PRESS_THRES 10
++
++  static int m, n, p, q;
++
++  daemonize(NAME);
++
++  set_freezable();
++
++  m = false;
++
++  //initial run
++  GetX(&n);
++  GetY(&p);
++  GetZ(&q);
++
++  while (On)
++  {
++    try_to_freeze();
++
++#if 0
++    GetX(&n);
++    GetY(&p);
++    GetZ(&q);
++
++    pr_info("%s : x %d y %d z %d\n", NAME, n, p, q);
++
++    msleep(100);
++#else
++    if (!GetZ(&n) && (n > PRESS_THRES))
++    {
++      if (!StableIt(GetX, &p, 10) &&
++          !StableIt(GetY, &q, 10))
++      {
++        input_report_abs(Dev, ABS_X, p);
++        input_report_abs(Dev, ABS_Y, q);
++        input_report_abs(Dev, ABS_PRESSURE, 1);
++        input_report_key(Dev, BTN_TOUCH, 1);
++
++        input_sync(Dev);
++
++        m = true;
++
++        pr_devel("%s : x %d y %d z %d\n", NAME, p, q, n);
++      }
++    } else
++    {
++      if (m)
++      {
++        input_report_abs(Dev, ABS_X, p);
++        input_report_abs(Dev, ABS_Y, q);
++        input_report_abs(Dev, ABS_PRESSURE, 0);
++        input_report_key(Dev, BTN_TOUCH, 0);
++
++        input_sync(Dev);
++
++        m = false;
++      }
++    }
++#endif
++
++  }
++
++  complete(&ThreadExit);
++
++  return 0;
++}
++
++static int __devinit Probe(struct platform_device *a)
++{
++  int RetVal;
++
++  if ((Dev = input_allocate_device()) == NULL)
++  {
++    pr_err("%s : input allocate fail\n", NAME);
++
++    return -ENOMEM;
++  }
++
++  Dev->name = NAME;
++  Dev->evbit[0] = BIT_MASK(EV_KEY) | BIT_MASK(EV_ABS);
++  Dev->keybit[BIT_WORD(BTN_TOUCH)] |= BIT_MASK(BTN_TOUCH);
++  Dev->absbit[0] = BIT_MASK(ABS_X) | BIT_MASK(ABS_Y) | BIT_MASK(ABS_PRESSURE);
++
++  if (ScaleIt)
++  {
++    input_set_abs_params(Dev, ABS_X, 0, X_RES, 0, 0);
++    input_set_abs_params(Dev, ABS_Y, 0, Y_RES, 0, 0);
++  } else
++  {
++    input_set_abs_params(Dev, ABS_X, 0, SAMPLE_MAX, 0, 0);
++    input_set_abs_params(Dev, ABS_Y, 0, SAMPLE_MAX, 0, 0);
++  }
++
++  input_set_abs_params(Dev, ABS_PRESSURE, 0, 1, 0, 0);
++
++  if ((RetVal = input_register_device(Dev)) < 0)
++  {
++    input_free_device(Dev);
++
++    Dev = NULL;
++
++    return RetVal;
++  }
++
++  if ((RetVal = ChipInit()) < 0)
++  {
++    input_unregister_device(Dev);
++    input_free_device(Dev);
++
++    Dev = NULL;
++
++    return RetVal;
++  }
++
++  On = true;
++
++  kthread_run(Thread, NULL, NAME);
++
++  pr_info("%s : driver loaded\n", NAME);
++
++  return 0;
++}
++
++static int __devexit Remove(struct platform_device *a)
++{
++  On = false;
++
++  input_unregister_device(Dev);
++  input_free_device(Dev);
++
++  Dev = NULL;
++
++  wait_for_completion(&ThreadExit);
++
++  ChipFree();
++
++  return 0;
++}
++
++static int __init Init(void)
++{
++  return platform_driver_register(&PlatDrv);
++}
++
++static void __exit Exit(void)
++{
++  platform_driver_unregister(&PlatDrv);
++}
++
++module_init(Init);
++module_exit(Exit);
++module_param(ScaleIt, bool, 0644);
++
++MODULE_DESCRIPTION("xpt2046 touchscreen driver");
++MODULE_AUTHOR("chumby");
++MODULE_LICENSE("GPL");

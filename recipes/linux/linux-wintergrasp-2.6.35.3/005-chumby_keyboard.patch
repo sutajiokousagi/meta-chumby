@@ -1,0 +1,447 @@
+diff -Nur linux-2.6.35.3.orig/arch/arm/mach-mx28/device.c linux-2.6.35.3/arch/arm/mach-mx28/device.c
+--- linux-2.6.35.3.orig/arch/arm/mach-mx28/device.c	2011-04-05 12:02:15.785668748 +0800
++++ linux-2.6.35.3/arch/arm/mach-mx28/device.c	2011-05-31 15:56:28.612597490 +0800
+@@ -975,6 +1007,16 @@
+ #endif
+ 
+ #if defined(CONFIG_KEYBOARD_MXS) || defined(CONFIG_KEYBOARD_MXS_MODULE)
++
++#if defined(CONFIG_KEYBOARD_MXS_CHUMBY) || defined(CONFIG_KEYBOARD_MXS_CHUMBY_MODULE)
++static struct mxskbd_keypair keyboard_data[] = {
++	{ 313, KEY_F4 },
++	{ 933, KEY_F5 },
++	{ 1575, KEY_F6 },
++	{ 2203, KEY_F7 },
++	{ -1, 0 },
++};
++#else
+ static struct mxskbd_keypair keyboard_data[] = {
+ 	{ 100, KEY_F4 },
+ 	{ 306, KEY_F5 },
+@@ -989,6 +1031,7 @@
+ 	{ 3134, KEY_F14 },
+ 	{ -1, 0 },
+ };
++#endif
+ 
+ static struct mxs_kbd_plat_data mxs_kbd_data = {
+ 	.keypair = keyboard_data,
+@@ -1009,11 +1052,15 @@
+ 	 .start = IRQ_LRADC_CH1,
+ 	 .end   = IRQ_LRADC_CH1,
+ 	 },
++
++#if !defined(CONFIG_KEYBOARD_MXS_CHUMBY) && !defined(CONFIG_KEYBOARD_MXS_CHUMBY_MODULE)
+ 	{
+ 	.flags = IORESOURCE_IRQ,
+ 	.start = IRQ_LRADC_BUTTON1,
+ 	.end = IRQ_LRADC_BUTTON1,
+ 	}
++#endif
++
+ };
+ 
+ static void __init mx28_init_kbd(void)
+diff -Nur linux-2.6.35.3.orig/arch/arm/mach-mx28/pm.c linux-2.6.35.3/arch/arm/mach-mx28/pm.c
+--- linux-2.6.35.3.orig/arch/arm/mach-mx28/pm.c	2011-04-05 12:02:15.789413658 +0800
++++ linux-2.6.35.3/arch/arm/mach-mx28/pm.c	2011-06-02 15:33:14.911434951 +0800
+@@ -346,7 +346,11 @@
+ 	pm_power_off = mx28_pm_power_off;
+ 	pm_idle = mx28_pm_idle;
+ 	suspend_set_ops(&mx28_suspend_ops);
++
++#if !defined(CONFIG_KEYBOARD_MXS_CHUMBY) && !defined(CONFIG_KEYBOARD_MXS_CHUMBY_MODULE)
+ 	init_pswitch();
++#endif
++
+ 	return 0;
+ }
+
+diff -Nur linux-2.6.35.3.orig/drivers/input/keyboard/chumby-pswkbd-ext.c linux-2.6.35.3/drivers/input/keyboard/chumby-pswkbd-ext.c
+--- linux-2.6.35.3.orig/drivers/input/keyboard/chumby-pswkbd-ext.c	1970-01-01 07:30:00.000000000 +0730
++++ linux-2.6.35.3/drivers/input/keyboard/chumby-pswkbd-ext.c	2011-06-02 16:56:29.076460665 +0800
+@@ -0,0 +1,307 @@
++/*
++ * The code contained herein is licensed under the GNU General Public
++ * License. You may obtain a copy of the GNU General Public License
++ * Version 2 or later at the following locations:
++ *
++ * http://www.opensource.org/licenses/gpl-license.html
++ * http://www.gnu.org/copyleft/gpl.html
++ */
++
++#include <linux/delay.h>
++#include <linux/input.h>
++#include <linux/interrupt.h>
++#include <linux/io.h>
++#include <linux/irq.h>
++
++#include <mach/regs-power.h>
++
++#define USE_LEGACY
++
++#define NAME "chumby-pswkbd-ext"
++#define CHUMBYKEY_MENU KEY_F9
++
++struct KeyPair
++{
++  int Mask;
++  int KeyCode;
++};
++
++static irqreturn_t IRq(int, void *);
++static void DoWork(struct work_struct *);
++
++static struct input_dev *Dev = NULL;
++static int On = false;
++
++static struct irqaction IRqAct =
++  {
++    .name = NAME,
++    .flags = IRQF_SHARED,
++    .handler = IRq
++  };
++
++DECLARE_DELAYED_WORK(Work, DoWork);
++
++static struct KeyPair KeyPair[] =
++  {
++    //Must be in this order, due to BF_POWER_STS_PSWITCH peculiarity
++    { 0x00200000, CHUMBYKEY_MENU },
++    { 0x00100000, KEY_F8 },
++  };
++
++#if defined(USE_LEGACY)
++#include <asm/uaccess.h>
++#include <linux/cdev.h>
++
++static int LegacyOpen(struct inode *a, struct file *b);
++static int LegacyClose(struct inode *a, struct file *b);
++static ssize_t LegacyRead(
++                 struct file *a,
++                 char *Buf,
++                 size_t Len,
++                 loff_t *b);
++
++static dev_t LegacyDev;
++static int LegacyMjr, LegacyMnr;
++static struct cdev *LegacyCDev = NULL;
++static struct file_operations LegacyFOp =
++  {
++    .owner = THIS_MODULE,
++    .open = LegacyOpen,
++    .read = LegacyRead,
++    .release = LegacyClose
++  };
++static int LegacySw = false;
++
++static int LegacyOpen(struct inode *a, struct file *b)
++{
++  return 0;
++}
++
++static int LegacyClose(struct inode *a, struct file *b)
++{
++  return 0;
++}
++
++static ssize_t LegacyRead(
++                 struct file *a,
++                 char *Buf,
++                 size_t Len,
++                 loff_t *b)
++{
++  char RetVal = !!LegacySw;
++
++  if (Len)
++  {
++    if (copy_to_user(Buf, &RetVal, sizeof(RetVal)))
++      return -EFAULT;
++
++    return sizeof(RetVal);
++  }
++
++  return 0;
++}
++
++int LegacyInit(void)
++{
++  if ((LegacyCDev = cdev_alloc()) != NULL)
++  {
++    if (!alloc_chrdev_region(&LegacyDev, LegacyMnr, 1, "switch"))
++    {
++      LegacyMjr = MAJOR(LegacyDev);
++
++      cdev_init(LegacyCDev, &LegacyFOp);
++
++      LegacyCDev->owner = THIS_MODULE;
++      LegacyCDev->ops = &LegacyFOp;
++
++      if (!cdev_add(LegacyCDev, LegacyDev, 1))
++        return 0;
++
++      unregister_chrdev_region(MKDEV(LegacyMjr, LegacyMnr), 1);
++    }
++
++    cdev_del(LegacyCDev);
++
++    LegacyCDev = NULL;
++  }
++
++  return -1;
++}
++
++void LegacyFree(void)
++{
++  if (LegacyCDev != NULL)
++  {
++    unregister_chrdev_region(MKDEV(LegacyMjr, LegacyMnr), 1);
++    cdev_del(LegacyCDev);
++
++    LegacyCDev = NULL;
++  }
++}
++#endif
++
++static irqreturn_t IRq(int a, void *b)
++{
++  if (__raw_readl(REGS_POWER_BASE + HW_POWER_CTRL) &
++      BM_POWER_CTRL_PSWITCH_IRQ)
++  {
++    __raw_writel(
++      BM_POWER_CTRL_ENIRQ_PSWITCH,
++      REGS_POWER_BASE + HW_POWER_CTRL_CLR);
++
++    schedule_delayed_work(&Work, 1);
++  }
++
++  return IRQ_HANDLED;
++};
++
++static void DoWork(struct work_struct *a)
++{
++  static int KeyCode;
++  int m, n, p;
++
++  //debounce period
++  msleep(20);
++
++  m = __raw_readl(REGS_POWER_BASE + HW_POWER_CTRL) &
++      BM_POWER_CTRL_POLARITY_PSWITCH;
++  n = __raw_readl(REGS_POWER_BASE + HW_POWER_STS) &
++      BF_POWER_STS_PSWITCH(0x03);
++
++  if (m)
++  {
++    if (n)
++    {
++      for (p = 0; p < ARRAY_SIZE(KeyPair); p++)
++      {
++        if (n & KeyPair[p].Mask)
++        {
++          KeyCode = KeyPair[p].KeyCode;
++
++          input_report_key(Dev, KeyCode, !0);
++		      input_sync(Dev);
++
++#if defined(USE_LEGACY)
++          if (KeyCode == CHUMBYKEY_MENU)
++            LegacySw = true;
++#endif
++
++          pr_devel("%s : key %d on\n", NAME, KeyCode);
++
++          break;
++        }
++      }
++
++      __raw_writel(
++        BM_POWER_CTRL_POLARITY_PSWITCH,
++        REGS_POWER_BASE + HW_POWER_CTRL_CLR);
++    }
++
++  } else
++  {
++    if (!n)
++    {
++      input_report_key(Dev, KeyCode, 0);
++		  input_sync(Dev);
++
++#if defined(USE_LEGACY)
++      if (KeyCode == CHUMBYKEY_MENU)
++        LegacySw = false;
++#endif
++
++      pr_devel("%s : key %d off\n", NAME, KeyCode);
++
++      __raw_writel(
++        BM_POWER_CTRL_POLARITY_PSWITCH,
++        REGS_POWER_BASE + HW_POWER_CTRL_SET);
++    }
++  }
++
++  __raw_writel(
++    BM_POWER_CTRL_PSWITCH_IRQ,
++    REGS_POWER_BASE + HW_POWER_CTRL_CLR);
++
++  if (On)
++    __raw_writel(
++      BM_POWER_CTRL_ENIRQ_PSWITCH,
++      REGS_POWER_BASE + HW_POWER_CTRL_SET);
++}
++
++static void PSwKbd_Init0(struct input_dev *InputDev)
++{
++  int m;
++
++  Dev = InputDev;
++
++  set_bit(EV_KEY, Dev->evbit);
++  set_bit(EV_REP, Dev->evbit);
++
++  for (m = 0; m < ARRAY_SIZE(KeyPair); m++)
++    set_bit(KeyPair[m].KeyCode, Dev->keybit);
++}
++
++static int PSwKbd_Init1(void)
++{
++  int m;
++
++  __raw_writel(
++    BM_POWER_CTRL_PSWITCH_IRQ |
++    BM_POWER_CTRL_PSWITCH_IRQ_SRC,
++    REGS_POWER_BASE + HW_POWER_CTRL_CLR);
++
++  __raw_writel(
++    BM_POWER_CTRL_POLARITY_PSWITCH,
++    REGS_POWER_BASE + HW_POWER_CTRL_SET);
++
++  __raw_writel(
++    BM_POWER_CTRL_ENIRQ_PSWITCH,
++    REGS_POWER_BASE + HW_POWER_CTRL_SET);
++
++  On = true;
++
++  if (((m = setup_irq(IRQ_VDD5V, &IRqAct)) < 0) ||
++
++#if defined(USE_LEGACY)
++       LegacyInit())
++#else
++       false)
++#endif
++
++  {
++    On = false;
++
++    __raw_writel(
++      BM_POWER_CTRL_ENIRQ_PSWITCH,
++      REGS_POWER_BASE + HW_POWER_CTRL_CLR);
++
++    Dev = NULL;
++
++    pr_err("%s : setup irq fail\n", NAME);
++
++    return m;
++  }
++
++  pr_info("%s : loaded\n", NAME);
++
++  return 0;
++}
++
++static void PSwKbd_Free(void)
++{
++
++#if defined(USE_LEGACY)
++  LegacyFree();
++#endif
++
++  On = false;
++
++  flush_work(&Work.work);
++
++  __raw_writel(
++    BM_POWER_CTRL_ENIRQ_PSWITCH,
++    REGS_POWER_BASE + HW_POWER_CTRL_CLR);
++
++  Dev = NULL;
++
++  remove_irq(IRQ_VDD5V, &IRqAct);
++}
+diff -Nur linux-2.6.35.3.orig/drivers/input/keyboard/Kconfig linux-2.6.35.3/drivers/input/keyboard/Kconfig
+--- linux-2.6.35.3.orig/drivers/input/keyboard/Kconfig	2011-04-05 12:02:56.069202137 +0800
++++ linux-2.6.35.3/drivers/input/keyboard/Kconfig	2011-06-02 15:16:18.374544414 +0800
+@@ -439,6 +439,9 @@
+ 	help
+ 	  This is the Keypad driver for the Freescale mxs soc
+ 
++config KEYBOARD_MXS_CHUMBY
++	tristate "MXS keyboard with chumby ext"
++	depends on ARCH_MXS
+ 
+ config KEYBOARD_MC9S08DZ60
+ 	tristate "mc9s08dz60 keyboard"
+diff -Nur linux-2.6.35.3.orig/drivers/input/keyboard/mxs-kbd.c linux-2.6.35.3/drivers/input/keyboard/mxs-kbd.c
+--- linux-2.6.35.3.orig/drivers/input/keyboard/mxs-kbd.c	2011-04-05 12:02:56.062537351 +0800
++++ linux-2.6.35.3/drivers/input/keyboard/mxs-kbd.c	2011-06-02 15:52:23.674757272 +0800
+@@ -32,7 +32,14 @@
+ #include <mach/regs-lradc.h>
+ #include <mach/lradc.h>
+ 
++#if defined(CONFIG_KEYBOARD_MXS_CHUMBY) || defined(CONFIG_KEYBOARD_MXS_CHUMBY_MODULE)
++#include "chumby-pswkbd-ext.c"
++
++#define BUTTON_PRESS_THRESHOLD  (2203 + ((3452 - 2203) / 2)) //3452 : idle, 2203 : last button val; 0.000879 V/b
++#else
+ #define BUTTON_PRESS_THRESHOLD  3300
++#endif
++
+ #define LRADC_NOISE_MARGIN      100
+ 
+ /* this value represents the the lradc value at 3.3V ( 3.3V / 0.000879 V/b ) */
+@@ -294,11 +301,20 @@
+ 		}
+ 	}
+ 
++#if defined(CONFIG_KEYBOARD_MXS_CHUMBY) || defined(CONFIG_KEYBOARD_MXS_CHUMBY_MODULE)
++  PSwKbd_Init0(d->input);
++#endif
++
+ 	/* Register the input device */
+ 	err = input_register_device(GET_INPUT_DEV(d));
+ 	if (err)
+ 		goto err_free_irq2;
+ 
++#if defined(CONFIG_KEYBOARD_MXS_CHUMBY) || defined(CONFIG_KEYBOARD_MXS_CHUMBY_MODULE)
++  if (PSwKbd_Init1())
++		goto err_free_irq2;
++#endif
++
+ 	/* these two have to be set after registering the input device */
+ 	d->input->rep[REP_DELAY] = delay1;
+ 	d->input->rep[REP_PERIOD] = delay2;
+@@ -324,6 +340,10 @@
+ {
+ 	struct mxskbd_data *d = platform_get_drvdata(pdev);
+ 
++#if defined(CONFIG_KEYBOARD_MXS_CHUMBY) || defined(CONFIG_KEYBOARD_MXS_CHUMBY_MODULE)
++  PSwKbd_Free();
++#endif
++
+ 	hw_lradc_unuse_channel(d->chan);
+ 	input_unregister_device(GET_INPUT_DEV(d));
+ 	free_irq(d->irq, pdev);
+@@ -358,7 +378,12 @@
+ 	platform_driver_unregister(&mxskbd_driver);
+ }
+ 
++#if defined(CONFIG_KEYBOARD_MXS_CHUMBY) || defined(CONFIG_KEYBOARD_MXS_CHUMBY_MODULE)
++late_initcall(mxskbd_init);
++#else
+ module_init(mxskbd_init);
++#endif
++
+ module_exit(mxskbd_exit);
+ MODULE_DESCRIPTION("Freescale keyboard driver for mxs family");
+ MODULE_AUTHOR("dmitry pervushin <dimka@embeddedalley.com>")
+ 

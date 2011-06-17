@@ -1,0 +1,1467 @@
+diff -Nur linux-2.6.35.3.orig/arch/arm/mach-mx28/device.c linux-2.6.35.3/arch/arm/mach-mx28/device.c
+--- linux-2.6.35.3.orig/arch/arm/mach-mx28/device.c	2011-04-05 12:02:15.785668748 +0800
++++ linux-2.6.35.3/arch/arm/mach-mx28/device.c	2011-05-31 15:56:28.612597490 +0800
+@@ -1332,8 +1379,14 @@
+ 		goto err_clk_init;
+ 	}
+ 	ret = 0;
++
++#if defined(CONFIG_SND_SOC_SGTL5000) || defined(CONFIG_SND_SOC_SGTL5000_MODULE)
+ 	/*set a default freq of 12M to sgtl5000*/
+ 	clk_set_rate(clk, 12000000);
++#elif defined(CONFIG_SND_SOC_CX2074x) || defined(CONFIG_SND_SOC_CX2074x_MODULE)
++	clk_set_rate(clk, 22579200);
++#endif
++
+ 	clk_enable(clk);
+ 	/*set the saif clk mux, saif0/saif1 both use saif0 clk*/
+ 	__raw_writel(BF_DIGCTL_CTRL_SAIF_CLKMUX_SEL(0x2), \
+@@ -1391,6 +1444,17 @@
+ 	audio_clk_init(audio_plat_data.saif_mclock);
+ 	pdev->dev.platform_data = &audio_plat_data;
+ }
++#elif defined(CONFIG_SND_SOC_CX2074x) || defined(CONFIG_SND_SOC_CX2074x_MODULE)
++void __init mx28_init_audio(void)
++{	struct platform_device *pdev;
++	pdev = mxs_get_device("mxs-cx2074x", 0);
++	if (pdev == NULL || IS_ERR(pdev))
++		return;
++	mxs_add_device(pdev, 3);
++	audio_plat_data.saif_mclock = clk_get(NULL, "saif.0");
++	audio_clk_init(audio_plat_data.saif_mclock);
++	pdev->dev.platform_data = &audio_plat_data;
++}
+ #else
+ void __init mx28_init_audio(void)
+ {
+diff -Nur linux-2.6.35.3.orig/arch/arm/mach-mx28/mx28evk.c linux-2.6.35.3/arch/arm/mach-mx28/mx28evk.c
+--- linux-2.6.35.3.orig/arch/arm/mach-mx28/mx28evk.c	2011-04-05 12:02:15.785668748 +0800
++++ linux-2.6.35.3/arch/arm/mach-mx28/mx28evk.c	2011-04-13 10:39:01.239491091 +0800
+@@ -41,13 +41,19 @@
+ #include "device.h"
+ #include "mx28evk.h"
+ 
++#if defined(CONFIG_SND_SOC_SGTL5000) || defined(CONFIG_SND_SOC_SGTL5000_MODULE)
+ static struct i2c_board_info __initdata mxs_i2c_device[] = {
+ 	{ I2C_BOARD_INFO("sgtl5000-i2c", 0xa), .flags = I2C_M_TEN }
+ };
++#endif
+ 
+ static void __init i2c_device_init(void)
+ {
++
++#if defined(CONFIG_SND_SOC_SGTL5000) || defined(CONFIG_SND_SOC_SGTL5000_MODULE)
+ 	i2c_register_board_info(0, mxs_i2c_device, ARRAY_SIZE(mxs_i2c_device));
++#endif
++
+ }
+ #if defined(CONFIG_MTD_M25P80) || defined(CONFIG_MTD_M25P80_MODULE)
+ static struct flash_platform_data mx28_spi_flash_data = {
+diff -Nur linux-2.6.35.3.orig/arch/arm/plat-mxs/device.c linux-2.6.35.3/arch/arm/plat-mxs/device.c
+--- linux-2.6.35.3.orig/arch/arm/plat-mxs/device.c	2011-04-05 12:02:13.569415104 +0800
++++ linux-2.6.35.3/arch/arm/plat-mxs/device.c	2011-05-31 15:56:15.652522558 +0800
+@@ -433,6 +448,18 @@
+ };
+ #endif
+ 
++#if defined(CONFIG_SND_SOC_CX2074x) || defined(CONFIG_SND_SOC_CX2074x_MODULE)
++static struct platform_device mxs_cx2074x[] = {
++	{
++	.name = "mxs-cx2074x",
++	.id = 0,
++	.dev =	{
++		.release = mxs_nop_release,
++		},
++	},
++};
++#endif
++
+ #if defined(CONFIG_MXS_VIIM) || defined(CONFIG_MXS_VIIM_MODULE)
+ struct platform_device mxs_viim = {
+ 	.name   = "mxs_viim",
+@@ -707,6 +747,14 @@
+ 	},
+ #endif
+ 
++#if defined(CONFIG_SND_SOC_CX2074x) || defined(CONFIG_SND_SOC_CX2074x_MODULE)
++	{
++	.name = "mxs-cx2074x",
++	.size = ARRAY_SIZE(mxs_cx2074x),
++	.pdev = mxs_cx2074x,
++	},
++#endif
++
+ #if defined(CONFIG_SND_SOC_MXS_SPDIF) || \
+ 	defined(CONFIG_SND_SOC_MXS_SPDIF_MODULE)
+ 	{
+diff -Nur linux-2.6.35.3.orig/include/sound/soc.h linux-2.6.35.3/include/sound/soc.h
+--- linux-2.6.35.3.orig/include/sound/soc.h	2011-04-05 12:01:49.409769054 +0800
++++ linux-2.6.35.3/include/sound/soc.h	2011-04-12 17:41:35.805982100 +0800
+@@ -455,6 +455,11 @@
+ 	struct dentry *debugfs_pop_time;
+ 	struct dentry *debugfs_dapm;
+ #endif
++
++#if defined(CONFIG_SND_SOC_CX2074x) || defined(CONFIG_SND_SOC_CX2074x_MODULE)
++	void *private_data;
++#endif
++
+ };
+ 
+ /* codec device */
+diff -Nur linux-2.6.35.3.orig/sound/soc/codecs/cx2074x.c linux-2.6.35.3/sound/soc/codecs/cx2074x.c
+--- linux-2.6.35.3.orig/sound/soc/codecs/cx2074x.c	1970-01-01 07:30:00.000000000 +0730
++++ linux-2.6.35.3/sound/soc/codecs/cx2074x.c	2011-06-15 14:52:49.125384235 +0800
+@@ -0,0 +1,911 @@
++/*
++ * ALSA SoC CX2074x Codec driver
++ *
++ * Copyright:   (C) 2010 Conexant Systems
++ *
++ * Based on sound/soc/codecs/tlv320aic2x.c by Vladimir Barinov
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License version 2 as
++ * published by the Free Software Foundation.
++ *
++ */
++
++#include <linux/module.h>
++#include <linux/moduleparam.h>
++#include <linux/init.h>
++#include <linux/delay.h>
++#include <linux/pm.h>
++#include <linux/i2c.h>
++#include <linux/platform_device.h>
++#include <linux/slab.h>
++#include <linux/proc_fs.h>
++#include <sound/core.h>
++#include <sound/pcm.h>
++#include <sound/pcm_params.h>
++#include <sound/soc.h>
++#include <sound/soc-dapm.h>
++#include <sound/initval.h>
++
++#include "cx2074x.h"
++
++#if 0
++#define CX2074x_RATES_PLAYBACK	( \
++                SNDRV_PCM_RATE_8000 | \
++								SNDRV_PCM_RATE_11025 | \
++								SNDRV_PCM_RATE_16000 | \
++								SNDRV_PCM_RATE_22050 | \
++								SNDRV_PCM_RATE_32000 | \
++								SNDRV_PCM_RATE_44100 | \
++								SNDRV_PCM_RATE_48000 | \
++								SNDRV_PCM_RATE_88200 | \
++								SNDRV_PCM_RATE_96000)
++#else
++#define CX2074x_RATES_PLAYBACK	( \
++								SNDRV_PCM_RATE_48000)
++#endif
++
++#if 0
++#define CX2074x_RATES_CAPTURE	( \
++                SNDRV_PCM_RATE_8000 | \
++                SNDRV_PCM_RATE_11025 | \
++                SNDRV_PCM_RATE_16000)
++#else
++#define CX2074x_RATES_CAPTURE	( \
++								SNDRV_PCM_RATE_48000)
++#endif
++
++#define CX2074x_FORMATS_PLAYBACK ( SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S24_LE )
++
++#define CX2074x_FORMATS_CAPTURE ( SNDRV_PCM_FMTBIT_S16_LE )
++
++#define noof(a) (sizeof(a)/sizeof(a[0]))
++#define NOINLINE __attribute__((__noinline__))
++
++# define INFO(a,...)	printk(KERN_INFO a, ##__VA_ARGS__)
++# define _INFO(a,...)	printk(a, ##__VA_ARGS__)
++
++#define MSG(fmt,...)	printk(KERN_INFO fmt, ##__VA_ARGS__)
++#define ERROR(fmt,...)	printk(KERN_ERR fmt, ##__VA_ARGS__)
++
++#define CX2074x_I2C_DRIVER_NAME	"cx2074x-i2c"
++
++typedef u8 cx2074x_reg_t;
++
++struct cx2074x_reg
++{
++	char *name;
++	u8    addr;
++	u8    type;
++};
++
++enum
++{
++#define __REG(a,b,c,d) a,
++#include "cx2074x-i2c.h"
++#undef __REG
++};
++
++static const u8 cx2074x_data[]=
++{
++#define __REG(a,b,c,d) c,
++#include "cx2074x-i2c.h"
++#undef __REG
++};
++
++#define REG_TYPE_RO	0	// read only,
++#define REG_TYPE_RW	1	// read/write,
++#define REG_TYPE_WO	2	// write only,
++#define REG_TYPE_DM	3	// dummy register, read/write to cache only
++
++static const struct cx2074x_reg cx2074x_regs[]=
++{
++#define __REG(a,b,c,d) {#a, b, REG_TYPE_##d},
++#include "cx2074x-i2c.h"
++#undef __REG
++};
++
++// codec private data
++struct cx2074x_priv
++{
++	unsigned int sysclk;
++	int	       master;
++};
++
++static struct snd_soc_device *cx2074x_socdev;
++
++static const struct snd_kcontrol_new cx2074x_snd_controls[]=
++{
++	SOC_SINGLE("DAC1", DAC1VOL, 0, 0x50, 0x00),
++	SOC_SINGLE("DAC2", DAC2VOL, 0, 0x50, 0x00),
++	SOC_SINGLE("ADC1", ADC1VOL, 0, 0x50, 0x00),
++	SOC_SINGLE("ADC2", ADC2VOL, 0, 0x50, 0x00),
++};
++
++static int NOINLINE cx2074x_i2c_write(struct snd_soc_codec *codec, u8 reg, u8 value)
++{
++	struct i2c_client  *client = codec->control_data;
++	struct i2c_adapter *adap   = client->adapter;
++	struct i2c_msg      msg;
++	u8                  data[2];
++
++	// We only have byte register accesses to cx2074x.
++	// Each register write consists of the slave address, cx2074x register address, and value to write.
++	msg.addr  = client->addr;
++	//msg.flags = client->flags & I2C_M_TEN;
++	msg.flags = 0;
++	msg.len = 2;
++	msg.buf   = &data[0];
++
++	data[0]=(u8)(reg);
++	data[1]=(u8)(value);
++
++	if (i2c_transfer(adap,&msg,1)!=1)
++		return -EIO;
++
++	return 0;
++}
++
++static u8 NOINLINE cx2074x_i2c_read(struct snd_soc_codec *codec, u8 reg)
++{
++	struct i2c_client	   *client = codec->control_data;
++	struct i2c_adapter	   *adap   = client->adapter;
++	struct i2c_msg	    msg[2];
++	u8			    data[2];
++
++	data[0]=(u8)(reg);
++
++	msg[0].addr  = client->addr;
++	//msg[0].flags = client->flags & I2C_M_TEN;
++	msg[0].flags = 0;
++	msg[0].len   = 1;
++	msg[0].buf   = &data[0];
++
++	msg[1].addr  = client->addr;
++	msg[1].flags = I2C_M_RD;
++	msg[1].len   = 1;
++	msg[1].buf   = &data[1];
++
++	if (i2c_transfer(adap,msg,2)!=2)
++		return -EIO;
++
++	return data[1];
++}
++
++static inline void cx2074x_write_reg_cache(struct snd_soc_codec *codec, unsigned int reg, u8 value)
++{
++	cx2074x_reg_t *reg_cache;
++
++	if (reg < noof(cx2074x_regs))
++	{
++		reg_cache = codec->reg_cache;
++		reg_cache[reg] = value;
++	}
++}
++
++static inline unsigned int cx2074x_read_reg_cache(struct snd_soc_codec *codec, unsigned int reg)
++{
++	cx2074x_reg_t *reg_cache;
++
++	if (reg < noof(cx2074x_regs))
++	{
++		reg_cache = codec->reg_cache;
++		return reg_cache[reg];
++	}
++	else
++	{
++		return -1;
++	}
++}
++
++static int NOINLINE cx2074x_write(struct snd_soc_codec *codec, unsigned int reg, unsigned int value)
++{
++	int ret;
++
++	ret = cx2074x_i2c_write(codec, cx2074x_regs[reg].addr, (u8)value);
++
++	if (!ret)
++	{
++		// Success! Update reg cache
++		cx2074x_write_reg_cache(codec, reg, (u8)value);
++	}
++
++	return ret;
++}
++
++// add non dapm controls
++static int cx2074x_add_controls(struct snd_soc_codec *codec)
++{
++	int err, i;
++	INFO("%lu: %s() called\n",jiffies,__func__);
++
++	for (i = 0; i < ARRAY_SIZE(cx2074x_snd_controls); i++)
++	{
++		err = snd_ctl_add(codec->card, snd_soc_cnew(&cx2074x_snd_controls[i], codec, NULL));
++		if (err < 0)
++			return err;
++	}
++
++	return 0;
++}
++
++static int cx2074x_add_widgets(struct snd_soc_codec *codec)
++{
++	INFO("%lu: %s() called\n",jiffies,__func__);
++	return 0;
++}
++
++static int cx2074x_mute(struct snd_soc_dai *dai, int mute)
++{
++	struct snd_soc_codec *codec  = dai->codec;
++
++	INFO("%lu: %s(,%d) called\n",jiffies,__func__,mute);
++
++  if (mute)
++  {
++    cx2074x_i2c_write(codec, cx2074x_regs[HP_CTRL].addr, 0x00);
++    cx2074x_i2c_write(codec, cx2074x_regs[LINE_OUT_CTRL].addr, 0x44);
++    cx2074x_i2c_write(codec, cx2074x_regs[CLASS_D_CTRL].addr, 0x00);
++  } else
++  {
++    cx2074x_i2c_write(codec, cx2074x_regs[HP_CTRL].addr, 0x24);
++    cx2074x_i2c_write(codec, cx2074x_regs[LINE_OUT_CTRL].addr, 0x00);
++    cx2074x_i2c_write(codec, cx2074x_regs[CLASS_D_CTRL].addr, 0x04);
++  }
++
++	return 0;
++}
++
++static int cx2074x_dac_hw_params(struct snd_pcm_substream *substream, struct snd_pcm_hw_params *params, struct snd_soc_dai *dai)
++{
++	struct snd_soc_codec *codec  = dai->codec;
++	unsigned char rate_value = 0x00;
++	unsigned char fmt_value = cx2074x_read_reg_cache(codec, I2S_PCM_CTRL_1) &
++                            ~(I2S_PCM_DAC_16_BIT | I2S_PCM_DAC_24_BIT);
++
++	INFO("%lu: %s() called\n",jiffies,__func__);
++
++	switch(params_format(params))
++	{
++		case SNDRV_PCM_FORMAT_S16_LE: fmt_value |= I2S_PCM_DAC_16_BIT; break;
++		case SNDRV_PCM_FORMAT_S24_LE: fmt_value |= I2S_PCM_DAC_24_BIT; break;
++		default: return -EINVAL;
++	}
++
++	switch(params_rate(params))
++	{
++		case  8000:	rate_value |= DAC_RATE_8000; break;
++		case 11025:	rate_value |= DAC_RATE_11025; break;
++		case 16000:	rate_value |= DAC_RATE_16000; break;
++		case 22050: rate_value |= DAC_RATE_22050; break;
++		case 32000:	rate_value |= DAC_RATE_32000; break;
++		case 44100:	rate_value |= DAC_RATE_44100; break;
++		case 48000:	rate_value |= DAC_RATE_48000; break;
++		case 88200:	rate_value |= DAC_RATE_88200; break;
++		case 96000:	rate_value |= DAC_RATE_96000; break;
++		default: return -EINVAL;
++	}
++
++	switch (params_channels(params))
++	{
++		case 1: rate_value |= DAC_LEFT_ENABLE; break;
++		case 2: rate_value |= (DAC_LEFT_ENABLE | DAC_RIGHT_ENABLE); break;
++		default: return -EINVAL;
++	}
++
++	INFO("\tformat:%u speed:%u channels:%u\n", params_format(params), params_rate(params), params_channels(params));
++
++	cx2074x_write(codec, I2S_PCM_CTRL_1, (unsigned int)fmt_value);
++	cx2074x_write(codec, DAC_SAMPLE_RATE_SIZE, (unsigned int)rate_value);
++
++	return 0;
++}
++
++static int cx2074x_adc_hw_params(struct snd_pcm_substream *substream, struct snd_pcm_hw_params *params, struct snd_soc_dai *dai)
++{
++	struct snd_soc_codec *codec  = dai->codec;
++	unsigned char rate_value = 0x00;
++	unsigned char fmt_value = 0x00;
++
++	INFO("%lu: %s() called\n",jiffies,__func__);
++
++	switch(params_format(params))
++	{
++		case SNDRV_PCM_FORMAT_S16_LE: 
++			fmt_value = cx2074x_read_reg_cache(codec, I2S_PCM_CTRL_1);
++			fmt_value &= ~(I2S_PCM_ADC_16_BIT | I2S_PCM_ADC_24_BIT); 
++			fmt_value |= I2S_PCM_ADC_16_BIT; 
++			break;
++		default: 
++			return -EINVAL;
++	}
++
++	switch(params_rate(params))
++	{
++		case  8000:	rate_value |= ADC_RATE_8000; break;
++		case 11025:	rate_value |= ADC_RATE_11025; break;
++		case 16000:	rate_value |= ADC_RATE_16000; break;
++		case 48000:	rate_value |= ADC_RATE_48000; break;
++		default: return -EINVAL;
++	}
++
++	switch (params_channels(params))
++	{
++		case 1:
++		case 2: 
++			rate_value |= ADC_ENABLE | ADC_AGC_ENABLE; break;
++		default: 
++			return -EINVAL;
++	}
++
++	INFO("\tformat:%u speed:%u channels:%u\n", params_format(params), params_rate(params), params_channels(params));
++
++	cx2074x_write(codec, I2S_PCM_CTRL_1, (unsigned int)fmt_value);
++	cx2074x_write(codec, ADC_SAMPLE_RATE_SIZE, (unsigned int)rate_value);
++
++	return 0;
++}
++
++static int cx2074x_hw_params(struct snd_pcm_substream *substream, struct snd_pcm_hw_params *params, struct snd_soc_dai *dai)
++{
++	if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK)
++		return (cx2074x_dac_hw_params(substream, params, dai));
++	else
++	if (substream->stream == SNDRV_PCM_STREAM_CAPTURE)
++		return (cx2074x_adc_hw_params(substream, params, dai));
++	else
++		return -EINVAL;
++}
++
++static int cx2074x_set_dai_sysclk(struct snd_soc_dai *dai, int clk_id, unsigned int freq, int dir)
++{
++	struct snd_soc_codec *codec = dai->codec;
++	struct cx2074x_priv  *maui = codec->private_data;
++
++	INFO("%lu: %s() called\n",jiffies,__func__);
++
++	// sysclk is not used where, but store it anyway
++	maui->sysclk = freq;
++	return 0;
++}
++
++static int cx2074x_set_dai_fmt(struct snd_soc_dai *dai, unsigned int fmt)
++{
++	struct snd_soc_codec *codec = dai->codec;
++	struct cx2074x_priv *maui = codec->private_data;
++
++	INFO("%lu: %s() called\n",jiffies,__func__);
++
++//	ret = snd_soc_dai_set_fmt(codec_dai, SND_SOC_DAIFMT_I2S | SND_SOC_DAIFMT_NB_NF | SND_SOC_DAIFMT_CBS_CFS);
++	
++	// set master/slave audio interface
++	switch (fmt & SND_SOC_DAIFMT_MASTER_MASK)
++	{
++		case SND_SOC_DAIFMT_CBS_CFS:	// This design only supports slave mode
++			maui->master = 0;
++			break;
++
++		default:
++			return -EINVAL;
++	}
++
++	switch (fmt & SND_SOC_DAIFMT_INV_MASK)
++	{
++		case SND_SOC_DAIFMT_NB_NF:		// This design only supports normal bclk + frm
++			break;
++
++		default:
++			return -EINVAL;
++	}
++
++	// interface format
++	switch (fmt & SND_SOC_DAIFMT_FORMAT_MASK)
++	{
++		case SND_SOC_DAIFMT_I2S:		// This design only supports I2S
++			break;
++		default:
++			return -EINVAL;
++	}
++
++	return 0;
++}
++
++struct snd_soc_dai_ops cx2074x_dai_ops = 
++{
++    .digital_mute = cx2074x_mute,
++    .set_sysclk	  = cx2074x_set_dai_sysclk,
++    .set_fmt	  = cx2074x_set_dai_fmt,
++    .hw_params	  = cx2074x_hw_params,
++};
++
++struct snd_soc_dai soc_codec_cx2074x_dai = 
++{
++	.name		  = "cx2074x",
++	.playback =
++	{
++		.stream_name  = "Playback",
++		.channels_min = 2,
++		.channels_max = 2,
++		.rates	  = CX2074x_RATES_PLAYBACK,
++		.formats  = CX2074x_FORMATS_PLAYBACK,
++	},
++	.capture =
++	{
++		.stream_name  = "Capture",
++		.channels_min = 2,
++		.channels_max = 2,
++		.rates	  = CX2074x_RATES_CAPTURE,
++		.formats  = CX2074x_FORMATS_CAPTURE,
++	},
++
++#if 1
++	.ops = &cx2074x_dai_ops,
++#else
++	.ops = 
++	{
++		.hw_params = cx2074x_hw_params,
++		.set_fmt = cx2074x_set_dai_fmt,
++		.digital_mute = cx2074x_mute,
++		.set_sysclk  = cx2074x_set_dai_sysclk,
++	},
++#endif
++	
++};
++
++EXPORT_SYMBOL_GPL(soc_codec_cx2074x_dai);
++
++static int cx2074x_set_bias_level(struct snd_soc_codec *codec, enum snd_soc_bias_level level)
++{
++	INFO("%lu: %s(%d) called\n",jiffies,__func__,level);
++
++	switch (level)
++	{
++		// Fully on
++		case SND_SOC_BIAS_ON:
++			// all power is driven by DAPM system
++      cx2074x_i2c_write(codec, 0x1b, 0x03);
++			break;
++
++			// Partial on
++		case SND_SOC_BIAS_PREPARE:
++      cx2074x_i2c_write(codec, 0x1b, 0x01);
++			break;
++
++			// Off, with power
++		case SND_SOC_BIAS_STANDBY:
++      cx2074x_i2c_write(codec, 0x1b, 0x00);
++			break;
++
++			// Off, without power
++		case SND_SOC_BIAS_OFF:
++      cx2074x_i2c_write(codec, 0x1b, 0x00);
++			break;
++	}
++
++	codec->bias_level = level;
++
++	return 0;
++}
++
++//
++// Initialise the cx2074x driver
++//
++static int NOINLINE cx2074x_init(struct snd_soc_device *socdev)
++{
++	struct snd_soc_codec *codec = socdev->card->codec;
++	int                   n, ret;
++	u8 *reg_cache;
++
++	INFO("%lu: %s() called\n",jiffies,__func__);
++
++	codec->name           = "cx2074x";
++	codec->owner          = THIS_MODULE;
++	// No need a register cache, just point it to some dummy functions for now.
++	codec->read           = cx2074x_read_reg_cache;
++	codec->write          = cx2074x_write;
++	codec->set_bias_level = cx2074x_set_bias_level;
++	codec->dai            = &soc_codec_cx2074x_dai;
++	codec->num_dai        = 1;
++
++	codec->reg_cache_size = sizeof(cx2074x_data);
++	codec->reg_cache      = kmemdup(cx2074x_data, sizeof(cx2074x_data), GFP_KERNEL);
++	if (codec->reg_cache == NULL)
++		return -ENOMEM;
++
++	// Register pcms
++	ret = snd_soc_new_pcms(socdev, SNDRV_DEFAULT_IDX1, SNDRV_DEFAULT_STR1);
++	if (ret < 0)
++	{
++		printk(KERN_ERR "%s(): failed to create pcms\n",__func__);
++		goto pcm_err;
++	}
++
++#if 0
++  msleep(100);
++
++	// Initialize the CX2074x regisers
++	for(n = 0; n < noof(cx2074x_regs); n++)
++	{
++		if (cx2074x_regs->type == REG_TYPE_RW)
++			cx2074x_i2c_write(codec, cx2074x_regs[n].addr, cx2074x_data[n]);
++
++    msleep(50);
++	}
++#else
++	// Initialize the CX2074x regisers
++  cx2074x_i2c_write(codec, cx2074x_regs[DAC_SAMPLE_RATE_SIZE].addr, 0x03);
++  cx2074x_i2c_write(codec, cx2074x_regs[CODEC_TEST_7].addr, 0x00);
++
++  cx2074x_i2c_write(codec, cx2074x_regs[HP_CTRL].addr, 0x1b);
++  cx2074x_i2c_write(codec, cx2074x_regs[LINE_OUT_CTRL].addr, 0x77);
++  cx2074x_i2c_write(codec, cx2074x_regs[CLASS_D_CTRL].addr, 0x03);
++
++  cx2074x_i2c_write(codec, cx2074x_regs[CODEC_TEST_7].addr, 0x01);
++
++  cx2074x_i2c_write(codec, cx2074x_regs[HP_CTRL].addr, 0x00);
++  cx2074x_i2c_write(codec, cx2074x_regs[LINE_OUT_CTRL].addr, 0x44);
++  cx2074x_i2c_write(codec, cx2074x_regs[CLASS_D_CTRL].addr, 0x00);
++
++  cx2074x_i2c_write(codec, cx2074x_regs[I2S_TX_CTRL_1].addr, 0x80);
++  cx2074x_i2c_write(codec, cx2074x_regs[I2S_RX_CTRL_1].addr, 0x80);
++  cx2074x_i2c_write(codec, cx2074x_regs[I2S_PCM_CTRL_1].addr, 0x0a);
++
++  cx2074x_i2c_write(codec, cx2074x_regs[ADC_SAMPLE_RATE_SIZE].addr, 0x00);
++  cx2074x_i2c_write(codec, cx2074x_regs[ADC_L_CTRL].addr, 0x01);
++  cx2074x_i2c_write(codec, cx2074x_regs[ADC_R_CTRL].addr, 0x01);
++  cx2074x_i2c_write(codec, 0x12, 0x03);
++  cx2074x_i2c_write(codec, cx2074x_regs[ADC1VOL].addr, 0x4a);
++  cx2074x_i2c_write(codec, cx2074x_regs[ADC2VOL].addr, 0x4a);
++  cx2074x_i2c_write(codec, 0x1b, 0x00);
++
++  cx2074x_i2c_write(codec, cx2074x_regs[DAC1VOL].addr, 0x4a);
++  cx2074x_i2c_write(codec, cx2074x_regs[DAC2VOL].addr, 0x4a);
++#endif
++
++#if 1
++	// Read back and print for debug purposes
++	reg_cache = codec->reg_cache;
++	for(n = 0; n < noof(cx2074x_regs); n++)
++	{
++		reg_cache[n] = cx2074x_i2c_read(codec, cx2074x_regs[n].addr);
++		printk("cx2074x_reg 0x%02x = 0x%02x\n", cx2074x_regs[n].addr, reg_cache[n]);
++	}
++#endif
++
++	cx2074x_set_bias_level(codec, SND_SOC_BIAS_STANDBY);  // Off, with power on
++	cx2074x_add_controls(codec);
++	cx2074x_add_widgets(codec);
++
++#if 0
++	ret = snd_soc_init_card(socdev);
++	if (ret < 0)
++	{
++		printk(KERN_ERR "cx2074x: failed to register card\n");
++		goto card_err;
++	}
++#else
++  ret = 0;
++#endif
++
++	return ret;
++
++#if 0
++card_err:
++	snd_soc_free_pcms(socdev);
++	snd_soc_dapm_free(socdev);
++#endif
++
++pcm_err:
++	kfree(codec->reg_cache);
++	return ret;
++}
++
++#if defined(CONFIG_I2C) || defined(CONFIG_I2C_MODULE)
++
++static unsigned short normal_i2c[] = { 0, I2C_CLIENT_END };
++
++// Magic definition of all other variables and things
++I2C_CLIENT_INSMOD;
++
++static const struct i2c_device_id cx2074x_i2c_id[] = 
++{
++	{ CX2074x_I2C_DRIVER_NAME, 0 },
++	{ }
++};
++
++static unsigned char cx2074x_proc_addr = 0;
++
++static int cx2074x_proc_addr_rd(
++             char *buf,
++             char **start,
++             off_t offset,
++             int count,
++             int *eof,
++             void *data)
++{
++  int len;
++
++  len = sprintf(buf, "0x%02x\n", cx2074x_proc_addr);
++  *eof = 1;
++
++  return len;
++}
++
++static int cx2074x_proc_addr_wr(
++             struct file *file,
++             const char *buf,
++             unsigned long count,
++             void *data)
++{
++  cx2074x_proc_addr = (unsigned char) simple_strtoul(buf, NULL, 0);
++
++  return count;
++}
++
++static int cx2074x_proc_val_rd(
++             char *buf,
++             char **start,
++             off_t offset,
++             int count,
++             int *eof,
++             void *data)
++{
++	struct snd_soc_device *socdev = cx2074x_socdev;
++	struct snd_soc_codec *codec = socdev->card->codec;
++  int len;
++
++  len = sprintf(buf, "0x%02x\n", cx2074x_i2c_read(codec, cx2074x_proc_addr));
++  *eof = 1;
++
++  return len;
++}
++
++static int cx2074x_proc_val_wr(
++             struct file *file,
++             const char *buf,
++             unsigned long count,
++             void *data)
++{
++	struct snd_soc_device *socdev = cx2074x_socdev;
++	struct snd_soc_codec *codec = socdev->card->codec;
++  unsigned char val = (unsigned char) simple_strtoul(buf, NULL, 0);
++
++  cx2074x_i2c_write(codec, cx2074x_proc_addr, val);
++
++  return count;
++}
++
++static int cx2074x_i2c_probe(struct i2c_client *i2c, const struct i2c_device_id *id)
++{
++	struct snd_soc_device *socdev = cx2074x_socdev;
++	struct snd_soc_codec *codec = socdev->card->codec;
++	int ret;
++
++	INFO("%lu: %s() called\n", jiffies, __func__);
++	i2c_set_clientdata(i2c, codec);
++	codec->control_data = i2c;
++
++	ret = cx2074x_init(socdev);
++	if (ret < 0)
++		INFO("%s() failed ret = %d\n", __func__, ret);
++
++  {
++    struct proc_dir_entry *pde;
++
++    proc_mkdir("driver/cx2074x", 0);
++
++    pde = create_proc_read_entry(
++            "driver/cx2074x/addr",
++            0,
++            NULL,
++            cx2074x_proc_addr_rd,
++            NULL);
++    pde->write_proc = cx2074x_proc_addr_wr;
++
++    pde = create_proc_read_entry(
++            "driver/cx2074x/val",
++            0,
++            NULL,
++            cx2074x_proc_val_rd,
++            NULL);
++    pde->write_proc = cx2074x_proc_val_wr;
++  }
++
++	return ret;
++}
++
++static int cx2074x_i2c_remove(struct i2c_client *client)
++{
++	struct snd_soc_codec *codec = i2c_get_clientdata(client);
++	INFO("%lu: %s() called\n", jiffies, __func__);
++
++  {
++    remove_proc_entry("driver/cx2074x/addr", NULL);
++    remove_proc_entry("driver/cx2074x/val", NULL);
++    remove_proc_entry("driver/cx2074x", NULL);
++  }
++
++	kfree(codec->reg_cache);
++	return 0;
++}
++
++static struct i2c_driver cx2074x_i2c_driver=
++{
++	.driver =
++	{
++		.name = CX2074x_I2C_DRIVER_NAME,
++		.owner = THIS_MODULE,
++	},
++	.probe = cx2074x_i2c_probe,
++	.remove = cx2074x_i2c_remove,
++	.id_table = cx2074x_i2c_id,
++};
++
++
++static int cx2074x_add_i2c_device(struct platform_device *pdev, const struct cx2074x_setup_data *setup)
++{
++	struct i2c_board_info info;
++	struct i2c_adapter *adapter;
++	struct i2c_client *client;
++	int ret;
++
++	INFO("%lu: %s() called\n", jiffies, __func__);
++
++	ret = i2c_add_driver(&cx2074x_i2c_driver);
++	if (ret != 0)
++	{
++		INFO("!! Error !! %s() cannot add i2c driver\n", __func__);
++		return ret;
++	}
++
++	memset(&info, 0, sizeof(struct i2c_board_info));
++	info.addr = setup->i2c_address;
++	strlcpy(info.type, CX2074x_I2C_DRIVER_NAME, I2C_NAME_SIZE);
++
++	adapter = i2c_get_adapter(setup->i2c_bus);
++	if (!adapter)
++	{
++		INFO("!! Error !! %s() cannot get I2C adapter %d\n", __func__, setup->i2c_bus);
++		goto err_driver;
++	}
++
++	client = i2c_new_device(adapter, &info);
++	i2c_put_adapter(adapter);
++	if (!client) {
++		INFO("!! Error !! %s() cannot add I2C device at 0x%02x\n", __func__, (unsigned int)info.addr);
++		goto err_driver;
++	}
++
++	return 0;
++
++err_driver:
++	i2c_del_driver(&cx2074x_i2c_driver);
++	return -ENODEV;
++}
++
++#endif // defined(CONFIG_I2C) || defined(CONFIG_I2C_MODULE)
++
++static int cx2074x_probe(struct platform_device *pdev)
++{
++	struct snd_soc_device *socdev	= platform_get_drvdata(pdev);
++	struct cx2074x_setup_data *setup;
++	struct snd_soc_codec *codec;
++	struct cx2074x_priv *maui;
++	int	ret = 0;
++
++	INFO("%lu: %s() called\n",jiffies,__func__);
++
++	setup = socdev->codec_data;
++	codec = kzalloc(sizeof(struct snd_soc_codec), GFP_KERNEL);
++	if (codec == NULL)
++		return -ENOMEM;
++
++	maui = kzalloc(sizeof(struct cx2074x_priv), GFP_KERNEL);
++	if (maui == NULL)
++	{
++		kfree(codec);
++		return -ENOMEM;
++	}
++
++	codec->private_data = maui;
++	socdev->card->codec = codec;
++	mutex_init(&codec->mutex);
++	INIT_LIST_HEAD(&codec->dapm_widgets);
++	INIT_LIST_HEAD(&codec->dapm_paths);
++
++	cx2074x_socdev = socdev;
++
++#if defined(CONFIG_I2C) || defined(CONFIG_I2C_MODULE)
++
++	if (setup->i2c_address)
++	{
++		normal_i2c[0] = setup->i2c_address;
++		codec->hw_write = (hw_write_t) i2c_master_send;
++
++		ret = cx2074x_add_i2c_device(pdev, setup);
++		if (ret != 0)
++			printk(KERN_ERR "Can't add i2c driver\n");
++	}
++	else
++		printk(KERN_ERR "Missing I2C address\n");
++#else
++# error Need I2C interface
++	// Add other interfaces here
++	codec->hw_write = (hw_write_t)0;
++	cx2074x_init(socdev);
++#endif
++
++	return ret;
++}
++
++static int cx2074x_remove(struct platform_device *pdev)
++{
++	struct snd_soc_device *socdev = platform_get_drvdata(pdev);
++	struct snd_soc_codec *codec = socdev->card->codec;
++
++	INFO("%lu: %s() called\n",jiffies,__func__);
++
++	// power down chip
++	if (codec->control_data)
++	    cx2074x_set_bias_level(codec, SND_SOC_BIAS_OFF);
++
++	snd_soc_free_pcms(socdev);
++	snd_soc_dapm_free(socdev);
++
++	#if defined(CONFIG_I2C) || defined(CONFIG_I2C_MODULE)
++	i2c_del_driver(&cx2074x_i2c_driver);
++	#endif
++
++	kfree(codec->private_data);
++	kfree(codec);
++
++	return 0;
++}
++
++static int cx2074x_suspend(struct platform_device *pdev, pm_message_t state)
++{
++	//struct snd_soc_device *socdev = platform_get_drvdata(pdev);
++	//struct snd_soc_codec  *codec = socdev->codec;
++	INFO("%lu: %s() called\n",jiffies,__func__);
++	return 0;
++}
++
++static int cx2074x_resume(struct platform_device *pdev)
++{
++	//struct snd_soc_device    *socdev = platform_get_drvdata(pdev);
++	//struct snd_soc_codec     *codec = socdev->codec;
++	INFO("%lu: %s() called\n",jiffies,__func__);
++	return 0;
++}
++
++struct snd_soc_codec_device soc_codec_dev_cx2074x =
++{
++	.probe   = cx2074x_probe,
++	.remove  = cx2074x_remove,
++	.suspend = cx2074x_suspend,
++	.resume  = cx2074x_resume,
++};
++
++static int __init cx2074x_modinit(void)
++{
++	INFO("%lu: %s() called\n",jiffies,__func__);
++	return snd_soc_register_dai(&soc_codec_cx2074x_dai);
++}
++module_init(cx2074x_modinit);
++
++static void __exit cx2074x_exit(void)
++{
++	INFO("%lu: %s() called\n",jiffies,__func__);
++	snd_soc_unregister_dai(&soc_codec_cx2074x_dai);
++}
++module_exit(cx2074x_exit);
++
++EXPORT_SYMBOL_GPL(soc_codec_dev_cx2074x);
++
++MODULE_DESCRIPTION("ASoC cx2074x IA Driver");
++MODULE_LICENSE("GPL");
++#define FIRST_TO_READ		ABORT_CODE
++#define LAST_TO_READ		VOLUME_MUTE
++#define FIRST_TO_WRITE		CLOCK_DIVIDER
++#define LAST_TO_WRITE		DSP_INIT
++
+diff -Nur linux-2.6.35.3.orig/sound/soc/codecs/cx2074x.h linux-2.6.35.3/sound/soc/codecs/cx2074x.h
+--- linux-2.6.35.3.orig/sound/soc/codecs/cx2074x.h	1970-01-01 07:30:00.000000000 +0730
++++ linux-2.6.35.3/sound/soc/codecs/cx2074x.h	2011-04-11 15:48:32.467066372 +0800
+@@ -0,0 +1,26 @@
++/*
++ * ALSA SoC CX2074x codec driver
++ *
++ * Copyright:   (C) 2010 Conexant Systems
++ *
++ * Based on sound/soc/codecs/tlv320aic2x.c by Vladimir Barinov
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License version 2 as
++ * published by the Free Software Foundation.
++ */
++
++#ifndef _CX2074x_H
++#define _CX2074x_H
++
++struct cx2074x_setup_data
++{
++	int i2c_bus;
++	unsigned short i2c_address;
++};
++
++extern struct snd_soc_dai				soc_codec_cx2074x_dai;
++extern struct snd_soc_codec_device		soc_codec_dev_cx2074x;
++
++
++#endif // _CX2074x_H
+diff -Nur linux-2.6.35.3.orig/sound/soc/codecs/cx2074x-i2c.h linux-2.6.35.3/sound/soc/codecs/cx2074x-i2c.h
+--- linux-2.6.35.3.orig/sound/soc/codecs/cx2074x-i2c.h	1970-01-01 07:30:00.000000000 +0730
++++ linux-2.6.35.3/sound/soc/codecs/cx2074x-i2c.h	2011-05-04 18:06:13.916664256 +0800
+@@ -0,0 +1,78 @@
++/////////////////////////////////////////////////////////////////////////
++//
++//	CX2074x register definitions.
++//
++//	Copyright: (C) 2010 Conexant Systems
++//
++/////////////////////////////////////////////////////////////////////////
++
++/////////////////////////////////////////////////////////////////////////
++//  General codec operations registers
++/////////////////////////////////////////////////////////////////////////
++//      id					addr		data		type
++__REG(CODEC_TEST_7,			0x8F,		0x01,		RW)
++__REG(ADC_SAMPLE_RATE_SIZE,	0x13,		0x21,		RW)
++__REG(ADC_L_CTRL,			0x19,		0x01,		RW)
++__REG(ADC_R_CTRL,			0x1A,		0x01,		RW)
++__REG(I2S_TX_CTRL_1,		0x1C,		0x80,		RW)
++//__REG(I2S_RX_CTRL_1,		0x1E,		0x84,		RW)
++__REG(I2S_RX_CTRL_1,		0x1E,		0x80,		RW)
++__REG(I2S_PCM_CTRL_1,		0x20,		0x0A,		RW)
++__REG(DAC_SAMPLE_RATE_SIZE,	0x0F,		0x53,		RW)
++__REG(LINE_OUT_CTRL,		0x17,		0x00,		RW)
++// This line added but commeded for now- PBY
++//__REG(LINE_OUT_CTRL,		0x17,		0x40,		RW)  
++// This line added but commeded for now- PBY
++//__REG(CLASS_D_CTRL,			0x18,		0x03,		RW)
++//__REG(CLASS_D_CTRL,			0x18,		0x00,		RW)
++
++__REG(CLASS_D_CTRL,			0x18,		0x04,		RW)
++__REG(HP_CTRL,		0x16,		0x24,		RW)
++__REG(DAC1VOL,		0x10,		0x4a,		RW)
++__REG(DAC2VOL,		0x11,		0x4a,		RW)
++__REG(ADC1VOL,		0x14,		0x4a,		RW)
++__REG(ADC2VOL,		0x15,		0x4a,		RW)
++
++
++
++#ifndef _PASS_1_COMPLETE
++// DAC 1:2 sample rate/size			0x0F
++#define DAC_LEFT_ENABLE				0x01
++#define DAC_RIGHT_ENABLE			0x02
++#define DAC_RATE_8000				0x00
++#define DAC_RATE_11025				0x90
++#define DAC_RATE_16000				0x20
++#define DAC_RATE_22050				0xb0
++#define DAC_RATE_32000				0x40
++#define DAC_RATE_44100				0xd0
++#define DAC_RATE_48000				0x50
++#define DAC_RATE_88200				0xe0
++#define DAC_RATE_96000				0x60
++
++// ADC sample rate/size				0x13
++#define ADC_ENABLE					0x01
++#define ADC_AGC_ENABLE			0x04
++#define ADC_RATE_8000				0x00
++#define ADC_RATE_11025				0x90
++#define ADC_RATE_16000				0x20
++#define ADC_RATE_48000				0x50
++
++// ADC analog left control			0x19
++#define ADC_LEFT_ENABLE				0x01
++
++// ADC analog right control			0x1A
++#define ADC_RIGHT_ENABLE			0x01
++
++// I2S/PCM Control 1				0x20
++#define PCM_ENABLE					0x01
++#define I2S_PCM_DAC_16_BIT			0x02
++#define I2S_PCM_DAC_24_BIT			0x04
++#define I2S_PCM_ADC_16_BIT			0x08
++#define I2S_PCM_ADC_24_BIT			0x10
++
++#endif // #ifndef _PASS_1_COMPLETE
++
++// Don't define bit macros more than once.
++#ifndef _PASS_1_COMPLETE
++#define _PASS_1_COMPLETE
++#endif
+diff -Nur linux-2.6.35.3.orig/sound/soc/codecs/Kconfig linux-2.6.35.3/sound/soc/codecs/Kconfig
+--- linux-2.6.35.3.orig/sound/soc/codecs/Kconfig	2011-04-05 12:01:43.465666690 +0800
++++ linux-2.6.35.3/sound/soc/codecs/Kconfig	2011-04-11 15:56:37.779994422 +0800
+@@ -294,6 +294,10 @@
+ config SND_SOC_MXS_SPDIF
+ 	tristate
+ 
++config SND_SOC_CX2074x
++	tristate
++	depends on I2C
++
+ # Amp
+ config SND_SOC_MAX9877
+ 	tristate
+diff -Nur linux-2.6.35.3.orig/sound/soc/codecs/Makefile linux-2.6.35.3/sound/soc/codecs/Makefile
+--- linux-2.6.35.3.orig/sound/soc/codecs/Makefile	2011-04-05 12:01:43.462335395 +0800
++++ linux-2.6.35.3/sound/soc/codecs/Makefile	2011-04-11 15:57:20.326806360 +0800
+@@ -63,6 +63,7 @@
+ snd-soc-bluetooth-objs := bluetooth.o
+ snd-soc-mxs-spdif-objs := mxs_spdif.o
+ snd-soc-mxs-adc-objs := mxs-adc-codec.o
++snd-soc-cx2074x-objs := cx2074x.o
+ 
+ # Amp
+ snd-soc-max9877-objs := max9877.o
+@@ -135,6 +136,7 @@
+ obj-$(CONFIG_SND_SOC_BLUETOOTH)    += snd-soc-bluetooth.o
+ obj-$(CONFIG_SND_SOC_MXS_SPDIF)	+= snd-soc-mxs-spdif.o
+ obj-$(CONFIG_SND_SOC_MXS_ADC_CODEC) += snd-soc-mxs-adc.o
++obj-$(CONFIG_SND_SOC_CX2074x)   += snd-soc-cx2074x.o
+ 
+ # Amp
+ obj-$(CONFIG_SND_SOC_MAX9877)	+= snd-soc-max9877.o
+diff -Nur linux-2.6.35.3.orig/sound/soc/mxs/Kconfig linux-2.6.35.3/sound/soc/mxs/Kconfig
+--- linux-2.6.35.3.orig/sound/soc/mxs/Kconfig	2011-04-05 12:01:39.802750604 +0800
++++ linux-2.6.35.3/sound/soc/mxs/Kconfig	2011-04-12 15:13:55.341100871 +0800
+@@ -6,13 +6,13 @@
+ 	  Say Y or M if you want to add support for codecs attached to
+ 	  the MXS I2S or SSP interface.
+ 
+-
+ config SND_MXS_SOC_SPDIF_DAI
+ 	tristate
+ 
+ config SND_MXS_SOC_EVK_DEVB
+ 	tristate "SoC Audio support for MXS-EVK SGTL5000"
+ 	depends on SND_MXS_SOC && ARCH_MX28
++	select SND_MXS_SOC_DAI
+ 	select SND_SOC_SGTL5000
+ 	help
+ 	  Say Y if you want to add support for SoC audio on MXS EVK development
+@@ -29,7 +29,6 @@
+ config SND_MXS_SOC_DAI
+ 	tristate "MXS Digital Audio Interface SAIF"
+ 	default y
+-	depends on SND_MXS_SOC_EVK_DEVB
+ 	help
+ 	   Enable MXS Digital Audio Interface SAIF
+ 
+@@ -49,3 +48,9 @@
+ 	help
+ 	  Say Y if you want to add support for SoC audio on MXS EVK development
+ 	  board with the SPDIF transmitter.
++
++config SND_MXS_SOC_DEVB_CX2074X
++	tristate "SoC Audio support for MXS CX2074x"
++	depends on SND_MXS_SOC && ARCH_MXS
++	select SND_MXS_SOC_DAI
++	select SND_SOC_CX2074x
+diff -Nur linux-2.6.35.3.orig/sound/soc/mxs/Makefile linux-2.6.35.3/sound/soc/mxs/Makefile
+--- linux-2.6.35.3.orig/sound/soc/mxs/Makefile	2011-04-05 12:01:39.802750604 +0800
++++ linux-2.6.35.3/sound/soc/mxs/Makefile	2011-04-12 15:14:18.567547805 +0800
+@@ -6,6 +6,7 @@
+ snd-soc-mxs-devb-spdif-objs := mxs-devb-spdif.o
+ snd-soc-mxs-adc-objs := mxs-adc.o
+ snd-soc-mxs-evk-adc-objs := mxs-evk-adc.o
++snd-soc-mxs-devb-cx2074x-objs := mxs-devb-cx2074x.o
+ 
+ obj-$(CONFIG_SND_MXS_SOC) += snd-soc-mxs.o
+ obj-$(CONFIG_SND_MXS_SOC_DAI) += snd-soc-mxs-dai.o
+@@ -14,3 +15,5 @@
+ obj-$(CONFIG_SND_MXS_SOC_EVK_DEVB_SPDIF) += snd-soc-mxs-devb-spdif.o
+ obj-$(CONFIG_SND_MXS_SOC_ADC) += snd-soc-mxs-adc.o
+ obj-$(CONFIG_SND_MXS_SOC_EVK_ADC) += snd-soc-mxs-evk-adc.o
++obj-$(CONFIG_SND_MXS_SOC_DEVB_CX2074X) += snd-soc-mxs-devb-cx2074x.o
++
+diff -Nur linux-2.6.35.3.orig/sound/soc/mxs/mxs-devb-cx2074x.c linux-2.6.35.3/sound/soc/mxs/mxs-devb-cx2074x.c
+--- linux-2.6.35.3.orig/sound/soc/mxs/mxs-devb-cx2074x.c	1970-01-01 07:30:00.000000000 +0730
++++ linux-2.6.35.3/sound/soc/mxs/mxs-devb-cx2074x.c	2011-06-03 14:00:33.755405055 +0800
+@@ -0,0 +1,239 @@
++/*
++ * Copyright (C) 2010 Freescale Semiconductor, Inc. All Rights Reserved.
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
++ */
++
++#include <linux/module.h>
++#include <linux/moduleparam.h>
++#include <linux/init.h>
++#include <linux/delay.h>
++#include <linux/pm.h>
++#include <linux/bitops.h>
++#include <linux/platform_device.h>
++#include <linux/i2c.h>
++#include <linux/err.h>
++#include <linux/irq.h>
++#include <linux/io.h>
++#include <linux/clk.h>
++#include <sound/core.h>
++#include <sound/pcm.h>
++#include <sound/pcm_params.h>
++#include <sound/soc.h>
++#include <sound/soc-dapm.h>
++#include <sound/initval.h>
++
++#include <mach/dma.h>
++#include <mach/device.h>
++
++#include "mxs-dai.h"
++#include "mxs-pcm.h"
++#include "../codecs/cx2074x.h"
++
++static int mxs_audio_hw_params(struct snd_pcm_substream *substream,
++                      struct snd_pcm_hw_params *params)
++{
++    struct snd_soc_pcm_runtime *rtd = substream->private_data;
++    struct snd_soc_dai_link *machine = rtd->dai;
++    struct snd_soc_dai *cpu_dai = machine->cpu_dai;
++    struct snd_soc_dai *codec_dai = machine->codec_dai;
++    unsigned int rate = params_rate(params);
++    int ret = 0;
++
++    u32 dai_format;
++
++    int mclk;
++    int bdiv;
++
++    switch (rate)
++    {
++      case 8000 :
++      case 12000 :
++      case 16000 :
++      case 24000 :
++      case 32000 :
++      case 48000 :
++      case 96000 :
++        mclk = 24576000;
++        break;
++      
++      case 11025 :
++      case 22050 :
++      case 44100 :
++      case 88200 :
++      default :
++        mclk = 22579200;
++        break;
++    }
++
++    bdiv = mclk / rate;
++
++    if (((mclk == 24576000) && (bdiv > 512)) ||
++        ((mclk == 22579200) && (bdiv > 384)))
++      printk("\n\ncx2074x : %s() - bad bdiv - rate %d bdiv %d\n\n", __func__, rate, bdiv);
++
++    dai_format = SND_SOC_DAIFMT_I2S | SND_SOC_DAIFMT_NB_NF |
++        SND_SOC_DAIFMT_CBS_CFS;
++
++    /* set codec DAI configuration */
++    ret = snd_soc_dai_set_fmt(codec_dai, dai_format);
++    if (ret < 0)
++        return ret;
++
++    dai_format = SND_SOC_DAIFMT_I2S | SND_SOC_DAIFMT_NB_NF |
++        SND_SOC_DAIFMT_CBS_CFS;
++
++    /* set cpu DAI configuration */
++    ret = snd_soc_dai_set_fmt(cpu_dai, dai_format);
++    if (ret < 0)
++        return ret;
++
++    snd_soc_dai_set_clkdiv(cpu_dai, IMX_SSP_SYS_MCLK, bdiv);
++
++    /* set the SAIF system clock as output */
++    snd_soc_dai_set_sysclk(cpu_dai, IMX_SSP_SYS_CLK, mclk, \
++        SND_SOC_CLOCK_OUT);
++
++    return 0;
++}
++
++/*
++ * mxs CX2074X audio DAI operations.
++ */
++static struct snd_soc_ops cx2074x_ops = {
++    .hw_params = mxs_audio_hw_params,
++};
++
++
++
++
++
++static int mxs_cx2074x_init(struct snd_soc_codec *codec)
++{
++    snd_soc_dapm_sync(codec);
++
++    return 0;
++}
++
++/* mxs digital audio interface glue - connects codec <--> CPU */
++static struct snd_soc_dai_link mxs_dai = {
++    .name = "CX2074X",
++    .stream_name = "CX2074X",
++    .codec_dai = &soc_codec_cx2074x_dai,
++    .init = mxs_cx2074x_init,
++    .ops = &cx2074x_ops,
++};
++
++
++
++static struct snd_soc_card snd_soc_card_mxs = {
++    .name = "mxs",
++    .platform = &mxs_soc_platform,
++    .dai_link = &mxs_dai,
++    .num_links = 1,
++};
++
++static struct cx2074x_setup_data mxs_cx2074x_setup = {
++    .i2c_address = 0x4a,
++};
++
++static struct snd_soc_device mxs_snd_devdata = {
++    .card = &snd_soc_card_mxs,
++    .codec_dev = &soc_codec_dev_cx2074x,
++    .codec_data = &mxs_cx2074x_setup,
++};
++
++
++
++
++
++static int __devinit mxs_cx2074x_probe(struct platform_device *pdev)
++{
++    struct mxs_audio_platform_data *plat = pdev->dev.platform_data;
++    struct mxs_saif *saif_select;
++    int ret = -EINVAL;
++
++    if (plat->init && plat->init())
++        goto err_plat_init;
++
++    mxs_dai.cpu_dai = &mxs_saif_dai[0];
++    saif_select = (struct mxs_saif *)mxs_dai.cpu_dai->private_data;
++    saif_select->stream_mapping = PLAYBACK_SAIF0_CAPTURE_SAIF1;
++    saif_select->saif_mclk = plat->saif_mclock;
++    saif_select->saif_clk = SAIF0;
++
++    return 0;
++
++err_plat_init:
++    if (plat->finit)
++        plat->finit();
++
++    return ret;
++}
++
++static int mxs_cx2074x_remove(struct platform_device *pdev)
++{
++    struct mxs_audio_platform_data *plat = pdev->dev.platform_data;
++
++    if (plat->finit)
++        plat->finit();
++
++    return 0;
++}
++
++static struct platform_driver mxs_cx2074x_audio_driver = {
++    .probe = mxs_cx2074x_probe,
++    .remove = mxs_cx2074x_remove,
++    .driver = {
++           .name = "mxs-cx2074x",
++           },
++};
++
++static struct platform_device *mxs_snd_device;
++
++static int __init mxs_init(void)
++{
++    int ret;
++
++    ret = platform_driver_register(&mxs_cx2074x_audio_driver);
++    if (ret)
++        return -ENOMEM;
++
++    mxs_snd_device = platform_device_alloc("soc-audio", 1);
++    if (!mxs_snd_device)
++        return -ENOMEM;
++
++    platform_set_drvdata(mxs_snd_device, &mxs_snd_devdata);
++    mxs_snd_devdata.dev = &mxs_snd_device->dev;
++    ret = platform_device_add(mxs_snd_device);
++
++    if (ret)
++        platform_device_put(mxs_snd_device);
++
++    return ret;
++}
++
++static void __exit mxs_exit(void)
++{
++    platform_driver_unregister(&mxs_cx2074x_audio_driver);
++    platform_device_unregister(mxs_snd_device);
++}
++
++module_init(mxs_init);
++module_exit(mxs_exit);
++
++MODULE_AUTHOR("Freescale Semiconductor, Inc.");
++MODULE_DESCRIPTION("CX2074X Driver for MXS");
++MODULE_LICENSE("GPL");
