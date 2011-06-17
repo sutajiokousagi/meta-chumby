@@ -1,0 +1,31 @@
+diff -Nur linux-2.6.35.3.orig/arch/arm/mach-mx28/device.c linux-2.6.35.3/arch/arm/mach-mx28/device.c
+--- linux-2.6.35.3.orig/arch/arm/mach-mx28/device.c	2011-04-05 12:02:15.785668748 +0800
++++ linux-2.6.35.3/arch/arm/mach-mx28/device.c	2011-05-31 15:56:28.612597490 +0800
+@@ -430,7 +448,13 @@
+ 
+ static int mxs_mmc_get_wp_ssp0(void)
+ {
++
++#if 1
++	return 0;
++#else
+ 	return gpio_get_value(MMC0_WP);
++#endif
++
+ }
+ 
+ static int mxs_mmc_hw_init_ssp0(void)
+@@ -492,7 +516,13 @@
+ 
+ static int mxs_mmc_get_wp_ssp1(void)
+ {
++
++#if 1
++	return 0;
++#else
+ 	return gpio_get_value(MMC1_WP);
++#endif
++
+ }
+ 
+ static int mxs_mmc_hw_init_ssp1(void)

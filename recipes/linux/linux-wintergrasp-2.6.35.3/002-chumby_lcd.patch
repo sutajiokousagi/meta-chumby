@@ -1,0 +1,2320 @@
+diff -Nur linux-2.6.35.3.orig/arch/arm/mach-mx28/clock.c linux-2.6.35.3/arch/arm/mach-mx28/clock.c
+--- linux-2.6.35.3.orig/arch/arm/mach-mx28/clock.c	2011-04-05 12:02:15.785668748 +0800
++++ linux-2.6.35.3/arch/arm/mach-mx28/clock.c	2011-06-07 12:45:12.249382845 +0800
+@@ -1146,6 +1155,8 @@
+ 
+ static int lcdif_set_rate(struct clk *clk, unsigned long rate)
+ {
++
++#if 0
+ 	int reg_val;
+ 
+ 	reg_val = __raw_readl(clk->scale_reg);
+@@ -1164,6 +1175,42 @@
+ 	reg_val = __raw_readl(CLKCTRL_BASE_ADDR + HW_CLKCTRL_CLKSEQ);
+ 	reg_val |= BM_CLKCTRL_CLKSEQ_BYPASS_DIS_LCDIF;
+ 	__raw_writel(reg_val, CLKCTRL_BASE_ADDR + HW_CLKCTRL_CLKSEQ);
++#else
++	long root_rate = clk->parent->get_rate(clk->parent);
++	int reg_val;
++        int div;
++
++	//set DIV
++	div = root_rate / rate;
++
++	if ((!div) || (div > 0x1fff))
++		return -EINVAL;
++
++	reg_val = __raw_readl(clk->scale_reg);
++	reg_val &= ~(BM_CLKCTRL_DIS_LCDIF_CLKGATE | BM_CLKCTRL_DIS_LCDIF_DIV | BM_CLKCTRL_DIS_LCDIF_DIV_FRAC_EN);
++
++	if (root_rate % rate)
++	{
++		div = mx28_get_frac_div(root_rate / 1000, rate / 1000, 0x1fff);
++		reg_val |= BM_CLKCTRL_DIS_LCDIF_DIV_FRAC_EN;
++	}
++
++	reg_val |= BF_CLKCTRL_DIS_LCDIF_DIV(div);
++	__raw_writel(reg_val, clk->scale_reg);
++
++	if (clk->busy_reg) {
++		int i;
++		for (i = 10000; i; i--)
++			if (!clk_is_busy(clk))
++				break;
++		if (!i)
++			return -ETIMEDOUT;
++	}
++
++	reg_val = __raw_readl(CLKCTRL_BASE_ADDR + HW_CLKCTRL_CLKSEQ);
++	reg_val |= BM_CLKCTRL_CLKSEQ_BYPASS_DIS_LCDIF;
++	__raw_writel(reg_val, CLKCTRL_BASE_ADDR + HW_CLKCTRL_CLKSEQ);
++#endif
+ 
+ 	return 0;
+ }
+diff -Nur linux-2.6.35.3.orig/arch/arm/mach-mx28/device.c linux-2.6.35.3/arch/arm/mach-mx28/device.c
+--- linux-2.6.35.3.orig/arch/arm/mach-mx28/device.c	2011-04-05 12:02:15.785668748 +0800
++++ linux-2.6.35.3/arch/arm/mach-mx28/device.c	2011-05-31 15:56:28.612597490 +0800
+@@ -133,18 +133,36 @@
+ }
+ #endif
+ 
+-#if defined(CONFIG_FB_MXS) || defined(CONFIG_FB_MXS_MODULE)
++#if defined(CONFIG_FB_MXS) || defined(CONFIG_FB_MXS_MODULE) || defined(CONFIG_FB_CHUMBYFBFW)
+ static struct resource framebuffer_resource[] = {
+ 	{
+ 	 .flags = IORESOURCE_MEM,
+ 	 .start = LCDIF_PHYS_ADDR,
+ 	 .end   = LCDIF_PHYS_ADDR + 0x2000 - 1,
+ 	 },
++
++#if defined(CONFIG_FB_CHUMBYFBFW)
++	{
++	.flags	= IORESOURCE_MEM,
++	.start	= PXP_PHYS_ADDR,
++	.end	= PXP_PHYS_ADDR + 0x2000 - 1,
++	}, 
++#endif
++
+ 	{
+ 	 .flags = IORESOURCE_IRQ,
+ 	 .start = IRQ_LCDIF,
+ 	 .end   = IRQ_LCDIF,
+ 	 },
++
++#if defined(CONFIG_FB_CHUMBYFBFW)
++	{
++	 .flags	= IORESOURCE_IRQ,
++	 .start	= IRQ_PXP,
++	 .end	= IRQ_PXP,
++	},
++#endif
++
+ };
+ 
+ static struct mxs_platform_fb_data mxs_framebuffer_pdata = {
+@@ -169,8 +187,8 @@
+ }
+ #endif
+ 
+-#if defined(CONFIG_VIDEO_MXS_PXP) || \
+-	defined(CONFIG_VIDEO_MXS_PXP_MODULE)
++#if !defined(CONFIG_FB_CHUMBYFBFW) && \
++    (defined(CONFIG_VIDEO_MXS_PXP) || defined(CONFIG_VIDEO_MXS_PXP_MODULE))
+ static struct resource pxp_resource[] = {
+ 	{
+ 		.flags	= IORESOURCE_MEM,
+diff -Nur linux-2.6.35.3.orig/arch/arm/mach-mx28/include/mach/lcdif.h linux-2.6.35.3/arch/arm/mach-mx28/include/mach/lcdif.h
+--- linux-2.6.35.3.orig/arch/arm/mach-mx28/include/mach/lcdif.h	2011-04-05 12:02:15.789413658 +0800
++++ linux-2.6.35.3/arch/arm/mach-mx28/include/mach/lcdif.h	2011-04-18 17:00:31.067232431 +0800
+@@ -174,9 +174,16 @@
+ 
+ 	__raw_writel(BM_LCDIF_CTRL1_BYTE_PACKING_FORMAT,
+ 		     REGS_LCDIF_BASE + HW_LCDIF_CTRL1_CLR);
++
++#if defined(CONFIG_FB_CHUMBYFBFW_LCD_LMS350) || defined(CONFIG_FB_CHUMBYFBFW_LCD_LMS350_MODULE)
++	__raw_writel(BF_LCDIF_CTRL1_BYTE_PACKING_FORMAT(0x0f) |
++		     BM_LCDIF_CTRL1_RECOVER_ON_UNDERFLOW,
++		     REGS_LCDIF_BASE + HW_LCDIF_CTRL1_SET);
++#else
+ 	__raw_writel(BF_LCDIF_CTRL1_BYTE_PACKING_FORMAT(7) |
+ 		     BM_LCDIF_CTRL1_RECOVER_ON_UNDERFLOW,
+ 		     REGS_LCDIF_BASE + HW_LCDIF_CTRL1_SET);
++#endif
+ 
+ 	val = __raw_readl(REGS_LCDIF_BASE + HW_LCDIF_TRANSFER_COUNT);
+ 	val &= ~(BM_LCDIF_TRANSFER_COUNT_V_COUNT |
+@@ -200,17 +207,32 @@
+ 		     BM_LCDIF_CTRL_INPUT_DATA_SWIZZLE |
+ 		     BM_LCDIF_CTRL_LCD_DATABUS_WIDTH,
+ 		     REGS_LCDIF_BASE + HW_LCDIF_CTRL_CLR);
++
++#if defined(CONFIG_FB_CHUMBYFBFW_LCD_LMS350) || defined(CONFIG_FB_CHUMBYFBFW_LCD_LMS350_MODULE)
++	__raw_writel(BF_LCDIF_CTRL_WORD_LENGTH(0) |	/* 16 bit */
++		     BM_LCDIF_CTRL_DATA_SELECT |	/* data mode */
++		     BF_LCDIF_CTRL_INPUT_DATA_SWIZZLE(0) |	/* no swap */
++		     BF_LCDIF_CTRL_LCD_DATABUS_WIDTH(2),	/* 18 bit */
++		     REGS_LCDIF_BASE + HW_LCDIF_CTRL_SET);
++#else
+ 	__raw_writel(BF_LCDIF_CTRL_WORD_LENGTH(3) |	/* 24 bit */
+ 		     BM_LCDIF_CTRL_DATA_SELECT |	/* data mode */
+ 		     BF_LCDIF_CTRL_INPUT_DATA_SWIZZLE(0) |	/* no swap */
+ 		     BF_LCDIF_CTRL_LCD_DATABUS_WIDTH(3),	/* 24 bit */
+ 		     REGS_LCDIF_BASE + HW_LCDIF_CTRL_SET);
++#endif
+ 
+ 	val = __raw_readl(REGS_LCDIF_BASE + HW_LCDIF_VDCTRL0);
+ 	val &= ~(BM_LCDIF_VDCTRL0_VSYNC_POL |
+ 		 BM_LCDIF_VDCTRL0_HSYNC_POL |
+ 		 BM_LCDIF_VDCTRL0_ENABLE_POL | BM_LCDIF_VDCTRL0_DOTCLK_POL);
++
++#if defined(CONFIG_FB_CHUMBYFBFW_LCD_LMS350) || defined(CONFIG_FB_CHUMBYFBFW_LCD_LMS350_MODULE)
++	val |= BM_LCDIF_VDCTRL0_VSYNC_POL | BM_LCDIF_VDCTRL0_HSYNC_POL;
++#else
+ 	val |= BM_LCDIF_VDCTRL0_ENABLE_POL | BM_LCDIF_VDCTRL0_DOTCLK_POL;
++#endif
++
+ 	__raw_writel(val, REGS_LCDIF_BASE + HW_LCDIF_VDCTRL0);
+ 
+ 	val = __raw_readl(REGS_LCDIF_BASE + HW_LCDIF_VDCTRL0);
+diff -Nur linux-2.6.35.3.orig/arch/arm/mach-mx28/mx28evk_pins.c linux-2.6.35.3/arch/arm/mach-mx28/mx28evk_pins.c
+--- linux-2.6.35.3.orig/arch/arm/mach-mx28/mx28evk_pins.c	2011-04-05 12:02:15.789413658 +0800
++++ linux-2.6.35.3/arch/arm/mach-mx28/mx28evk_pins.c	2011-05-09 15:28:46.367831147 +0800
+@@ -183,7 +183,7 @@
+ 	 .drive	= 1,
+ 	 },
+ #endif
+-#if defined(CONFIG_FB_MXS) || defined(CONFIG_FB_MXS_MODULE)
++#if defined(CONFIG_FB_MXS) || defined(CONFIG_FB_MXS_MODULE) || defined(CONFIG_FB_CHUMBYFBFW)
+ 	{
+ 	 .name  = "LCD_D00",
+ 	 .id	= PINID_LCD_D00,
+@@ -384,6 +394,41 @@
+ 	 .voltage = PAD_3_3V,
+ 	 .drive	= 1,
+ 	 },
++
++#if defined(CONFIG_FB_CHUMBYFBFW_LCD_LMS350) || defined(CONFIG_FB_CHUMBYFBFW_LCD_LMS350_MODULE)
++	{
++	 .name = "LCD_VSYNC",
++	 .id   = PINID_LCD_VSYNC,
++	 .fun  = PIN_FUN1,
++	 .strength = PAD_8MA,
++	 .voltage = PAD_3_3V,
++	 .drive	= 1,
++	 },
++	{
++	 .name = "LCD_HSYNC",
++	 .id = PINID_LCD_HSYNC,
++	 .fun = PIN_FUN1,
++	 .strength = PAD_8MA,
++	 .voltage = PAD_3_3V,
++	 .drive	= 1,
++	 },
++	{
++	 .name = "LCD_ENABLE",
++	 .id = PINID_LCD_ENABLE,
++	 .fun = PIN_FUN1,
++	 .strength = PAD_8MA,
++	 .voltage = PAD_3_3V,
++	 .drive	= 1,
++	 },
++	{
++	 .name = "LCD_DOTCLK",
++	 .id = PINID_LCD_DOTCK,
++	 .fun = PIN_FUN1,
++	 .strength = PAD_8MA,
++	 .voltage = PAD_3_3V,
++	 .drive	= 1,
++	 },
++#else
+ 	{
+ 	 .name = "LCD_VSYNC",
+ 	 .id   = PINID_LCD_RD_E,
+@@ -416,6 +461,8 @@
+ 	 .voltage = PAD_3_3V,
+ 	 .drive	= 1,
+ 	 },
++#endif
++
+ 	{
+ 	 .name = "LCD_BACKLIGHT",
+ 	 .id = PINID_PWM2,
+diff -Nur linux-2.6.35.3.orig/arch/arm/plat-mxs/device.c linux-2.6.35.3/arch/arm/plat-mxs/device.c
+--- linux-2.6.35.3.orig/arch/arm/plat-mxs/device.c	2011-04-05 12:02:13.569415104 +0800
++++ linux-2.6.35.3/arch/arm/plat-mxs/device.c	2011-05-31 15:56:15.652522558 +0800
+@@ -232,7 +234,7 @@
+ };
+ #endif
+ 
+-#if defined(CONFIG_FB_MXS) || defined(CONFIG_FB_MXS_MODULE)
++#if defined(CONFIG_FB_MXS) || defined(CONFIG_FB_MXS_MODULE) || defined(CONFIG_FB_CHUMBYFBFW)
+ static struct platform_device mxs_fb = {
+ 	.name	= "mxs-fb",
+ 	.id	= 0,
+@@ -584,7 +613,7 @@
+ 	},
+ #endif
+ 
+-#if defined(CONFIG_FB_MXS) || defined(CONFIG_FB_MXS_MODULE)
++#if defined(CONFIG_FB_MXS) || defined(CONFIG_FB_MXS_MODULE) || defined(CONFIG_FB_CHUMBYFBFW)
+ 	{
+ 	 .name	= "mxs-fb",
+ 	 .size	= 1,
+diff -Nur linux-2.6.35.3.orig/drivers/video/Makefile linux-2.6.35.3/drivers/video/Makefile
+--- linux-2.6.35.3.orig/drivers/video/Makefile	2011-04-05 12:02:23.948997263 +0800
++++ linux-2.6.35.3/drivers/video/Makefile	2011-04-10 16:27:10.816189792 +0800
+@@ -121,6 +121,7 @@
+ obj-$(CONFIG_FB_PNX4008_DUM_RGB)  += pnx4008/
+ obj-$(CONFIG_FB_MXC)		  += mxc/
+ obj-$(CONFIG_FB_MXS)		  += mxs/
++obj-$(CONFIG_FB_CHUMBYFBFW)	  += mxs/
+ obj-$(CONFIG_FB_IBM_GXT4500)	  += gxt4500.o
+ obj-$(CONFIG_FB_PS3)		  += ps3fb.o
+ obj-$(CONFIG_FB_SM501)            += sm501fb.o
+diff -Nur linux-2.6.35.3.orig/drivers/video/mxs/chumbyfbfw.c linux-2.6.35.3/drivers/video/mxs/chumbyfbfw.c
+--- linux-2.6.35.3.orig/drivers/video/mxs/chumbyfbfw.c	1970-01-01 07:30:00.000000000 +0730
++++ linux-2.6.35.3/drivers/video/mxs/chumbyfbfw.c	2011-04-11 17:26:36.251302984 +0800
+@@ -0,0 +1,1656 @@
++/*
++ * Freescale STMP37XX/STMP378X framebuffer driver
++ *
++ * Adapted for use in the Chumby by also integrating the PXP, to give the
++ * user two framebuffer devices to work with.
++ *
++ * Author: Vitaly Wool <vital@embeddedalley.com>
++ *         Sean Cross  <scross@chumby.com>
++ *
++ * Copyright 2008 Freescale Semiconductor, Inc. All Rights Reserved.
++ * Copyright 2008 Embedded Alley Solutions, Inc All Rights Reserved.
++ */
++
++/*
++ * The code contained herein is licensed under the GNU General Public
++ * License. You may obtain a copy of the GNU General Public License
++ * Version 2 or later at the following locations:
++ *
++ * http://www.opensource.org/licenses/gpl-license.html
++ * http://www.gnu.org/copyleft/gpl.html
++ */
++#include <linux/module.h>
++#include <linux/kernel.h>
++#include <linux/device.h>
++#include <linux/platform_device.h>
++#include <linux/input.h>
++#include <linux/interrupt.h>
++#include <linux/fb.h>
++#include <linux/init.h>
++#include <linux/list.h>
++#include <linux/delay.h>
++#include <linux/dma-mapping.h>
++#include <linux/err.h>
++#include <linux/uaccess.h>
++#include <linux/cpufreq.h>
++#include <linux/proc_fs.h>
++#include <linux/mutex.h>
++
++
++
++#include <linux/io.h>
++#include <linux/vmalloc.h>
++
++#include <media/videobuf-dma-contig.h>
++
++#include <mach/system.h>
++#include <mach/regs-pxp.h>
++
++#include <linux/init.h>
++
++#define LOGO_OFFSET 0x44844000
++
++#define REGHW_LCDIF_CTRL1_RD() __raw_readl(lcdif_regbase + HW_LCDIF_CTRL1)
++#define REGHW_LCDIF_CTRL1_CLR(x) __raw_writel(x, lcdif_regbase + HW_LCDIF_CTRL1_CLR)
++#define REGHW_LCDIF_CTRL1_SET(x) __raw_writel(x, lcdif_regbase + HW_LCDIF_CTRL1_SET)
++#define REGHW_LCDIF_NEXT_BUF_WR(x) __raw_writel(x, lcdif_regbase + HW_LCDIF_NEXT_BUF)
++#define REGHW_LCDIF_TIMING_WR(x) __raw_writel(x, lcdif_regbase + HW_LCDIF_TIMING)
++
++#define REGHW_PXP_CTRL_WR(x) __raw_writel(x, pxp_regbase + HW_PXP_CTRL)
++#define REGHW_PXP_CTRL_SET(x) __raw_writel(x, pxp_regbase + HW_PXP_CTRL_SET)
++#define REGHW_PXP_STAT_CLR(x) __raw_writel(x, pxp_regbase + HW_PXP_STAT_CLR)
++
++#define REGHW_PXP_OLn_WR(x, y) __raw_writel(y, pxp_regbase + HW_PXP_OLn(x))
++#define REGHW_PXP_OLnPARAM_RD(x) __raw_readl(pxp_regbase + HW_PXP_OLnPARAM(x))
++#define REGHW_PXP_OLnPARAM_WR(x, y) __raw_writel(y, pxp_regbase + HW_PXP_OLnPARAM(x))
++#define REGHW_PXP_OLnSIZE_WR(x, y) __raw_writel(y, pxp_regbase + HW_PXP_OLnSIZE(x))
++
++#define REGHW_PXP_OLCOLORKEYLOW_RD() __raw_readl(pxp_regbase + HW_PXP_OLCOLORKEYLOW)
++#define REGHW_PXP_OLCOLORKEYLOW_WR(x) __raw_writel(x, pxp_regbase + HW_PXP_OLCOLORKEYLOW)
++#define REGHW_PXP_OLCOLORKEYHIGH_WR(x) __raw_writel(x, pxp_regbase + HW_PXP_OLCOLORKEYHIGH)
++
++#define REGHW_PXP_RGBBUF_WR(x) __raw_writel(x, pxp_regbase + HW_PXP_OUTBUF)
++#define REGHW_PXP_RGBSIZE_WR(x) __raw_writel(x, pxp_regbase + HW_PXP_OUTSIZE)
++
++#define REGHW_PXP_S0BUF_WR(x) __raw_writel(x, pxp_regbase + HW_PXP_S0BUF)
++#define REGHW_PXP_S0PARAM_WR(x) __raw_writel(x, pxp_regbase + HW_PXP_S0PARAM)
++#define REGHW_PXP_S0CROP_WR(x) __raw_writel(x, pxp_regbase + HW_PXP_S0CROP)
++#define REGHW_PXP_S0SCALE_WR(x) __raw_writel(x, pxp_regbase + HW_PXP_S0SCALE)
++#define REGHW_PXP_S0OFFSET_WR(x) __raw_writel(x, pxp_regbase + HW_PXP_S0OFFSET)
++#define REGHW_PXP_S0BACKGROUND_WR(x) __raw_writel(x, pxp_regbase + HW_PXP_S0BACKGROUND)
++
++// CHUMBY_fbsize
++//
++// Multiple framebuffers are presented as /dev/fbN.  This descriptor
++// defines what they look like, regardless of the resulting output device.
++// A later stage will take the data and scale it up or down to suit the
++// needs of the output device.
++static struct fb_var_screeninfo default_mode __devinitdata = {
++    .activate       = FB_ACTIVATE_NOW,
++    .width          = 320,
++    .height         = 240,
++    .xres           = 320,
++    .yres           = 240,
++    .xres_virtual   = 320,
++    .yres_virtual   = 240*2,
++    .yoffset        = 0,
++    .pixclock       = 154000,
++    .left_margin    = 5,
++    .right_margin   = 4,
++    .upper_margin   = 3,
++    .lower_margin   = 3,
++    .hsync_len      = 40,
++    .vsync_len      = 2,
++    .vmode          = FB_VMODE_NONINTERLACED,
++    .bits_per_pixel = 16,
++    .red.offset     = 11,
++    .red.length     = 5,
++    .green.offset   = 5,
++    .green.length   = 6,
++    .blue.offset    = 0,
++    .blue.length    = 5,
++};
++// !CHUMBY_fbsize
++
++
++#include <mach/hardware.h>
++#include <mach/regs-lcdif.h>
++#include <mach/clock.h>
++#include <mach/lcdif.h>
++
++#define CHLOG(format, arg...)            \
++    printk("chumbyfbfw.c - %s():%d - " format, __func__, __LINE__, ## arg)
++
++
++#define NUM_SCREENS 3
++
++#define PXP_STATUS_OFF          0
++#define PXP_STATUS_ON           1
++#define PXP_STATUS_TURNING_ON   2
++#define PXP_STATUS_TURNING_OFF  3
++#define PXP_STATUS_READY        4   // PXP should fire this time.
++
++
++struct chumbyfw_fb_plane {
++    struct fb_info           fb_info;
++
++    // Something seems to be overrunning fb_info.  Padding helps, maybe?
++    char                     padding[128];
++
++    dma_addr_t               phys_start;
++    dma_addr_t               cur_phys;
++    void                    *virt_start;
++    ssize_t                  mem_size;
++    ssize_t                  map_size;
++    ssize_t                  width, height, bpp;
++    int                      idx;
++    struct chumbyfw_fb_data *fb_data;
++};
++
++struct chumbyfw_fb_data {
++    struct device                    *dev;
++    struct mxs_platform_fb_data      *pdata;
++
++    int                               is_blank;
++    ssize_t                           mem_size;
++    ssize_t                           map_size;
++    dma_addr_t                        phys_start;
++    dma_addr_t                        cur_phys;
++    int                               irq;
++    int                               pxp_irq;
++    spinlock_t                        pxp_lock;
++    struct mutex                      pxp_mutex;
++    void                             *virt_start;
++    wait_queue_head_t                 vsync_wait_q;
++    u32                               vsync_count;
++    u32                               pxp_missed_count;
++    int                               pxp_status;
++    struct chumbyfw_fb_plane         *planes[NUM_SCREENS];
++};
++
++#define MAX_PALETTES 16
++
++static unsigned long                     lcdif_regbase = IO_ADDRESS(LCDIF_PHYS_ADDR);
++static unsigned long                     pxp_regbase = IO_ADDRESS(PXP_PHYS_ADDR);
++
++// forward declaration.
++static int chumbyfwfb_blank(int blank, struct fb_info *info);
++static int pxp_setup(struct chumbyfw_fb_data *data);
++//static void pxp_run(unsigned long ptr);
++static int chumbyfwfb_wait_for_vsync(u32 channel, struct fb_info *info);
++
++
++static unsigned char *default_panel_name;
++
++
++// Global data handle.
++static struct chumbyfw_fb_data *gdata;
++
++
++// Used to figure out how often the PXP is firing.
++static int pxp_irq_frequency   = 0;
++static int lcdif_irq_frequency = 0;
++static int vsync_edge_irqs     = 0;
++static int cur_frame_done_irqs = 0;
++static unsigned int pxp_start_jiffies   = 0;
++static unsigned int pxp_stop_jiffies    = 0;
++
++static irqreturn_t lcd_irq_handler(int irq, void *dev_id) {
++    struct chumbyfw_fb_data *data = gdata;
++    static int times_fired = 0;
++    static int last_time   = 0;
++    int did_draw_frame = 0;
++
++    u32 status_lcd = REGHW_LCDIF_CTRL1_RD();
++    pr_debug("%s: irq %d\n", __func__, irq);
++
++    // IRQ fires at the start of frame.
++    if (status_lcd & BM_LCDIF_CTRL1_VSYNC_EDGE_IRQ) {
++        pr_debug("%s: VSYNC irq\n", __func__);
++        vsync_edge_irqs++;
++        REGHW_LCDIF_CTRL1_CLR(BM_LCDIF_CTRL1_VSYNC_EDGE_IRQ);
++    }
++
++    // IRQ fires at the end of the frame.
++    if (status_lcd & BM_LCDIF_CTRL1_CUR_FRAME_DONE_IRQ) {
++        pr_debug("%s: frame done irq\n", __func__);
++        did_draw_frame = 1;
++        cur_frame_done_irqs++;
++        REGHW_LCDIF_CTRL1_CLR(BM_LCDIF_CTRL1_CUR_FRAME_DONE_IRQ);
++    }
++
++    // Error conditions.
++    if (status_lcd & BM_LCDIF_CTRL1_UNDERFLOW_IRQ) {
++        CHLOG("%s: underflow irq\n", __func__);
++        REGHW_LCDIF_CTRL1_CLR(BM_LCDIF_CTRL1_UNDERFLOW_IRQ);
++    }
++    if (status_lcd & BM_LCDIF_CTRL1_OVERFLOW_IRQ) {
++        CHLOG("%s: overflow irq\n", __func__);
++        REGHW_LCDIF_CTRL1_CLR(BM_LCDIF_CTRL1_OVERFLOW_IRQ);
++    }
++
++
++    if(did_draw_frame) {
++        if(!data)
++            CHLOG("Data is NULL, we'll probably segfault right here\n");
++
++        data->vsync_count++;
++        wake_up_interruptible(&data->vsync_wait_q);
++
++        // Since the frame has finished drawing, we're able to run the PXP
++        // to composite the next frame.
++        // Since the LCD runs at 60 Hz, and we want the PXP to run at 30 Hz, 
++        // only run it every other time.
++        if(data->pxp_status == PXP_STATUS_TURNING_ON) {
++            REGHW_LCDIF_NEXT_BUF_WR(data->phys_start);
++            data->pxp_status = PXP_STATUS_ON;
++        }
++        else if(data->pxp_status == PXP_STATUS_TURNING_OFF) {
++            REGHW_LCDIF_NEXT_BUF_WR(data->planes[0]->phys_start);
++            data->pxp_status = PXP_STATUS_OFF;
++        }
++
++        // If the PXP is enabled, queue the PXP.
++        else if(data->pxp_status == PXP_STATUS_ON) {
++            data->pxp_status = PXP_STATUS_READY;
++        }
++
++        // If the PXP is queued, it means it's ready to fire.  Attempt to
++        // acquire the lock.  If we can, great, fire the PXP.  Otherwise,
++        // leave the PXP queued.
++        else if(data->pxp_status == PXP_STATUS_READY) {
++            if(mutex_trylock(&data->pxp_mutex)) {
++                pxp_start_jiffies = jiffies;
++                REGHW_PXP_CTRL_SET(BM_PXP_CTRL_ENABLE);
++                data->pxp_status = PXP_STATUS_ON;
++            }
++            else
++                data->pxp_missed_count++;
++        }
++
++        else if(data->pxp_status == PXP_STATUS_OFF)
++            ;
++
++        else
++            CHLOG("Unknown pxp_status: %d\n", data->pxp_status);
++    }
++
++    times_fired++;
++    if((jiffies_to_msecs(jiffies) - last_time) > 1000) {
++        lcdif_irq_frequency = times_fired;
++        times_fired = 1;
++        last_time = jiffies_to_msecs(jiffies);
++    }
++
++    return IRQ_HANDLED;
++}
++
++
++static irqreturn_t pxp_irq_handler(int irq, void *dev_id) {
++    struct chumbyfw_fb_data *data = dev_id;
++    unsigned long flags;
++    static int times_fired = 0;
++    static int last_time   = 0;
++
++    spin_lock_irqsave(&data->pxp_lock, flags);
++
++    pxp_stop_jiffies = jiffies;
++
++
++    // Keep track of how many times this IRQ has fired.
++    times_fired++;
++    if((jiffies_to_msecs(jiffies) - last_time) > 1000) {
++        pxp_irq_frequency = times_fired;
++        times_fired = 1;
++        last_time = jiffies_to_msecs(jiffies);
++    }
++
++
++    // Clear the interrupt so that we can eventually run the PXP again.
++    REGHW_PXP_STAT_CLR(BM_PXP_STAT_IRQ);
++
++
++    mutex_unlock(&data->pxp_mutex);
++    spin_unlock_irqrestore(&data->pxp_lock, flags);
++
++
++    return IRQ_HANDLED;
++}
++
++
++
++
++
++
++///////////////////////////////////
++//// proc entrypoints
++
++#if(NUM_SCREENS>=4)
++static int chumbyfwfb_proc_read_fb3_alpha(char *buf, char **start, off_t offset,
++                                 int count, int *eof, void *data)
++{
++    int len;
++    len = sprintf(buf, "0x%x\n", ((REGHW_PXP_OLnPARAM_RD(NUM_SCREENS-4) >> 8) & 0xff));
++    *eof = 1;
++
++    return len;
++}
++
++static int chumbyfwfb_proc_write_fb3_alpha(struct file *file, const char *buf,
++                                  unsigned long count, void *data)
++{
++    unsigned long alpha;
++    u32 reg;
++
++    alpha = (simple_strtoul(buf, NULL, 0)<<8)&0x0000FF00;
++
++    reg = REGHW_PXP_OLnPARAM_RD(NUM_SCREENS-4);
++    reg &= ~(0x0000FF00 | BM_PXP_OLnPARAM_ENABLE);
++    reg |= alpha;
++    reg |= (alpha) ? BM_PXP_OLnPARAM_ENABLE : 0;
++    REGHW_PXP_OLnPARAM_WR(NUM_SCREENS-4, reg);
++    
++    return count;
++}
++#endif
++
++
++
++#if(NUM_SCREENS>=3)
++static int chumbyfwfb_proc_read_fb2_alpha(char *buf, char **start, off_t offset,
++                                 int count, int *eof, void *data)
++{
++    int len;
++    len = sprintf(buf, "0x%x\n", ((REGHW_PXP_OLnPARAM_RD(NUM_SCREENS-3) >> 8) & 0xff));
++    *eof = 1;
++
++    return len;
++}
++
++static int chumbyfwfb_proc_write_fb2_alpha(struct file *file, const char *buf,
++                                  unsigned long count, void *data)
++{
++    unsigned long alpha;
++    u32 reg;
++
++    alpha = (simple_strtoul(buf, NULL, 0)<<8)&0x0000FF00;
++
++    reg = REGHW_PXP_OLnPARAM_RD(NUM_SCREENS-3);
++    reg &= ~(0x0000FF00 | BM_PXP_OLnPARAM_ENABLE);
++    reg |= alpha;
++    reg |= (alpha) ? BM_PXP_OLnPARAM_ENABLE : 0;
++    REGHW_PXP_OLnPARAM_WR(NUM_SCREENS-3, reg);
++    
++    return count;
++}
++#endif
++
++
++
++
++static int chumbyfwfb_proc_read_alpha(char *buf, char **start, off_t offset,
++                                 int count, int *eof, void *data)
++{
++    int len;
++    len = sprintf(buf, "0x%x\n", ((REGHW_PXP_OLnPARAM_RD(NUM_SCREENS-2) >> 8) & 0xff));
++    *eof = 1;
++
++    return len;
++}
++
++static int chumbyfwfb_proc_write_alpha(struct file *file, const char *buf,
++                                  unsigned long count, void *data)
++{
++    unsigned long alpha;
++    u32 reg;
++
++    alpha = (simple_strtoul(buf, NULL, 0)<<8)&0x0000FF00;
++
++    reg = REGHW_PXP_OLnPARAM_RD(NUM_SCREENS-2);
++    reg &= ~(0x0000FF00 | BM_PXP_OLnPARAM_ENABLE);
++    reg |= alpha;
++    reg |= (alpha) ? BM_PXP_OLnPARAM_ENABLE : 0;
++    REGHW_PXP_OLnPARAM_WR(NUM_SCREENS-2, reg);
++    
++    return count;
++}
++
++
++
++static int chumbyfwfb_proc_read_key(char *buf, char **start, off_t offset,
++                               int count, int *eof, void *data)
++{
++    int len = 0;
++    len += sprintf(buf + len, "0x%02x",   ((REGHW_PXP_OLCOLORKEYLOW_RD() >> 12) & 0x3f));
++    len += sprintf(buf + len,   "%02x",   ((REGHW_PXP_OLCOLORKEYLOW_RD() >> 6) & 0x3f));
++    len += sprintf(buf + len,   "%02x\n", ((REGHW_PXP_OLCOLORKEYLOW_RD() >> 0) & 0x3f));
++    *eof = 1;
++
++    return len;
++}
++
++static int chumbyfwfb_proc_write_key(struct file *file, const char *buf,
++                                unsigned long count, void *data)
++{
++    unsigned long key = simple_strtoul(buf, NULL, 0);
++
++    REGHW_PXP_OLCOLORKEYLOW_WR(key);
++    REGHW_PXP_OLCOLORKEYHIGH_WR(key);
++    
++    return count;
++}
++
++
++static int chumbyfwfb_proc_read_fb_stats(char *buf, char **start,
++                            off_t offset, int count, int *eof, void *data)
++{
++    int len;
++    len = sprintf(buf, "PXP frequency:      %d Hz\n"
++                       "LCDIF frequency:    %d Hz\n"
++                       "VSYNC Edge IRQs:    %d\n"
++                       "Cur Frame Done IRQs:    %d\n"
++                       "Missed PXP firings: %d\n"
++//                       "PXP started:      %lu\n"
++//                       "PXP stopped:      %lu\n"
++//                       "PXP duration:     %lu uS / % mS\n"
++                       ,
++                       pxp_irq_frequency, lcdif_irq_frequency,
++                       vsync_edge_irqs, cur_frame_done_irqs,
++                       gdata->pxp_missed_count);
++//                       jiffies_to_usecs(
++//                           time_after(pxp_start_jiffies, pxp_stop_jiffies)),
++//                       jiffies_to_msecs(
++//                           time_after(pxp_start_jiffies, pxp_stop_jiffies)));
++    *eof = 1;
++    return len;
++}
++
++static int chumbyfwfb_proc_read_key_en(char *buf, char **start, off_t offset,
++                                  int count, int *eof, void *data)
++{
++    int len;
++
++    if (REGHW_PXP_OLnPARAM_RD(NUM_SCREENS-2) & BM_PXP_OLnPARAM_ENABLE_COLORKEY) {
++        len = sprintf(buf, "1\n");
++    } else {
++        len = sprintf(buf, "0\n");
++    }
++    *eof = 1;
++
++    return len;
++}
++
++static int chumbyfwfb_proc_write_key_en(struct file *file, const char *buf,
++                                   unsigned long count, void *data) {
++    unsigned long en;
++    u32 reg;
++
++    en = simple_strtoul(buf, NULL, 0);
++
++    reg = REGHW_PXP_OLnPARAM_RD(NUM_SCREENS-2);
++    reg &= ~0x08;
++    reg |= (en) ? 0x08 : 0;
++    REGHW_PXP_OLnPARAM_WR(NUM_SCREENS-2, reg);
++    
++    return count;
++}
++
++
++
++static int chumbyfwfb_proc_read_pxp_lock(char *buf, char **start, off_t offset,
++                                  int count, int *eof, void *data) {
++    *eof = 1;
++    return sprintf(buf, mutex_is_locked(&gdata->pxp_mutex) ? "1" : "0");
++}
++
++static int chumbyfwfb_proc_write_pxp_lock(struct file *file, const char *buf,
++                                   unsigned long count, void *data) {
++    int setting = simple_strtoul(buf, NULL, 0);
++
++    // If the setting is to lock the mutex, try to lock it.
++    if(setting) {
++        if(mutex_trylock(&gdata->pxp_mutex))
++            return count;
++        return -EINVAL;
++    }
++
++    // Otherwise, unlock the mutex if it's locked.
++    else if(mutex_is_locked(&gdata->pxp_mutex)) {
++        mutex_unlock(&gdata->pxp_mutex);
++        return count;
++    }
++    else
++        return -EINVAL;
++}
++
++
++static void chumbyfwfb_proc_init(void)
++{
++    struct proc_dir_entry *pde;
++
++    proc_mkdir("driver/chumbyfwfb", 0);
++
++
++    pde = create_proc_read_entry("driver/chumbyfwfb/alpha", 0, NULL, 
++                                 chumbyfwfb_proc_read_alpha, NULL);
++    pde->write_proc = chumbyfwfb_proc_write_alpha;
++
++
++    pde = create_proc_read_entry("driver/chumbyfwfb/key", 0, NULL, 
++                                 chumbyfwfb_proc_read_key, NULL);
++    pde->write_proc = chumbyfwfb_proc_write_key;
++
++
++    pde = create_proc_read_entry("driver/chumbyfwfb/key_en", 0, NULL, 
++                                 chumbyfwfb_proc_read_key_en, NULL);
++    pde->write_proc = chumbyfwfb_proc_write_key_en;
++
++    pde = create_proc_read_entry("driver/chumbyfwfb/fb_stats", 0, NULL,
++                                 chumbyfwfb_proc_read_fb_stats, NULL);
++
++#if(NUM_SCREENS>=3)
++    pde = create_proc_read_entry("driver/chumbyfwfb/fb2_alpha", 0, NULL,
++                                 chumbyfwfb_proc_read_fb2_alpha, NULL);
++    pde->write_proc = chumbyfwfb_proc_write_fb2_alpha;
++#endif
++
++#if(NUM_SCREENS>=4)
++    pde = create_proc_read_entry("driver/chumbyfwfb/fb3_alpha", 0, NULL,
++                                 chumbyfwfb_proc_read_fb3_alpha, NULL);
++    pde->write_proc = chumbyfwfb_proc_write_fb3_alpha;
++#endif
++
++
++    pde = create_proc_read_entry("driver/chumbyfwfb/pxp_lock", 0, NULL,
++                                chumbyfwfb_proc_read_pxp_lock, NULL);
++    pde->write_proc = chumbyfwfb_proc_write_pxp_lock;
++
++}
++
++
++
++//////////////////////////////////
++//// 
++
++
++
++/*
++static struct fb_var_screeninfo chumbyfwfb_default __devinitdata = {
++    .activate       = FB_ACTIVATE_TEST,
++    .height         = 320,
++    .width          = 240,
++    .pixclock       = 154000,
++    .left_margin    = 5,
++    .right_margin   = 4,
++    .upper_margin   = 3,
++    .lower_margin   = 3,
++    .hsync_len      = 40,
++    .vsync_len      = 2,
++    .vmode          = FB_VMODE_NONINTERLACED,
++};
++*/
++
++static struct fb_fix_screeninfo chumbyfwfb_fix __devinitdata = {
++    .id             = "chumbyfwfb",
++    .type           = FB_TYPE_PACKED_PIXELS,
++    .visual         = FB_VISUAL_TRUECOLOR,
++    .xpanstep       = 0,
++    .ypanstep       = 0,
++    .ywrapstep      = 0,
++    .type_aux       = 0,
++    .accel          = FB_ACCEL_NONE,
++    .line_length    = 320*2,
++};
++
++void chumbyfwfb_get_info(struct fb_var_screeninfo *var,
++            struct fb_fix_screeninfo *fix)
++{
++    // Punt and give the user fb0's information, which sould be identical
++    // to fb1's information.
++    *var = gdata->planes[0]->fb_info.var;
++    *fix = gdata->planes[0]->fb_info.fix;
++}
++
++    
++static int chumbyfwfb_mmap(struct fb_info *info, struct vm_area_struct *vma)
++{
++    struct chumbyfw_fb_plane *plane = (struct chumbyfw_fb_plane *)info;
++
++    unsigned long off = vma->vm_pgoff << PAGE_SHIFT;
++
++    if (off < info->fix.smem_len)
++        return dma_mmap_writecombine(NULL/*data->dev*/, vma,
++                plane->virt_start,
++                plane->phys_start,
++                info->fix.smem_len/2);
++    else
++        return -EINVAL;
++}
++
++static int chumbyfwfb_setcolreg(u_int regno, u_int red, u_int green, u_int blue,
++             u_int transp, struct fb_info *info)
++{
++    if (regno >= 256)   /* no. of hw registers */
++        return 1;
++    /*
++    * Program hardware... do anything you want with transp
++    */
++
++    /* grayscale works only partially under directcolor */
++    if (info->var.grayscale) {
++        /* grayscale = 0.30*R + 0.59*G + 0.11*B */
++        red = green = blue =
++            (red * 77 + green * 151 + blue * 28) >> 8;
++    }
++
++    /* Directcolor:
++     *   var->{color}.offset contains start of bitfield
++     *   var->{color}.length contains length of bitfield
++     *   {hardwarespecific} contains width of RAMDAC
++     *   cmap[X] is programmed to
++     *  (X << red.offset) | (X << green.offset) | (X << blue.offset)
++     *   RAMDAC[X] is programmed to (red, green, blue)
++     *
++     * Pseudocolor:
++     *    uses offset = 0 && length = RAMDAC register width.
++     *    var->{color}.offset is 0
++     *    var->{color}.length contains widht of DAC
++     *    cmap is not used
++     *    RAMDAC[X] is programmed to (red, green, blue)
++     * Truecolor:
++     *    does not use DAC. Usually 3 are present.
++     *    var->{color}.offset contains start of bitfield
++     *    var->{color}.length contains length of bitfield
++     *    cmap is programmed to
++     *  (red << red.offset) | (green << green.offset) |
++     *  (blue << blue.offset) | (transp << transp.offset)
++     *    RAMDAC does not exist
++     */
++#define CNVT_TOHW(val, width) ((((val)<<(width))+0x7FFF-(val))>>16)
++    switch (info->fix.visual) {
++    case FB_VISUAL_TRUECOLOR:
++    case FB_VISUAL_PSEUDOCOLOR:
++        red = CNVT_TOHW(red, info->var.red.length);
++        green = CNVT_TOHW(green, info->var.green.length);
++        blue = CNVT_TOHW(blue, info->var.blue.length);
++        transp = CNVT_TOHW(transp, info->var.transp.length);
++        break;
++    case FB_VISUAL_DIRECTCOLOR:
++        red = CNVT_TOHW(red, 8);    /* expect 8 bit DAC */
++        green = CNVT_TOHW(green, 8);
++        blue = CNVT_TOHW(blue, 8);
++        /* hey, there is bug in transp handling... */
++        transp = CNVT_TOHW(transp, 8);
++        break;
++    }
++#undef CNVT_TOHW
++    /* Truecolor has hardware independent palette */
++    if (info->fix.visual == FB_VISUAL_TRUECOLOR) {
++
++        if (regno >= MAX_PALETTES)
++            return 1;
++
++        ((u32 *) (info->pseudo_palette))[regno] =
++                (red << info->var.red.offset) |
++                (green << info->var.green.offset) |
++                (blue << info->var.blue.offset) |
++                (transp << info->var.transp.offset);
++    }
++    return 0;
++}
++
++static inline u_long get_line_length(int xres_virtual, int bpp)
++{
++    u_long length;
++
++    length = xres_virtual * bpp;
++    length = (length + 31) & ~31;
++    length >>= 3;
++    return length;
++}
++
++static int get_matching_pentry(struct mxs_platform_fb_entry *pentry,
++                   void *data, int ret_prev)
++{
++    struct fb_var_screeninfo *info = data;
++    pr_debug("%s: %d:%d:%d vs %d:%d:%d\n", __func__,
++        pentry->x_res, pentry->y_res, pentry->bpp,
++        info->xres, info->yres, info->bits_per_pixel);
++    if (pentry->x_res == info->xres && pentry->y_res == info->yres &&
++        pentry->bpp == info->bits_per_pixel)
++        ret_prev = (int)pentry;
++    return ret_prev;
++}
++
++static int get_matching_pentry_by_name(
++        struct mxs_platform_fb_entry *pentry,
++        void *data,
++        int ret_prev)
++{
++    unsigned char *name = data;
++    if (!strcmp(pentry->name, name))
++        ret_prev = (int)pentry;
++    return ret_prev;
++}
++
++/*
++ * This routine actually sets the video mode. It's in here where we
++ * the hardware state info->par and fix which can be affected by the
++ * change in par. For this driver it doesn't do much.
++ *
++ * XXX: REVISIT
++ */
++//int add_preferred_console(char *name, int idx, char *options);
++static int chumbyfwfb_set_par(struct fb_info *info) {
++    struct chumbyfw_fb_plane *plane = (struct chumbyfw_fb_plane *)info;
++    struct chumbyfw_fb_data *data;
++    struct mxs_platform_fb_data *pdata;
++    struct mxs_platform_fb_entry *pentry;
++
++    if(!info) {
++        CHLOG("info is NULL\n");
++        return -EINVAL;
++    }
++
++    if(!plane) {
++        CHLOG("plane is NULL\n");
++        return -EINVAL;
++    }
++
++
++    data = plane->fb_data;
++    if(!data) {
++        CHLOG("data is NULL\n");
++        return -EINVAL;
++    }
++
++
++    pdata = data->pdata;
++    if(!pdata) {
++        CHLOG("pdata is NULL!\n");
++        return -EINVAL;
++    }
++
++
++    // Figure out which LCD panel matches the parameters we were passed.
++    pentry = (void *)mxs_lcd_iterate_pdata(pdata,
++                        get_matching_pentry,
++                        &info->var);
++    if (!pentry) {
++        CHLOG("pentry is NULL\n");
++        return -EINVAL;
++    }
++
++
++    // Recalculate the line length, as it may have changed.
++    info->fix.line_length = get_line_length(info->var.xres_virtual,
++                        info->var.bits_per_pixel);
++
++
++    // If we're not switching devices, then we don't need to reinitialize
++    // the device panel.
++    if (pentry == pdata->cur || !pdata->cur)
++        return 0;
++    CHLOG("Detected that you're switching output devices.\n");
++
++
++    // release prev panel.
++    chumbyfwfb_blank(FB_BLANK_POWERDOWN, (struct fb_info *)&data->planes[0]);
++    if (pdata->cur->stop_panel)
++        pdata->cur->stop_panel();
++    pdata->cur->release_panel(data->dev, pdata->cur);
++
++    info->fix.smem_len = pentry->y_res * pentry->x_res * pentry->bpp / 8;
++    info->screen_size = info->fix.smem_len;
++    memset((void *)info->screen_base, 0, info->screen_size);
++
++    // init next panel.
++    pdata->cur = pentry;
++    mxs_init_lcdif();
++    pentry->init_panel(data->dev, data->phys_start, info->fix.smem_len, pentry);
++    pentry->run_panel();
++    chumbyfwfb_blank(FB_BLANK_UNBLANK, (struct fb_info *)&data->planes[0]);
++
++    pxp_setup(data);
++
++    return 0;
++}
++
++static int chumbyfwfb_check_var(struct fb_var_screeninfo *var,
++                struct fb_info *info)
++{
++    u32 line_length;
++    struct chumbyfw_fb_plane *plane         = (struct chumbyfw_fb_plane *)info;
++    struct chumbyfw_fb_data *data           = plane->fb_data;
++    struct mxs_platform_fb_data *pdata = data->pdata;
++
++    /*
++     *  FB_VMODE_CONUPDATE and FB_VMODE_SMOOTH_XPAN are equal!
++     *  as FB_VMODE_SMOOTH_XPAN is only used internally
++     */
++
++    if (var->vmode & FB_VMODE_CONUPDATE) {
++        var->vmode |= FB_VMODE_YWRAP;
++        var->xoffset = info->var.xoffset;
++        var->yoffset = info->var.yoffset;
++    }
++
++    pr_debug("%s: xres %d, yres %d, bpp %d\n", __func__,
++        var->xres,  var->yres, var->bits_per_pixel);
++    /*
++     *  Some very basic checks
++     */
++    if (!var->xres)
++        var->xres = 1;
++    if (!var->yres)
++        var->yres = 1;
++    if (var->xres > var->xres_virtual)
++        var->xres_virtual = var->xres;
++    if (var->yres > var->yres_virtual)
++        var->yres_virtual = var->yres;
++
++    if (var->xres_virtual < var->xoffset + var->xres)
++        var->xres_virtual = var->xoffset + var->xres;
++    if (var->yres_virtual < var->yoffset + var->yres)
++        var->yres_virtual = var->yoffset + var->yres;
++
++    line_length = get_line_length(var->xres_virtual, var->bits_per_pixel);
++    if (line_length * var->yres_virtual > data->map_size) {
++        CHLOG("Not enough memory to switch to %dx%d@%d\n",
++                var->xres_virtual, var->yres_virtual, var->bits_per_pixel);
++        return -ENOMEM;
++    }
++
++    if (!mxs_lcd_iterate_pdata(pdata, get_matching_pentry, var)) {
++        CHLOG("Couldn't find a screen that matched %dx%d@%d\n",
++                var->xres_virtual, var->yres_virtual, var->bits_per_pixel);
++        return -EINVAL;
++    }
++
++
++    if (var->bits_per_pixel == 16) {
++        /* RGBA 5551 */
++        if (var->transp.length) {
++            var->red.offset = 10;
++            var->red.length = 5;
++            var->green.offset = 5;
++            var->green.length = 5;
++            var->blue.offset = 0;
++            var->blue.length = 5;
++            var->transp.offset = 15;
++            var->transp.length = 1;
++        } else {    /* RGB 565 */
++            var->red.offset = 11;
++            var->red.length = 5;
++            var->green.offset = 5;
++            var->green.length = 6;
++            var->blue.offset = 0;
++            var->blue.length = 5;
++            var->transp.offset = 0;
++            var->transp.length = 0;
++        }
++    } else {
++        var->red.offset = 16;
++        var->red.length = 8;
++        var->green.offset = 8;
++        var->green.length = 8;
++        var->blue.offset = 0;
++        var->blue.length = 8;
++    }
++
++    var->red.msb_right = 0;
++    var->green.msb_right = 0;
++    var->blue.msb_right = 0;
++    var->transp.msb_right = 0;
++
++    return 0;
++}
++
++
++static int chumbyfwfb_wait_for_vsync(u32 channel, struct fb_info *info)
++{
++    struct chumbyfw_fb_data *data = gdata;
++    u32 count = data->vsync_count;
++    int ret = 0;
++
++    ret = wait_event_interruptible_timeout(data->vsync_wait_q,
++            count != data->vsync_count, HZ / 10);
++    if (!ret) {
++        dev_err(data->dev, "wait for vsync timed out\n");
++        ret = -ETIMEDOUT;
++    }
++    return ret;
++}
++
++static int chumbyfwfb_ioctl(struct fb_info *info, unsigned int cmd,
++            unsigned long arg)
++{
++    u32 channel = 0;
++    int ret = -EINVAL;
++
++    switch (cmd) {
++    case FBIO_WAITFORVSYNC:
++        if (!get_user(channel, (__u32 __user *) arg))
++            ret = chumbyfwfb_wait_for_vsync(channel, info);
++        break;
++    default:
++        break;
++    }
++    return ret;
++}
++
++static int chumbyfwfb_blank(int blank, struct fb_info *info)
++{
++#if 0
++    struct chumbyfw_fb_data *data = (struct chumbyfw_fb_data *)info;
++    int ret;
++
++    if(!data)
++        panic("fb_info was NULL");
++    if(!data->pdata)
++        panic("pdata was NULL");
++    if(!data->pdata->cur)
++        panic("pdata->cur was NULL");
++    
++    ret = data->pdata->cur->blank_panel ?
++        data->pdata->cur->blank_panel(blank) :
++        -ENOTSUPP;
++    if (ret == 0)
++        data->is_blank = (blank != FB_BLANK_UNBLANK);
++    return ret;
++#endif
++    return 0;
++}
++
++static int chumbyfwfb_pan_display(struct fb_var_screeninfo *var,
++                struct fb_info *info)
++{
++    struct chumbyfw_fb_plane *plane = (struct chumbyfw_fb_plane *)info;
++    int ret = 0;
++
++    /*
++    CHLOG("var->xoffset %d, info->var.xoffset %d  "
++          "var->yoffset %d, info->var.yoffset %d  "
++          "var->yres_virtual %d\n",
++        var->xoffset, info->var.xoffset, var->yoffset, info->var.yoffset,
++        var->yres_virtual);
++    */
++    // check if var is valid; also, xpan is not supported
++    if (!var || (var->xoffset != info->var.xoffset) ||
++        (var->yoffset + var->yres > var->yres_virtual)) {
++        ret = -EINVAL;
++        CHLOG("Invalid panning offset\n");
++        goto out;
++    }
++
++
++    // Update the framebuffer offset.
++    switch(plane->idx) {
++        case 0:
++            CHLOG("Updating framebuffer offset.  yoffset: %d  New offset: 0x%p\n",
++                    var->yoffset,
++                    (void *)(plane->phys_start+(info->fix.line_length
++                                     * var->yoffset)));
++            REGHW_PXP_S0BUF_WR(plane->phys_start+(info->fix.line_length
++                                             * var->yoffset));
++            break;
++        default:
++            REGHW_PXP_OLn_WR(NUM_SCREENS-plane->idx-1,
++                          plane->phys_start+(info->fix.line_length
++                                           * var->yoffset));
++            break;
++    }
++
++out:
++    return ret;
++}
++
++static struct fb_ops chumbyfwfb_ops = {
++    .owner              = THIS_MODULE,
++    .fb_check_var       = chumbyfwfb_check_var,
++    .fb_set_par         = chumbyfwfb_set_par,
++    .fb_mmap            = chumbyfwfb_mmap,
++    .fb_setcolreg       = chumbyfwfb_setcolreg,
++    .fb_ioctl           = chumbyfwfb_ioctl,
++    .fb_blank           = chumbyfwfb_blank,
++    .fb_pan_display     = chumbyfwfb_pan_display,
++    .fb_fillrect        = cfb_fillrect,
++    .fb_copyarea        = cfb_copyarea,
++    .fb_imageblit       = cfb_imageblit,
++};
++
++static void init_timings(struct chumbyfw_fb_data *data)
++{
++    unsigned phase_time;
++    unsigned timings;
++
++    // Just use a phase_time of 1. As optimal as it gets, now.
++    phase_time = 1;
++
++    // Program all 4 timings the same.
++    timings = phase_time;
++    timings |= timings << 8;
++    timings |= timings << 16;
++    REGHW_LCDIF_TIMING_WR(timings);
++}
++
++#ifdef CONFIG_CPU_FREQ
++
++struct chumbyfwfb_notifier_block {
++    struct chumbyfw_fb_data *fb_data;
++    struct notifier_block nb;
++};
++
++static int chumbyfwfb_notifier(struct notifier_block *self,
++                unsigned long phase, void *p)
++{
++    struct chumbyfwfb_notifier_block *block =
++        container_of(self, struct chumbyfwfb_notifier_block, nb);
++    struct chumbyfw_fb_data *data = block->fb_data;
++
++    switch (phase) {
++    case CPUFREQ_POSTCHANGE:
++        chumbyfwfb_blank(FB_BLANK_UNBLANK, (struct fb_info *)&data->planes[0]);
++        break;
++
++    case CPUFREQ_PRECHANGE:
++        chumbyfwfb_blank(FB_BLANK_POWERDOWN, (struct fb_info *)&data->planes[0]);
++        break;
++
++    default:
++        dev_dbg(data->dev, "didn't handle notify %ld\n", phase);
++    }
++    //CHLOG("Ignoring notifier call\n");
++
++    return NOTIFY_DONE;
++}
++
++static struct chumbyfwfb_notifier_block chumbyfwfb_nb = {
++    .nb = {
++        .notifier_call = chumbyfwfb_notifier,
++    },
++};
++#endif /* CONFIG_CPU_FREQ */
++
++
++static int get_max_memsize(struct mxs_platform_fb_entry *pentry,
++               void *data, int ret_prev)
++{
++    struct chumbyfw_fb_data *fbdata = data;
++    int sz = 2 * (pentry->x_res * pentry->y_res * pentry->bpp / 8);
++    fbdata->mem_size = sz < ret_prev ? ret_prev : sz;
++    pr_debug("%s: mem_size now %d\n", __func__, fbdata->mem_size);
++    CHLOG("%s: mem_size now %d (%d x %d x %d)\n", __func__, fbdata->mem_size, pentry->x_res, pentry->y_res, pentry->bpp);
++    return fbdata->mem_size;
++}
++
++
++static int pxp_setup(struct chumbyfw_fb_data *data) {
++    int screen_width, screen_height, screen_bpp;
++    int screen_bpp_value, plane_bpp_value;
++    int do_scale = 0;
++    struct mxs_platform_fb_data *pdata;
++    int screen;
++    
++    if(!data) {
++        CHLOG("data is NULL!  Try again later.\n");
++        return 0;
++    }
++
++    pdata = data->pdata;
++
++    if(!pdata) {
++        CHLOG("pdata is NULL!  Try again later.\n");
++        return 0;
++    }
++
++    screen_width  = pdata->cur->x_res;
++    screen_height = pdata->cur->y_res;
++    screen_bpp    = (screen_width==320 && screen_height==240)?16:32;//pdata->cur->bpp;
++
++    CHLOG("pdata width %d height %d bpp %d\n", screen_width, screen_height, screen_bpp);
++    // Start it running.  Set the correct format, enable the interrupt,
++    // and start it.
++    if(16==screen_bpp) {
++        screen_bpp_value = 4;
++        plane_bpp_value = 4;
++    }
++    else if(32==screen_bpp) {
++        screen_bpp_value = 0;
++        plane_bpp_value = 4;
++    }
++    else {
++        CHLOG("Unrecognized bpp value: %d\n", screen_bpp);
++        screen_bpp_value = 4;
++        plane_bpp_value = 4;
++    }
++
++    
++    // Set up the parameters for width and height.
++    // The first two octets are panning offsets, which are 0.
++    // The last two octets are the width and height, divided by 8.
++    REGHW_PXP_S0PARAM_WR( ((screen_width/8)<<8) | ((screen_height/8)<<0) );
++
++
++    // Disable cropping, scaling, and offset rendering.
++    REGHW_PXP_S0CROP_WR(0x00000000);
++    REGHW_PXP_S0SCALE_WR(0x00000000);
++    REGHW_PXP_S0OFFSET_WR(0x00000000);
++
++
++    // Set the default background to Magic Pink.  Users shouldn't see this,
++    // so if they do they'll complain about it and we'll fix it.
++    REGHW_PXP_S0BACKGROUND_WR(0x00FF00FF);
++
++
++    // Point the Source0 buffer at our fb0.
++    CHLOG("Pointing S0 at %p\n", (void *)(data->planes[0]->phys_start));
++    REGHW_PXP_S0BUF_WR(data->planes[0]->phys_start);
++
++
++    // Point Overlay n at our fbn+1.
++    for(screen=1; screen<NUM_SCREENS; screen++)
++        REGHW_PXP_OLn_WR(NUM_SCREENS-screen-1, data->planes[screen]->phys_start);
++
++
++    // Set up the size of Overlay 0 to 320/8 x 240/8 (since the overlay
++    // works in macroblocks of 8x8 pixels, we need to divide everything by 8).
++    for(screen=1; screen<NUM_SCREENS; screen++)
++        REGHW_PXP_OLnSIZE_WR(NUM_SCREENS-screen-1, (((screen_width)/8)<<8) 
++                                  | (((screen_height)/8)<<0) );
++
++
++    // Set the overlay format of RGB565, with a status of "enabled".
++    // Bits 15-8 are the alpha lebel, which we set to 0.
++    for(screen=1; screen<NUM_SCREENS; screen++)
++        REGHW_PXP_OLnPARAM_WR(NUM_SCREENS-screen-1,
++                        0x0000002 | (plane_bpp_value<<4));
++
++
++    // Point the PXP's output buffer at the screen's offset.
++    REGHW_PXP_RGBBUF_WR(data->phys_start);
++
++    // Set the PXP's output size to the screen's size.
++    REGHW_PXP_RGBSIZE_WR( (screen_width<<12) | (screen_height<<0) );
++
++
++    data->pxp_status = PXP_STATUS_ON;
++
++    // XXX This pre-defines the plane bpp value to 16-bit.
++    REGHW_PXP_CTRL_WR(0x00000003
++            | (screen_bpp_value<<4) | (plane_bpp_value<<12) | (do_scale<<18));
++
++
++    // We key the PXP to run during the vsync periods.  Enable the IRQ that
++    // will fire the PXP.
++    REGHW_LCDIF_CTRL1_SET(BM_LCDIF_CTRL1_CUR_FRAME_DONE_IRQ_EN);
++
++    return 0;
++}
++
++
++
++static int __devinit chumbyfwfb_probe(struct platform_device *pdev) {
++    struct chumbyfw_fb_data *data;
++    struct resource *res;
++    static struct fb_info *fb_info[NUM_SCREENS];
++    int plane_n;
++    int current_memory_plane;
++    int ret = 0;
++
++    struct mxs_platform_fb_data *pdata = pdev->dev.platform_data;
++    struct mxs_platform_fb_entry *pentry = NULL;
++
++    CHLOG("\n\nentered function\n");
++    if (pdata == NULL) {
++        ret = -ENODEV;
++        goto out;
++    }
++
++
++    // Define the default panel name based on the chumby hardware version.
++    // Version 8 is an OEM board that defaults to the composite out.
++    if(chumby_revision() == 9) {
++        default_panel_name = "tvenc_ntsc";
++    }
++    else {
++        default_panel_name = "lms350";
++    }
++
++    // Locate the panel, which is stored in the pentry field.  This
++    // contains all sorts of information about the panel, including bit
++    // depth and resolution.
++    if (default_panel_name) {
++        pentry = (void *)mxs_lcd_iterate_pdata(pdata,
++                    get_matching_pentry_by_name,
++                    default_panel_name);
++        if (pentry) {
++            mxs_lcd_move_pentry_up(pentry, pdata);
++            pdata->cur = pentry;
++        }
++    }
++
++    // If we couldn't find a matching panel entry, or no panel name was
++    // supplied, grab the default, built-in one.
++    if (!default_panel_name || !pentry)
++        pentry = pdata->cur;
++
++    // Make sure we have a panel, and that it's a valid panel complete with
++    // initalization structures.
++    if (!pentry || !pentry->init_panel || !pentry->run_panel ||
++        !pentry->release_panel) {
++        ret = -EINVAL; goto out;
++    }
++
++
++    // We allocate enough memory for the container object, then allocate a
++    // framebuffer for each of the overlays.
++    data = kmalloc(sizeof(struct chumbyfw_fb_data), GFP_KERNEL);
++    if( !data ) {
++        ret = -ENOMEM; goto out;
++    }
++
++
++    // Go through each memory plane and allocate a plane for it.
++    for(current_memory_plane=0;
++        current_memory_plane<NUM_SCREENS;
++        current_memory_plane++) {
++        data->planes[current_memory_plane] 
++            = (struct chumbyfw_fb_plane *) framebuffer_alloc(
++                            sizeof(struct chumbyfw_fb_plane), &pdev->dev);
++        if(NULL==data->planes[current_memory_plane]) {
++            ret = -ENOMEM; goto out;
++        }
++        data->planes[current_memory_plane]->idx = current_memory_plane;
++    }
++
++
++
++    gdata       = data;
++    data->dev   = &pdev->dev;
++    data->pdata = pdata;
++    platform_set_drvdata(pdev, data);
++    for(plane_n=0; plane_n<NUM_SCREENS; plane_n++)
++        fb_info[plane_n] = &data->planes[plane_n]->fb_info;
++
++
++
++    CHLOG("resolution %dx%d, bpp %d\n", pentry->x_res,pentry->y_res,pentry->bpp/8);
++
++    // Go through all available resolutions for this panel and figure out
++    // the greatest amount of memory that can be used for any given mode.
++    // This value will get stored in the pdata struct.
++    mxs_lcd_iterate_pdata(pdata, get_max_memsize, data);
++
++    // We allocate memory for all the screens here, plus one.  That way,
++    // the /n/ screens can have their own virtual buffers, which go to a
++    // zeroth buffer for compositing.
++    // We allocate each plane individually to prevent us from requesting
++    // too large of a contiguous chunk of RAM.
++    data->map_size = PAGE_ALIGN(data->mem_size);
++    CHLOG("memory to allocate for screen: %d\n", data->map_size);
++    data->virt_start = dma_alloc_writecombine(&pdev->dev,
++                    data->map_size,
++                    &data->phys_start,
++                    GFP_KERNEL);
++
++    if (data->virt_start == NULL) {
++        ret = -ENOMEM; goto out_dma;
++    }
++    CHLOG("allocated screen at %p:0x%x\n", data->virt_start, data->phys_start);
++
++
++
++    // XXX We copy the default video modes from the screen now, because we
++    // don't have a way of scaling a default_mode virtual screen up to full
++    // screen.
++    default_mode.width          = pentry->x_res;
++    default_mode.height         = pentry->y_res;
++    default_mode.xres           = pentry->x_res;
++    default_mode.yres           = pentry->y_res;
++    default_mode.xres_virtual   = pentry->x_res;
++    default_mode.yres_virtual   = pentry->y_res*2;
++    default_mode.yoffset        = 0;
++
++    // Recalculate the line length, as it may have changed.
++    for(current_memory_plane=0;
++        current_memory_plane<NUM_SCREENS;
++        current_memory_plane++)
++            fb_info[current_memory_plane]->fix.line_length 
++              = get_line_length(fb_info[current_memory_plane]->var.xres_virtual,
++                          fb_info[current_memory_plane]->var.bits_per_pixel);
++
++
++
++    // Now, allocate each subsequent framebuffer screen, beginning at 1.
++    //for(current_memory_plane=1;
++    for(current_memory_plane=0;
++        current_memory_plane<NUM_SCREENS;
++        current_memory_plane++) {
++
++        struct chumbyfw_fb_plane *plane = data->planes[current_memory_plane];
++        struct fb_var_screeninfo params = default_mode;
++
++
++        plane->width    = params.width;
++        plane->height   = params.height;
++        plane->bpp      = params.bits_per_pixel;
++        plane->fb_data  = data;
++
++
++        // Allocate memory for the current screen.
++        //plane->mem_size = plane->width * plane->height * (plane->bpp/8) * 2;
++        if(current_memory_plane == 0 || current_memory_plane == 1)
++            plane->mem_size = 720 * 576 * 2 * 2;
++        else
++            plane->mem_size = 320 * 240 * 2 * 2;
++        plane->map_size = PAGE_ALIGN(plane->mem_size);
++        CHLOG("memory to allocate for plane %d: %d\n", 
++              current_memory_plane, plane->map_size);
++        plane->virt_start = dma_alloc_writecombine(&pdev->dev,
++                        plane->map_size,
++                        &plane->phys_start,
++                        GFP_KERNEL);
++
++        if(plane->virt_start == NULL) {
++            CHLOG("Failed to allocate memory\n");
++            ret = -ENOMEM; goto out_dma;
++        }
++        CHLOG("allocated at %p:0x%x\n", plane->virt_start, plane->phys_start);
++    }
++
++
++// CHUMBY_logo
++    // Pre-copy the logo to both the screen (where the PXP will point to)
++    // as well as pxp buffer 0.
++    printk("Going to copy splash image from %p (%d bytes) to %p (not %p)\n",
++            (void *)LOGO_OFFSET, 320*240*2,
++            data->virt_start, (void *)data->phys_start);
++    {
++        char *old_fb = ioremap(LOGO_OFFSET, 320*240*2);
++        if(old_fb) {
++            memcpy(data->planes[0]->virt_start, old_fb, 320*240*2);
++            memcpy(data->virt_start, old_fb, 320*240*2);
++            iounmap(old_fb);
++        }
++        else
++            CHLOG("Unable to call ioremap!");
++    }
++// ! CHUMBY_logo
++
++
++    chumbyfwfb_fix.smem_start = data->phys_start;
++    chumbyfwfb_fix.smem_len   = data->map_size;
++    chumbyfwfb_fix.ypanstep   = 1;
++
++
++    for(plane_n=0; plane_n<NUM_SCREENS; plane_n++) {
++        fb_info[plane_n]->screen_base       = data->planes[plane_n]->virt_start;
++        fb_info[plane_n]->fbops             = &chumbyfwfb_ops;
++        fb_info[plane_n]->var               = default_mode;
++        fb_info[plane_n]->fix               = chumbyfwfb_fix;
++        fb_info[plane_n]->pseudo_palette    = kmalloc(sizeof (u32) * MAX_PALETTES, GFP_KERNEL);
++        fb_info[plane_n]->flags             = FBINFO_FLAG_DEFAULT;
++        fb_info[plane_n]->node              = plane_n;
++    }
++
++
++
++    // Set up a spinlock for the PXP IRQ handler.
++    spin_lock_init(&data->pxp_lock);
++    mutex_init(&data->pxp_mutex);
++
++
++    init_waitqueue_head(&data->vsync_wait_q);
++    data->vsync_count      = 0;
++    data->pxp_missed_count = 0;
++
++#if 0
++    res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
++    if (res == NULL) {
++            dev_err(&pdev->dev, "cannot get lcdif MEM resource\n");
++            ret = -ENODEV;
++            goto out_dma;
++    }
++    lcdif_regbase = (unsigned long)IO_ADDRESS(res->start);
++
++    res = platform_get_resource(pdev, IORESOURCE_MEM, 1);
++    if (res == NULL) {
++            dev_err(&pdev->dev, "cannot get pxp MEM resource\n");
++            ret = -ENODEV;
++            goto out_dma;
++    }
++    pxp_regbase = (unsigned long)IO_ADDRESS(res->start);
++#endif
++
++    // Allocate necessary IRQs.  There are two:
++    //  One for any errors that might crop up in the LCDIF, and
++    //  One for when the PXP completes its run.
++    res = platform_get_resource(pdev, IORESOURCE_IRQ, 0);
++    if (res == NULL) {
++        dev_err(&pdev->dev, "cannot get DMA IRQ resource\n");
++        ret = -ENODEV; goto out_dma;
++    }
++    data->irq = res->start;
++
++    res = platform_get_resource(pdev, IORESOURCE_IRQ, 1);
++    if (res == NULL) {
++        dev_err(&pdev->dev, "cannot get PXP IRQ resource\n");
++        ret = -ENODEV; goto out_dma;
++    }
++    data->pxp_irq = res->start;
++
++    // Allocate a colormap for all framebuffers.
++    for(plane_n=0; plane_n<NUM_SCREENS; plane_n++) {
++        if((ret = fb_alloc_cmap(&fb_info[plane_n]->cmap, 256, 0)))
++            goto out_cmap;
++    }
++
++
++
++    // Install the IRQ handlers.
++    ret = request_irq(data->irq, lcd_irq_handler, 0, "fb_dma", data);
++    if (ret) {
++        dev_err(&pdev->dev, "request_irq (%d) failed with error %d\n",
++                data->irq, ret);
++        goto out_panel;
++    }
++    ret = request_irq(data->pxp_irq, pxp_irq_handler, 0, "fb_pxp", data);
++    if (ret) {
++        dev_err(&pdev->dev, "request_irq (%d) failed with error %d\n",
++                data->pxp_irq, ret);
++        goto out_pxp;
++    }
++
++
++    // Tell the system about the framebuffers we've allocated.
++    for(plane_n=0; plane_n<NUM_SCREENS; plane_n++) {
++        if((ret = register_framebuffer(fb_info[plane_n])))
++            goto out_register;
++    }
++
++
++
++    // Init the LCD.
++    CHLOG("Calling init_lcdif()...\n");
++    mxs_init_lcdif();
++
++
++    CHLOG("Calling pentry->init_panel()...\n");
++    ret = pentry->init_panel(data->dev, data->phys_start,
++                chumbyfwfb_fix.smem_len, pentry);
++    if (ret) {
++        dev_err(&pdev->dev, "cannot initialize LCD panel\n");
++        goto out_panel;
++    }
++    dev_dbg(&pdev->dev, "LCD panel initialized\n");
++
++    CHLOG("Calling init_timings()...\n");
++    init_timings(data);
++
++    CHLOG("Calling pentry->run_panel()...\n");
++    pentry->run_panel();
++    CHLOG("LCD DMA channel has been started\n");
++    data->cur_phys = data->phys_start;
++    CHLOG("LCD running now\n");
++
++
++
++
++#ifdef CONFIG_CPU_FREQ
++    chumbyfwfb_nb.fb_data = data;
++    cpufreq_register_notifier(&chumbyfwfb_nb.nb, CPUFREQ_TRANSITION_NOTIFIER);
++#endif /* CONFIG_CPU_FREQ */
++
++
++
++
++    // Set up our /proc entries.
++    chumbyfwfb_proc_init();
++
++
++    // Init the PXP, which will set up the framebuffer compositing.
++    REGHW_PXP_CTRL_WR(0);  // Pull PxP out of reset.
++    CHLOG("Setting up pxp...\n");
++    pxp_setup(data);
++
++
++
++    goto out;
++
++out_register:
++    free_irq(data->pxp_irq, data);
++out_pxp:
++    free_irq(data->irq, data);
++out_panel:
++    for(plane_n=0; plane_n<NUM_SCREENS; plane_n++) 
++        fb_dealloc_cmap(&fb_info[plane_n]->cmap);
++
++    /*
++    fb_dealloc_cmap(&fb0_info->cmap);
++    fb_dealloc_cmap(&fb1_info->cmap);
++    */
++out_cmap:
++    dma_free_writecombine(&pdev->dev, data->map_size, data->virt_start,
++            data->phys_start);
++out_dma:
++    kfree(data);
++out:
++    return ret;
++}
++
++static int chumbyfwfb_remove(struct platform_device *pdev)
++{
++    int fb_num;
++    struct chumbyfw_fb_data *data = platform_get_drvdata(pdev);
++    struct mxs_platform_fb_data *pdata = pdev->dev.platform_data;
++    struct mxs_platform_fb_entry *pentry = pdata->cur;
++
++    for(fb_num=0; fb_num<NUM_SCREENS; fb_num++)
++        chumbyfwfb_blank(FB_BLANK_POWERDOWN, &data->planes[fb_num]->fb_info);
++
++    if (pentry->stop_panel)
++        pentry->stop_panel();
++    pentry->release_panel(&pdev->dev, pentry);
++
++    for(fb_num=0; fb_num<NUM_SCREENS; fb_num++) {
++        unregister_framebuffer(&data->planes[fb_num]->fb_info);
++        framebuffer_release(&data->planes[fb_num]->fb_info);
++        fb_dealloc_cmap(&data->planes[fb_num]->fb_info.cmap);
++        kfree(data->planes[fb_num]->fb_info.pseudo_palette);
++    }
++
++    free_irq(data->pxp_irq, data);
++    free_irq(data->irq, data);
++    dma_free_writecombine(&pdev->dev, data->map_size, data->virt_start,
++            data->phys_start);
++    kfree(data);
++    platform_set_drvdata(pdev, NULL);
++    return 0;
++}
++
++#ifdef CONFIG_PM
++static int chumbyfwfb_suspend(struct platform_device *pdev, pm_message_t state)
++{
++    struct chumbyfw_fb_data *data = platform_get_drvdata(pdev);
++    struct mxs_platform_fb_data *pdata = pdev->dev.platform_data;
++    struct mxs_platform_fb_entry *pentry = pdata->cur;
++    int ret;
++
++    CHLOG("Warning: Suspending framebuffer device\n");
++    ret = chumbyfwfb_blank(FB_BLANK_POWERDOWN, &data->planes[0]->fb_info);
++    ret = chumbyfwfb_blank(FB_BLANK_POWERDOWN, &data->planes[1]->fb_info);
++    if (ret)
++        goto out;
++    if (pentry->stop_panel)
++        pentry->stop_panel();
++    pentry->release_panel(data->dev, pentry);
++
++out:
++    return ret;
++}
++
++static int chumbyfwfb_resume(struct platform_device *pdev)
++{
++    struct chumbyfw_fb_data *data = platform_get_drvdata(pdev);
++    struct mxs_platform_fb_data *pdata = pdev->dev.platform_data;
++    struct mxs_platform_fb_entry *pentry = pdata->cur;
++
++    mxs_init_lcdif();
++    init_timings(data);
++    pentry->init_panel(data->dev, data->phys_start, 
++                       data->planes[0]->fb_info.fix.smem_len, pentry);
++    pentry->run_panel();
++    chumbyfwfb_blank(FB_BLANK_UNBLANK, &data->planes[0]->fb_info);
++    chumbyfwfb_blank(FB_BLANK_UNBLANK, &data->planes[1]->fb_info);
++    CHLOG("Warning: Resuming framebuffer device\n");
++    return 0;
++}
++#else
++#define chumbyfwfb_suspend  NULL
++#define chumbyfwfb_resume   NULL
++#endif
++
++static struct platform_driver chumbyfwfb_driver = {
++    .probe      = chumbyfwfb_probe,
++    .remove     = chumbyfwfb_remove,
++    .suspend    = chumbyfwfb_suspend,
++    .resume     = chumbyfwfb_resume,
++    .driver     = {
++        .name   = "mxs-fb",
++        .owner  = THIS_MODULE,
++    },
++};
++
++static int __init chumbyfwfb_init(void)
++{
++    return platform_driver_register(&chumbyfwfb_driver);
++}
++
++static void __exit chumbyfwfb_exit(void)
++{
++    platform_driver_unregister(&chumbyfwfb_driver);
++}
++
++#ifdef MODULE
++module_init(chumbyfwfb_init);
++#else
++subsys_initcall(chumbyfwfb_init);
++#endif
++module_exit(chumbyfwfb_exit);
++
++/*
++ * LCD panel select
++ */
++static int __init default_panel_select(char *str)
++{
++    default_panel_name = str;
++    return 0;
++}
++
++
++MODULE_AUTHOR("Sean Cross <scross@chumby.com>");
++MODULE_DESCRIPTION("Chumby Wintergrasp Framebuffer Driver");
++MODULE_LICENSE("GPL");
++__setup("lcd_panel=", default_panel_select);
++
+diff -Nur linux-2.6.35.3.orig/drivers/video/mxs/Kconfig linux-2.6.35.3/drivers/video/mxs/Kconfig
+--- linux-2.6.35.3.orig/drivers/video/mxs/Kconfig	2011-04-05 12:02:23.945663830 +0800
++++ linux-2.6.35.3/drivers/video/mxs/Kconfig	2011-04-11 15:25:27.613870867 +0800
+@@ -4,7 +4,6 @@
+ 	select FB_CFB_FILLRECT
+ 	select FB_CFB_COPYAREA
+ 	select FB_CFB_IMAGEBLIT
+-	default y
+ 	---help---
+ 	  Say Y here to enable support for the framebuffer driver for the
+ 	  Freescale MXS Board.
+@@ -12,7 +11,6 @@
+ config FB_MXS_LCD_43WVF1G
+ 	depends on FB_MXS
+ 	tristate "SEIKO 4.3' LCD WVGA(800x480) PANEL"
+-	default y if ARCH_MX28
+ 
+ config FB_MXS_LCD_LMS430
+ 	depends on FB_MXS
+@@ -26,3 +24,18 @@
+ 	bool "TVENC"
+ 	---help---
+ 	  Use TVOUT encoder for MXS
++
++config FB_CHUMBYFBFW
++	tristate "Chumby Wintergrasp Overlay-enabled framebuffer driver"
++	depends on FB && ARCH_MXS
++	select FB_CFB_FILLRECT
++	select FB_CFB_COPYAREA
++	select FB_CFB_IMAGEBLIT
++	---help---
++	  Say Y here to enable the Chumby two-level framebuffer support.
++
++config FB_CHUMBYFBFW_LCD_LMS350
++	depends on FB_CHUMBYFBFW
++	bool "LMS350"
++	---help---
++	  Use LMS350 dotclock LCD panel for MXS
+diff -Nur linux-2.6.35.3.orig/drivers/video/mxs/lcd_43wvf1g.c linux-2.6.35.3/drivers/video/mxs/lcd_43wvf1g.c
+--- linux-2.6.35.3.orig/drivers/video/mxs/lcd_43wvf1g.c	2011-04-05 12:02:23.945663830 +0800
++++ linux-2.6.35.3/drivers/video/mxs/lcd_43wvf1g.c	2011-04-08 11:12:33.818277927 +0800
+@@ -62,7 +62,7 @@
+ 		goto out;
+ 	}
+ 
+-	ret = clk_set_rate(lcd_clk, 1000000 / pentry->cycle_time_ns);	/* kHz */
++	ret = clk_set_rate(lcd_clk, 1000000000 / pentry->cycle_time_ns);	/* Hz */
+ 	if (ret) {
+ 		clk_disable(lcd_clk);
+ 		clk_put(lcd_clk);
+@@ -150,7 +150,7 @@
+ 	.x_res = 480,
+ 	.y_res = 800,
+ 	.bpp = 32,
+-	.cycle_time_ns = 30,
++	.cycle_time_ns = 42,
+ 	.lcd_type = MXS_LCD_PANEL_DOTCLK,
+ 	.init_panel = init_panel,
+ 	.release_panel = release_panel,
+diff -Nur linux-2.6.35.3.orig/drivers/video/mxs/lcd_lms350.c linux-2.6.35.3/drivers/video/mxs/lcd_lms350.c
+--- linux-2.6.35.3.orig/drivers/video/mxs/lcd_lms350.c	1970-01-01 07:30:00.000000000 +0730
++++ linux-2.6.35.3/drivers/video/mxs/lcd_lms350.c	2011-04-11 15:02:06.188177714 +0800
+@@ -0,0 +1,331 @@
++/*
++ * Freescale STMP378X Samsung LMS350 LCD panel initialization
++ *
++ * Embedded Alley Solutions, Inc <source@embeddedalley.com>
++ *
++ * Copyright 2008 Freescale Semiconductor, Inc. All Rights Reserved.
++ * Copyright 2008 Embedded Alley Solutions, Inc All Rights Reserved.
++ */
++
++/*
++ * The code contained herein is licensed under the GNU General Public
++ * License. You may obtain a copy of the GNU General Public License
++ * Version 2 or later at the following locations:
++ *
++ * http://www.opensource.org/licenses/gpl-license.html
++ * http://www.gnu.org/copyleft/gpl.html
++ */
++#include <linux/init.h>
++#include <linux/delay.h>
++#include <linux/clk.h>
++#include <linux/notifier.h>
++#include <linux/regulator/consumer.h>
++#include <linux/platform_device.h>
++
++#include <mach/device.h>
++#include <mach/lcdif.h>
++#include <mach/regs-pwm.h>
++#include <mach/system.h>
++
++#define REGS_PWM_BASE IO_ADDRESS(PWM_PHYS_ADDR)
++
++#define DOTCLK_H_ACTIVE  320
++#define DOTCLK_H_PULSE_WIDTH 69
++#define DOTCLK_HF_PORCH  5
++#define DOTCLK_HB_PORCH  6
++#define DOTCLK_H_WAIT_CNT  (DOTCLK_H_PULSE_WIDTH + DOTCLK_HB_PORCH)
++#define DOTCLK_H_PERIOD (DOTCLK_H_WAIT_CNT + DOTCLK_HF_PORCH + DOTCLK_H_ACTIVE)
++
++#define DOTCLK_V_ACTIVE  240
++#define DOTCLK_V_PULSE_WIDTH  15
++#define DOTCLK_VF_PORCH  3
++#define DOTCLK_VB_PORCH  24
++#define DOTCLK_V_WAIT_CNT (DOTCLK_V_PULSE_WIDTH + DOTCLK_VB_PORCH)
++#define DOTCLK_V_PERIOD (DOTCLK_VF_PORCH + DOTCLK_V_ACTIVE + DOTCLK_V_WAIT_CNT)
++
++static struct mxs_platform_bl_data bl_data;
++static struct clk *lcd_clk;
++
++static int init_panel(struct device *dev, dma_addr_t phys, int memsize,
++		struct mxs_platform_fb_entry *pentry)
++{
++	int ret = 0;
++	lcd_clk = clk_get(NULL, "dis_lcdif");
++	if (IS_ERR(lcd_clk)) {
++		ret = PTR_ERR(lcd_clk);
++		goto out;
++	}
++	ret = clk_enable(lcd_clk);
++	if (ret) {
++		clk_put(lcd_clk);
++		goto out;
++	}
++	ret = clk_set_rate(lcd_clk, 1000000000 / pentry->cycle_time_ns);	/* Hz */
++	if (ret) {
++		clk_disable(lcd_clk);
++		clk_put(lcd_clk);
++		goto out;
++	}
++
++	/*
++	 * Make sure we do a high-to-low transition to reset the panel.
++	 * First make it low for 100 msec, hi for 10 msec, low for 10 msec,
++	 * then hi.
++	 */
++        __raw_writel(BM_LCDIF_CTRL1_RESET, REGS_LCDIF_BASE + HW_LCDIF_CTRL1_CLR); /* low */
++	mdelay(100);
++        __raw_writel(BM_LCDIF_CTRL1_RESET, REGS_LCDIF_BASE + HW_LCDIF_CTRL1_SET); /* high */
++	mdelay(10);
++        __raw_writel(BM_LCDIF_CTRL1_RESET, REGS_LCDIF_BASE + HW_LCDIF_CTRL1_CLR); /* low */
++
++	/* For the Samsung, Reset must be held low at least 30 uSec
++	 * Therefore, we'll hold it low for about 10 mSec just to be sure.
++	 * Then we'll wait 1 mSec afterwards.
++	 */
++	mdelay(10);
++        __raw_writel(BM_LCDIF_CTRL1_RESET, REGS_LCDIF_BASE + HW_LCDIF_CTRL1_SET); /* high */
++	mdelay(1);
++
++	setup_dotclk_panel(DOTCLK_V_PULSE_WIDTH, DOTCLK_V_PERIOD,
++			DOTCLK_V_WAIT_CNT, DOTCLK_V_ACTIVE,
++			DOTCLK_H_PULSE_WIDTH, DOTCLK_H_PERIOD,
++			DOTCLK_H_WAIT_CNT, DOTCLK_H_ACTIVE, 0);
++
++	ret = mxs_lcdif_dma_init(dev, phys, memsize);
++	if (ret)
++		goto out;
++
++	mxs_lcd_set_bl_pdata(pentry->bl_data);
++	mxs_lcdif_notify_clients(MXS_LCDIF_PANEL_INIT, pentry);
++
++	printk( "Panel init finished.\n" );
++
++	return 0;
++
++out:
++	return ret;
++}
++
++static void release_panel(struct device *dev,
++			  struct mxs_platform_fb_entry *pentry)
++{
++	mxs_lcdif_notify_clients(MXS_LCDIF_PANEL_RELEASE, pentry);
++	release_dotclk_panel();
++	mxs_lcdif_dma_release();
++	clk_disable(lcd_clk);
++	clk_put(lcd_clk);
++}
++
++static int blank_panel(int blank)
++{
++	int ret = 0, count;
++
++	switch (blank) {
++	case FB_BLANK_NORMAL:
++	case FB_BLANK_VSYNC_SUSPEND:
++	case FB_BLANK_HSYNC_SUSPEND:
++	case FB_BLANK_POWERDOWN:
++		__raw_writel(BM_LCDIF_CTRL_BYPASS_COUNT,
++			     REGS_LCDIF_BASE + HW_LCDIF_CTRL_CLR);
++		for (count = 10000; count; count--) {
++			if (__raw_readl(REGS_LCDIF_BASE + HW_LCDIF_STAT) &
++			    BM_LCDIF_STAT_TXFIFO_EMPTY)
++				break;
++			udelay(1);
++		}
++		break;
++
++	case FB_BLANK_UNBLANK:
++		__raw_writel(BM_LCDIF_CTRL_BYPASS_COUNT,
++			     REGS_LCDIF_BASE + HW_LCDIF_CTRL_SET);
++		break;
++
++	default:
++		ret = -EINVAL;
++	}
++	return ret;
++}
++
++static struct mxs_platform_fb_entry fb_entry = {
++	.name		= "lms350",
++	.x_res		= 320,
++	.y_res		= 240,
++	.bpp		= 16,
++	.cycle_time_ns	= 154,
++	.lcd_type	= MXS_LCD_PANEL_DOTCLK,
++	.init_panel	= init_panel,
++	.release_panel	= release_panel,
++	.blank_panel	= blank_panel,
++	.run_panel	= mxs_lcdif_run,
++	.stop_panel	= mxs_lcdif_stop,
++	.pan_display	= mxs_lcdif_pan_display,
++	.bl_data	= &bl_data,
++};
++
++static struct clk *pwm_clk;
++
++static int init_bl(struct mxs_platform_bl_data *data)
++{
++	int ret = 0;
++
++	printk( "init_bl\n" );
++	pwm_clk = clk_get(NULL, "pwm");
++	if (IS_ERR(pwm_clk)) {
++		ret = PTR_ERR(pwm_clk);
++                return ret;
++	}
++	clk_enable(pwm_clk);
++	mxs_reset_block(REGS_PWM_BASE, 1);
++
++    // The backlight needs to be run from 60Hz to 700Hz, but a good middle
++    // frequency is 100Hz.
++    // Since the PWM is slaved off of the 24 MHz crystal, we'll divide it
++    // by 64 (by settin ghte CDIV to 6), then set the period to 3750.
++    // Then then active- and inactive-states can be measured as percentages.
++	__raw_writel(BF_PWM_ACTIVEn_INACTIVE(100) | // full bright, original code had at 0 probably for battery issues (bunnie)
++		     BF_PWM_ACTIVEn_ACTIVE(0),
++		     REGS_PWM_BASE + HW_PWM_ACTIVEn(2));
++	__raw_writel(BF_PWM_PERIODn_CDIV(6) |	/* divide by 64 */
++		     BF_PWM_PERIODn_INACTIVE_STATE(2) |	/* low */
++		     BF_PWM_PERIODn_ACTIVE_STATE(3) |	/* high */
++		     BF_PWM_PERIODn_PERIOD(599),
++		     REGS_PWM_BASE + HW_PWM_PERIODn(2));
++	__raw_writel(BM_PWM_CTRL_PWM2_ENABLE, REGS_PWM_BASE + HW_PWM_CTRL_SET);
++
++	printk( "init_bl finished\n" );
++
++	return 0;
++}
++
++static void free_bl(struct mxs_platform_bl_data *data)
++{
++	__raw_writel(BF_PWM_ACTIVEn_INACTIVE(0) |
++		     BF_PWM_ACTIVEn_ACTIVE(0),
++		     REGS_PWM_BASE + HW_PWM_ACTIVEn(2));
++	__raw_writel(BF_PWM_PERIODn_CDIV(6) |	/* divide by 64 */
++		     BF_PWM_PERIODn_INACTIVE_STATE(2) |	/* low */
++		     BF_PWM_PERIODn_ACTIVE_STATE(3) |	/* high */
++		     BF_PWM_PERIODn_PERIOD(599),
++		     REGS_PWM_BASE + HW_PWM_PERIODn(2));
++	__raw_writel(BM_PWM_CTRL_PWM2_ENABLE, REGS_PWM_BASE + HW_PWM_CTRL_CLR);
++
++	clk_disable(pwm_clk);
++	clk_put(pwm_clk);
++}
++
++static int power[] = {
++	0, 1500, 3600, 6100, 10300,
++	15500, 74200, 114200, 155200,
++	190100, 191000
++};
++
++static int  bl_to_power(int br)
++{
++	int base;
++	int rem;
++
++	if (br > 100)
++		br = 100;
++	base = power[br/10];
++	rem = br % 10;
++	if (!rem)
++		return base;
++	else
++		return base + (rem * (power[br/10 + 1]) - base) / 10;
++}
++
++static int set_bl_intensity(struct mxs_platform_bl_data *data,
++			struct backlight_device *bd, int suspended)
++{
++	int intensity     = bd->props.brightness;
++	int max_intensity = bd->props.max_brightness;
++	int scaled_int;
++
++	printk( "set_bl_intensity with %d\n", intensity );
++
++	if (max_intensity < 100) {
++		intensity = (intensity * max_intensity) / 100;
++		printk("But limiting brightness to %d\n", max_intensity);
++	}
++
++	if (bd->props.power != FB_BLANK_UNBLANK)
++		intensity = 0;
++	/* Disable framebuffer blanking
++	if (bd->props.fb_blank != FB_BLANK_UNBLANK)
++		intensity = 0;
++	*/
++	if (suspended)
++		intensity = 0;
++
++	printk( "intensity after modifiers: %d\n", intensity );
++
++	/*
++	 * This is not too cool but what can we do?
++	 * Luminance changes non-linearly...
++	 */
++	// don't check power limits for now -- bunnie revisit
++	//	if (reg_set_current_limit(
++	//		data->regulator,
++	//		bl_to_power(intensity),
++	//		bl_to_power(intensity))) {
++	//		printk( "power limit exceeded.\n" );
++	//		return -EBUSY;
++	//	}
++
++	// Clamp intensity to (0, 100).
++	if (intensity > 100)
++		intensity = 100;
++	if (intensity < 0)
++		intensity = 0;
++
++	// Perform a brightness transformation function.
++	if (chumby_revision() == 7)
++		// On BBY hardware, make lower values brighter.
++		intensity = 100-((intensity-100)*(intensity-100))/100;
++	else
++		// On other hardware, make lower values darker.
++		intensity = (intensity*intensity)/100;
++
++
++	// Since the cycle is 600 units long, scale the intensity so that it's
++	// between 0 and 600.
++	scaled_int = intensity * 6;
++
++	printk( "setting with parameters %d\n", scaled_int );
++	// The waveform will begin as being Low, and will bebecome Inactive after
++	// the scaled period.
++	__raw_writel(BF_PWM_ACTIVEn_INACTIVE(scaled_int) |
++		     BF_PWM_ACTIVEn_ACTIVE(0),
++		     REGS_PWM_BASE + HW_PWM_ACTIVEn(2));
++	__raw_writel(BF_PWM_PERIODn_CDIV(6) |	/* divide by 64 */
++		     BF_PWM_PERIODn_INACTIVE_STATE(2) |	/* low */
++		     BF_PWM_PERIODn_ACTIVE_STATE(3) |	/* high */
++		     BF_PWM_PERIODn_PERIOD(599),
++		     REGS_PWM_BASE + HW_PWM_PERIODn(2));
++
++	printk( "done.\n" );
++	return 0;
++}
++
++static struct mxs_platform_bl_data bl_data = {
++	.bl_max_intensity	= 100,
++	.bl_default_intensity	= 100, // 50
++	.bl_cons_intensity      = 100, // 50
++	.init_bl		= init_bl,
++	.free_bl		= free_bl,
++	.set_bl_intensity	= set_bl_intensity,
++};
++
++static int __init register_devices(void)
++{
++	struct platform_device *pdev;
++	pdev = mxs_get_device("mxs-fb", 0);
++	if (pdev == NULL || IS_ERR(pdev))
++		return -ENODEV;
++
++	mxs_lcd_register_entry(&fb_entry, pdev->dev.platform_data);
++
++	return 0;
++}
++
++subsys_initcall(register_devices);
+diff -Nur linux-2.6.35.3.orig/drivers/video/mxs/Makefile linux-2.6.35.3/drivers/video/mxs/Makefile
+--- linux-2.6.35.3.orig/drivers/video/mxs/Makefile	2011-04-05 12:02:23.945663830 +0800
++++ linux-2.6.35.3/drivers/video/mxs/Makefile	2011-04-11 15:25:53.117205121 +0800
+@@ -4,3 +4,6 @@
+ obj-$(CONFIG_FB_MXS_LCD_LMS430)			+= lcd_lms430.o
+ # TVOUT support
+ obj-$(CONFIG_FB_MXS_TVENC)			+= tvenc.o
++obj-$(CONFIG_FB_CHUMBYFBFW)			+= chumbyfbfw.o
++obj-$(CONFIG_FB_CHUMBYFBFW_LCD_LMS350)		+= lcd_lms350.o
++
+

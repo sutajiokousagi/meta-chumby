@@ -1,0 +1,11 @@
+diff -Nur u-boot-2009.08.orig/drivers/net/mxc_fec.c u-boot-2009.08/drivers/net/mxc_fec.c
+--- u-boot-2009.08.orig/drivers/net/mxc_fec.c	2011-03-17 12:40:55.027783904 +0800
++++ u-boot-2009.08/drivers/net/mxc_fec.c	2011-04-01 16:28:46.779016738 +0800
+@@ -939,6 +939,7 @@
+ 			printf("got MAC address from IIM: %pM\n", ethaddr);
+ 			memcpy(dev->enetaddr, ethaddr, 6);
+ 			fec_set_hwaddr(dev);
++			eth_setenv_enetaddr("ethaddr", ethaddr);
+ 		}
+ 	}
+ 

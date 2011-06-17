@@ -1,0 +1,28 @@
+diff -Nur u-boot-2009.08.orig/board/freescale/wintergrasp/wintergrasp.c u-boot-2009.08/board/freescale/wintergrasp/wintergrasp.c
+--- u-boot-2009.08.orig/board/freescale/wintergrasp/wintergrasp.c	2011-03-17 12:40:51.183779061 +0800
++++ u-boot-2009.08/board/freescale/wintergrasp/wintergrasp.c	2011-04-26 16:32:10.583706051 +0800
+@@ -49,7 +53,7 @@
+ 	{ PINID_SSP0_DATA6, PIN_FUN1, PAD_8MA, PAD_3V3, 1 },
+ 	{ PINID_SSP0_DATA7, PIN_FUN1, PAD_8MA, PAD_3V3, 1 },
+ 	{ PINID_SSP0_CMD, PIN_FUN1, PAD_8MA, PAD_3V3, 1 },
+-	{ PINID_SSP0_DETECT, PIN_FUN1, PAD_8MA, PAD_3V3, 1 },
++	{ PINID_SSP0_DETECT, PIN_FUN1, PAD_8MA, PAD_3V3, 0 },
+ 	{ PINID_SSP0_SCK, PIN_FUN1, PAD_8MA, PAD_3V3, 1 },
+ };
+ 
+@@ -165,9 +169,15 @@
+ 
+ u32 ssp_mmc_is_wp(struct mmc *mmc)
+ {
++
++#if 1
++	return 0;
++#else
+ 	return (mmc->block_dev.dev == 0) ?
+ 		pin_gpio_get(PINID_SSP0_GPIO_WP) :
+ 		pin_gpio_get(PINID_SSP1_GPIO_WP);
++#endif
++
+ }
+ 
+ int ssp_mmc_gpio_init(bd_t *bis)
