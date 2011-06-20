@@ -1,0 +1,12 @@
+diff -Nur linux-2.6.35.3.beforemod/arch/arm/tools/mach-types linux-2.6.35.3/arch/arm/tools/mach-types
+--- linux-2.6.35.3.beforemod/arch/arm/tools/mach-types	2011-06-20 16:22:36.794870267 +0800
++++ linux-2.6.35.3/arch/arm/tools/mach-types	2011-06-20 16:23:55.494198281 +0800
+@@ -2515,7 +2515,7 @@
+ swarco_itc3		MACH_SWARCO_ITC3	SWARCO_ITC3		2528
+ tx51			MACH_TX51		TX51			2529
+ dolby_cat1021		MACH_DOLBY_CAT1021	DOLBY_CAT1021		2530
+-mx28evk			MACH_MX28EVK		MX28EVK			2531
++mx28evk			MACH_MX28EVK		MX28EVK			3500
+ phoenix260		MACH_PHOENIX260		PHOENIX260		2532
+ uvaca_stork		MACH_UVACA_STORK	UVACA_STORK		2533
+ smartq5			MACH_SMARTQ5		SMARTQ5			2534

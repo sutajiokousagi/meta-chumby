@@ -1,7 +1,7 @@
-diff -Nur u-boot-2009.08.patch-004/board/freescale/wintergrasp/wintergrasp.c u-boot-2009.08/board/freescale/wintergrasp/wintergrasp.c
---- u-boot-2009.08.patch-004/board/freescale/wintergrasp/wintergrasp.c	2011-06-17 12:08:34.770494606 +0800
-+++ u-boot-2009.08/board/freescale/wintergrasp/wintergrasp.c	2011-06-17 12:13:22.264162352 +0800
-@@ -29,6 +29,10 @@
+diff -Nur u-boot-2009.08.patchbeforenand//board/freescale/wintergrasp/wintergrasp.c u-boot-2009.08/board/freescale/wintergrasp/wintergrasp.c
+--- u-boot-2009.08.patchbeforenand//board/freescale/wintergrasp/wintergrasp.c	2011-06-20 16:03:36.581744033 +0800
++++ u-boot-2009.08/board/freescale/wintergrasp/wintergrasp.c	2011-06-20 16:08:09.067912160 +0800
+@@ -30,6 +30,10 @@
  #include <mmc.h>
  #include <imx_ssp_mmc.h>
  
@@ -9,12 +9,12 @@ diff -Nur u-boot-2009.08.patch-004/board/freescale/wintergrasp/wintergrasp.c u-b
 +void setup_gpmi_nand();
 +#endif
 +
- /* This should be removed after it's added into mach-types.h */
- #ifndef MACH_TYPE_WINTERGRASP
- #define MACH_TYPE_WINTERGRASP	3500
-diff -Nur u-boot-2009.08.patch-004/cpu/arm926ejs/mx28/generic.c u-boot-2009.08/cpu/arm926ejs/mx28/generic.c
---- u-boot-2009.08.patch-004/cpu/arm926ejs/mx28/generic.c	2011-06-17 12:08:35.037294598 +0800
-+++ u-boot-2009.08/cpu/arm926ejs/mx28/generic.c	2011-06-17 12:13:22.267497351 +0800
+ DECLARE_GLOBAL_DATA_PTR;
+ 
+ #ifdef CONFIG_IMX_SSP_MMC
+diff -Nur u-boot-2009.08.patchbeforenand//cpu/arm926ejs/mx28/generic.c u-boot-2009.08/cpu/arm926ejs/mx28/generic.c
+--- u-boot-2009.08.patchbeforenand//cpu/arm926ejs/mx28/generic.c	2011-06-20 16:03:36.691799031 +0800
++++ u-boot-2009.08/cpu/arm926ejs/mx28/generic.c	2011-06-20 16:03:48.551058730 +0800
 @@ -108,6 +108,8 @@
  static inline void __enable_gpmi_clk(void)
  {
@@ -67,9 +67,9 @@ diff -Nur u-boot-2009.08.patch-004/cpu/arm926ejs/mx28/generic.c u-boot-2009.08/c
  }
  static u32 mx28_get_gpmiclk(void)
  {
-diff -Nur u-boot-2009.08.patch-004/drivers/mtd/mtdpart.c u-boot-2009.08/drivers/mtd/mtdpart.c
---- u-boot-2009.08.patch-004/drivers/mtd/mtdpart.c	2011-06-17 12:08:35.093989598 +0800
-+++ u-boot-2009.08/drivers/mtd/mtdpart.c	2011-06-17 12:13:22.267497351 +0800
+diff -Nur u-boot-2009.08.patchbeforenand//drivers/mtd/mtdpart.c u-boot-2009.08/drivers/mtd/mtdpart.c
+--- u-boot-2009.08.patchbeforenand//drivers/mtd/mtdpart.c	2011-06-20 16:03:36.921914024 +0800
++++ u-boot-2009.08/drivers/mtd/mtdpart.c	2011-06-20 16:03:48.551058730 +0800
 @@ -371,8 +371,12 @@
  	if (slave->mtd.size == MTDPART_SIZ_FULL)
  		slave->mtd.size = master->size - slave->offset;
@@ -85,9 +85,9 @@ diff -Nur u-boot-2009.08.patch-004/drivers/mtd/mtdpart.c u-boot-2009.08/drivers/
  
  	/* let's do some sanity checks */
  	if (slave->offset >= master->size) {
-diff -Nur u-boot-2009.08.patch-004/drivers/mtd/nand/gpmi_nfc_hal.c u-boot-2009.08/drivers/mtd/nand/gpmi_nfc_hal.c
---- u-boot-2009.08.patch-004/drivers/mtd/nand/gpmi_nfc_hal.c	2011-06-17 12:08:35.090654598 +0800
-+++ u-boot-2009.08/drivers/mtd/nand/gpmi_nfc_hal.c	2011-06-17 12:13:22.267497351 +0800
+diff -Nur u-boot-2009.08.patchbeforenand//drivers/mtd/nand/gpmi_nfc_hal.c u-boot-2009.08/drivers/mtd/nand/gpmi_nfc_hal.c
+--- u-boot-2009.08.patchbeforenand//drivers/mtd/nand/gpmi_nfc_hal.c	2011-06-20 16:03:36.918579024 +0800
++++ u-boot-2009.08/drivers/mtd/nand/gpmi_nfc_hal.c	2011-06-20 16:03:48.551058730 +0800
 @@ -40,9 +40,17 @@
  static struct mxs_dma_desc *dma_desc[NFC_DMA_DESCRIPTOR_COUNT];
  
@@ -134,9 +134,9 @@ diff -Nur u-boot-2009.08.patch-004/drivers/mtd/nand/gpmi_nfc_hal.c u-boot-2009.0
  }
  
  /**
-diff -Nur u-boot-2009.08.patch-004/drivers/mtd/nand/gpmi_nfc_mil.c u-boot-2009.08/drivers/mtd/nand/gpmi_nfc_mil.c
---- u-boot-2009.08.patch-004/drivers/mtd/nand/gpmi_nfc_mil.c	2011-06-17 12:08:35.093989598 +0800
-+++ u-boot-2009.08/drivers/mtd/nand/gpmi_nfc_mil.c	2011-06-17 12:13:22.267497351 +0800
+diff -Nur u-boot-2009.08.patchbeforenand//drivers/mtd/nand/gpmi_nfc_mil.c u-boot-2009.08/drivers/mtd/nand/gpmi_nfc_mil.c
+--- u-boot-2009.08.patchbeforenand//drivers/mtd/nand/gpmi_nfc_mil.c	2011-06-20 16:03:36.921914024 +0800
++++ u-boot-2009.08/drivers/mtd/nand/gpmi_nfc_mil.c	2011-06-20 16:03:48.551058730 +0800
 @@ -1023,6 +1023,7 @@
  	mtd->block_markbad              = gpmi_nfc_hook_block_markbad;
  
@@ -145,9 +145,9 @@ diff -Nur u-boot-2009.08.patch-004/drivers/mtd/nand/gpmi_nfc_mil.c u-boot-2009.0
  	error = nand_default_bbt(mtd);
  	if (error)
  		return error;
-diff -Nur u-boot-2009.08.patch-004/drivers/mtd/nand/nand_bbt.c u-boot-2009.08/drivers/mtd/nand/nand_bbt.c
---- u-boot-2009.08.patch-004/drivers/mtd/nand/nand_bbt.c	2011-06-17 12:08:35.093989598 +0800
-+++ u-boot-2009.08/drivers/mtd/nand/nand_bbt.c	2011-06-17 12:13:22.270832351 +0800
+diff -Nur u-boot-2009.08.patchbeforenand//drivers/mtd/nand/nand_bbt.c u-boot-2009.08/drivers/mtd/nand/nand_bbt.c
+--- u-boot-2009.08.patchbeforenand//drivers/mtd/nand/nand_bbt.c	2011-06-20 16:03:36.921914024 +0800
++++ u-boot-2009.08/drivers/mtd/nand/nand_bbt.c	2011-06-20 16:03:48.554393730 +0800
 @@ -987,6 +987,7 @@
  	 * to build a memory based bad block table
  	 */
@@ -156,10 +156,16 @@ diff -Nur u-boot-2009.08.patch-004/drivers/mtd/nand/nand_bbt.c u-boot-2009.08/dr
  		if ((res = nand_memory_bbt(mtd, bd))) {
  			printk(KERN_ERR "nand_bbt: Can't scan flash and build the RAM-based BBT\n");
  			kfree(this->bbt);
-diff -Nur u-boot-2009.08.patch-004/include/configs/wintergrasp.h u-boot-2009.08/include/configs/wintergrasp.h
---- u-boot-2009.08.patch-004/include/configs/wintergrasp.h	2011-06-17 12:08:34.953919600 +0800
-+++ u-boot-2009.08/include/configs/wintergrasp.h	2011-06-17 12:18:43.364624251 +0800
-@@ -85,6 +85,19 @@
+diff -Nur u-boot-2009.08.patchbeforenand//include/configs/wintergrasp.h u-boot-2009.08/include/configs/wintergrasp.h
+--- u-boot-2009.08.patchbeforenand//include/configs/wintergrasp.h	2011-06-20 16:03:36.655114032 +0800
++++ u-boot-2009.08/include/configs/wintergrasp.h	2011-06-20 16:05:09.548201672 +0800
+@@ -80,11 +80,23 @@
+         "bootargs_mmc=setenv bootargs " \
+                 "${bootargs} " \
+                 "root=/dev/mmcblk0p2 rw rootwait " \
+-                "fec_mac=${ethaddr} " \
++                "gpmi " \
+                 "loglevel=10 printk.time=1\0" \
          "bootcmd_mmc=run bootargs_mmc; " \
                  "ext2load mmc 0:2 ${loadaddr} /boot/${bootfile}; " \
                  "bootm\0" \
@@ -168,7 +174,6 @@ diff -Nur u-boot-2009.08.patch-004/include/configs/wintergrasp.h u-boot-2009.08/
 +        "bootargs_mtd=setenv bootargs " \
 +                "${bootargs} " \
 +                "ubi.mtd=1 root=ubi0:rootfs rw rootfstype=ubifs rootwait " \
-+                "ip=dhcp fec_mac=${ethaddr} " \
 +                "gpmi " \
 +                "loglevel=10 printk.time=1\0" \
 +        "bootcmd_mtd=run bootargs_mtd; " \
@@ -179,7 +184,7 @@ diff -Nur u-boot-2009.08.patch-004/include/configs/wintergrasp.h u-boot-2009.08/
  
  /*
   * U-Boot Commands
-@@ -123,6 +136,7 @@
+@@ -123,6 +135,7 @@
   * MMC Driver
   */
  #define CONFIG_CMD_MMC
@@ -187,7 +192,7 @@ diff -Nur u-boot-2009.08.patch-004/include/configs/wintergrasp.h u-boot-2009.08/
  
  #ifdef CONFIG_CMD_MMC
  	#define CONFIG_MMC
-@@ -131,14 +145,21 @@
+@@ -131,14 +144,21 @@
  	#define CONFIG_DYNAMIC_MMC_DEVNO
  	#define CONFIG_DOS_PARTITION
  	#define CONFIG_CMD_FAT
@@ -210,7 +215,7 @@ diff -Nur u-boot-2009.08.patch-004/include/configs/wintergrasp.h u-boot-2009.08/
  
  #define CONFIG_CMD_NAND
  
-@@ -153,6 +174,15 @@
+@@ -153,6 +173,15 @@
  	#define NAND_MAX_CHIPS		8
  	#define CONFIG_SYS_NAND_BASE		0x40000000
  	#define CONFIG_SYS_MAX_NAND_DEVICE	1
