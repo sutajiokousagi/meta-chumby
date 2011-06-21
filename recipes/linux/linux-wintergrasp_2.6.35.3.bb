@@ -2,13 +2,13 @@ inherit chumbysg-git chumby-info
 
 require recipes/linux/linux.inc
 
-PR = "r2"
+PR = "r4"
 
 COMPATIBLE_MACHINE = "chumby-wintergrasp"
 
 PROVIDES = "virtual/kernel"
 
-SRC_URI = "${CHUMBYSG_GIT_HOST}/wintergrasp/linux-2.6.35.3-wintergrasp${CHUMBYSG_GIT_EXTENSION};subpath=src;protocol=${CHUMBYSG_GIT_PROTOCOL} \
+SRC_URI = "${CHUMBYSG_GIT_HOST}/chumby-sg/linux-2.6.35.3-wintergrasp${CHUMBYSG_GIT_EXTENSION};subpath=src;protocol=${CHUMBYSG_GIT_PROTOCOL} \
            file://000-fix_sd_wp.patch \
            file://001-chumby_rev.patch \
            file://002-chumby_lcd.patch \
@@ -18,6 +18,7 @@ SRC_URI = "${CHUMBYSG_GIT_HOST}/wintergrasp/linux-2.6.35.3-wintergrasp${CHUMBYSG
            file://006-freescale_usb_boot.patch \
            file://007-chumby_timer.patch \
            file://008-fix_cpufreq_hang_on_boot.patch \
+           file://009-fix_uboot_wintergrasp_config.patch \
            file://defconfig \
 "
 SRCREV = "${AUTOREV}"

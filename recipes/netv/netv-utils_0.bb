@@ -3,7 +3,7 @@ LICENSE = "BSD"
 
 inherit update-rc.d
 
-PR = "r7"
+PR = "r8"
 
 SRC_URI = "file://helpers/dumpreg.c \
 	file://helpers/putreg.c \
@@ -66,4 +66,4 @@ FILES_${PN} += "${sysconfdir}/init.d/"
 PACKAGE_ARCH = "${MACHINE}"
 
 INITSCRIPT_NAME = "netv_service"
-INITSCRIPT_PARAMS = "defaults 98 99"
+INITSCRIPT_PARAMS = "defaults 50 50"

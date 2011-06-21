@@ -4,12 +4,13 @@ require u-boot.inc
 
 DEPENDS = "chumby-blobs elftosb-native"
 DEPENDS_${PN} = "chumby-blobs elftosb-native"
-PROVIDES = ""
-RPROVIDES = ""
+PROVIDES = "virtual/bootloader virtual/chumby-bootimage"
+RPROVIDES = "virtual/bootloader virtual/chumby-bootimage"
+COMPATIBLE_MACHINE = "chumby-wintergrasp"
 
-PR ="r4b"
+PR ="r6"
 
-SRC_URI = "${CHUMBYSG_GIT_HOST}/wintergrasp/u-boot-2009.08${CHUMBYSG_GIT_EXTENSION};protocol=${CHUMBYSG_GIT_PROTOCOL} \
+SRC_URI = "${CHUMBYSG_GIT_HOST}/chumby-sg/u-boot-2009.08-wintergrasp${CHUMBYSG_GIT_EXTENSION};protocol=${CHUMBYSG_GIT_PROTOCOL} \
            file://sbmagic \
            file://uboot_ivt.bd \
            file://000-board_setup.patch \
@@ -40,6 +41,12 @@ do_deploy () {
     package_stagefile_shell ${DEPLOY_DIR_IMAGE}/${UBOOT_SYMLINK}
 
     elftosb -p ${DEPLOY_DIR_IMAGE} -z -f imx28 -c ${DEPLOY_DIR_IMAGE}/uboot_ivt.bd -o ${DEPLOY_DIR_IMAGE}/imx28_ivt_uboot.sb
+
+    rm -f ${DEPLOY_DIR_IMAGE}/boot-${MACHINE}.bin
+    touch ${DEPLOY_DIR_IMAGE}/boot-${MACHINE}.bin
+    dd if=${DEPLOY_DIR_IMAGE}/sbmagic of=${DEPLOY_DIR_IMAGE}/boot-${MACHINE}.bin bs=512 conv=sync
+    dd if=${DEPLOY_DIR_IMAGE}/imx28_ivt_uboot.sb of=${DEPLOY_DIR_IMAGE}/boot-${MACHINE}.bin bs=512 seek=2049 conv=sync
+    package_stagefile_shell ${DEPLOY_DIR_IMAGE}/boot-${MACHINE}.bin
 }
 
 addtask deploy after do_install

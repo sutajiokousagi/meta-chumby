@@ -5,9 +5,9 @@ HOMEPAGE = "http://www.freescale.com/"
 AUTHOR = "Freescale"
 LICENSE = "Proprietary"
 
-PR ="r0"
+PR ="r1"
 
-SRC_URI = "${CHUMBYSG_GIT_HOST}/wintergrasp/elftosb-10.12.01${CHUMBYSG_GIT_EXTENSION};protocol=${CHUMBYSG_GIT_PROTOCOL} \
+SRC_URI = "${CHUMBYSG_GIT_HOST}/chumby-sg/elftosb-10.12.01${CHUMBYSG_GIT_EXTENSION};protocol=${CHUMBYSG_GIT_PROTOCOL} \
 "
 SRCREV = "${AUTOREV}"
 S = "${WORKDIR}/git"
