@@ -8,9 +8,9 @@ PROVIDES = "virtual/bootloader virtual/chumby-bootimage"
 RPROVIDES = "virtual/bootloader virtual/chumby-bootimage"
 COMPATIBLE_MACHINE = "chumby-wintergrasp"
 
-PR ="r5"
+PR ="r6"
 
-SRC_URI = "${CHUMBYSG_GIT_HOST}/wintergrasp/u-boot-2009.08${CHUMBYSG_GIT_EXTENSION};protocol=${CHUMBYSG_GIT_PROTOCOL} \
+SRC_URI = "${CHUMBYSG_GIT_HOST}/chumby-sg/u-boot-2009.08-wintergrasp${CHUMBYSG_GIT_EXTENSION};protocol=${CHUMBYSG_GIT_PROTOCOL} \
            file://sbmagic \
            file://uboot_ivt.bd \
            file://000-board_setup.patch \
