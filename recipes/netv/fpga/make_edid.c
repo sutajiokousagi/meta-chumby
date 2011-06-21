@@ -2,6 +2,9 @@
 #include <string.h>
 #include <stdlib.h>
 
+//// this program is intended to be run on the build host
+//// just run gcc make_edid.c -o make_edid
+
 typedef unsigned char byte;
 /* byte must be 8 bits */
 
@@ -38,7 +41,8 @@ struct saneDescriptor {
 };
 
 struct detailDescriptors {
-  u16 pixelclock;    // byte 0,1
+  byte pixelclockLSB;    // byte 0   // bytes, not u16, to allow for unaligned structure start
+  byte pixelclockMSB;    // byte 1
   byte hActiveLSB;   // byte 2
   byte hBlankLSB;    // byte 3
   byte hActiveBlankMSB;  // byte 4
@@ -176,8 +180,11 @@ byte calcsum(unsigned char *block) {
 }
 
 void make_insane(struct saneDescriptor *sane, struct detailDescriptors *insane) {
-
-  insane->pixelclock = (sane->pixelclock / 10000) & 0xFFFF;
+  u16 pixclk;
+  
+  pixclk = (sane->pixelclock / 10000) & 0xFFFF;
+  insane->pixelclockLSB = pixclk & 0xFF;
+  insane->pixelclockMSB = (pixclk >> 8) & 0xFF;
   insane->hActiveLSB = sane->hActive & 0xFF;
   insane->hBlankLSB = sane->hBlank & 0xFF;
   insane->hActiveBlankMSB = (((sane->hActive >> 8) & 0xF) << 4) | ((sane->hBlank >> 8) & 0xF);
@@ -200,7 +207,12 @@ void make_insane(struct saneDescriptor *sane, struct detailDescriptors *insane) 
   
 }
 
-void make_edid() {
+#define MODE720P 0
+#define MODE1080P24 1
+#define MODE1080P30 2
+#define MODE1080P25 3
+
+void make_edid(int mode) {
   struct saneDescriptor sane;
   unsigned char *bytes;
   int i;
@@ -247,55 +259,121 @@ void make_edid() {
   edid.TimingsReserved = 0;
   
   for( i = 0; i < 8; i++ ) { // all bogus timings
-    edid.timings[i].horizPixels = 0x81; // 1280
-    edid.timings[i].AR_refresh = 0xc0; // 16:9, 60 hz
+    if( mode == MODE720P ) {
+      edid.timings[i].horizPixels = 0x81; // 1280
+      edid.timings[i].AR_refresh = 0xc0; // 16:9, 60 hz
+    } else if( (mode == MODE1080P24) || (mode == MODE1080P30 || (mode == MODE1080P25)) ) {
+      edid.timings[i].horizPixels = 1; // 1920 @ 24 hz not representable
+      edid.timings[i].AR_refresh = 1;
+    }
   }
-  
-  sane.pixelclock = 74250000;
-  sane.hActive = 1280;
-  sane.hBlank = 370;
-  sane.vActive = 720;
-  sane.vBlank = 30;
-  sane.hFP = 110;
-  sane.hBP = 220;
-  sane.vFP = 5;
-  sane.vBP = 20;
-  sane.hSync = 40;
-  sane.vSync = 5;
-  sane.hSizemm = 160;
-  sane.vSizemm = 90;
-  sane.hborder = 0;
-  sane.vborder = 0;
-  sane.syncCode = 0x1e; // digital separate sync, vertical sync is positive; hsync is positive
+
+  if( mode == MODE720P ) {
+    sane.pixelclock = 74250000;
+    sane.hActive = 1280;
+    sane.hBlank = 370;
+    sane.vActive = 720;
+    sane.vBlank = 30;
+    sane.hFP = 110;
+    sane.hBP = 220;
+    sane.vFP = 5;
+    sane.vBP = 20;
+    sane.hSync = 40;
+    sane.vSync = 5;
+    sane.hSizemm = 160;
+    sane.vSizemm = 90;
+    sane.hborder = 0;
+    sane.vborder = 0;
+    sane.syncCode = 0x1e; // digital separate sync, vertical sync is positive; hsync is positive
+  } else if( mode == MODE1080P24 ) {
+    sane.pixelclock = 74250000;
+    sane.hActive = 1920;
+    sane.hBlank = 830;
+    sane.vActive = 1080;
+    sane.vBlank = 45;
+    sane.hFP = 638;
+    sane.hBP = 140;
+    sane.vFP = 4;
+    sane.vBP = 36;
+    sane.hSync = 44;
+    sane.vSync = 5;
+    sane.hSizemm = 160;
+    sane.vSizemm = 90;
+    sane.hborder = 0;
+    sane.vborder = 0;
+    sane.syncCode = 0x1e; // digital separate sync, vertical sync is positive; hsync is positive
+  } else if( mode == MODE1080P30 ) {
+    sane.pixelclock = 74176000;
+    sane.hActive = 1920;
+    sane.hBlank = 280;
+    sane.vActive = 1080;
+    sane.vBlank = 45;
+    sane.hFP = 88;
+    sane.hBP = 148;
+    sane.vFP = 4;
+    sane.vBP = 36;
+    sane.hSync = 44;
+    sane.vSync = 5;
+    sane.hSizemm = 160;
+    sane.vSizemm = 90;
+    sane.hborder = 0;
+    sane.vborder = 0;
+    sane.syncCode = 0x1e; // digital separate sync, vertical sync is positive; hsync is positive
+  } else if( mode == MODE1080P25 ) {
+    sane.pixelclock = 74250000;
+    sane.hActive = 1920;
+    sane.hBlank = 720;
+    sane.vActive = 1080;
+    sane.vBlank = 45;
+    sane.hFP = 528;
+    sane.hBP = 148;
+    sane.vFP = 4;
+    sane.vBP = 36;
+    sane.hSync = 44;
+    sane.vSync = 5;
+    sane.hSizemm = 160;
+    sane.vSizemm = 90;
+    sane.hborder = 0;
+    sane.vborder = 0;
+    sane.syncCode = 0x1e; // digital separate sync, vertical sync is positive; hsync is positive
+  }
 
   make_insane(&sane, &(edid.detail));
 
   edid.dataString.tag[0] = 0x0;
-  edid.dataString.tag[1] = 0xfe;
+  edid.dataString.tag[1] = 0x0;
   edid.dataString.tag[2] = 0x0;
-  edid.dataString.tag[3] = 0x0;
+  edid.dataString.tag[3] = 0xfe;
   edid.dataString.tag[4] = 0x0;
   strncpy(edid.dataString.name, "chumby NeTV  ", 13);
 
   edid.name.tag[0] = 0;
-  edid.name.tag[1] = 0xfc;
+  edid.name.tag[1] = 0;
   edid.name.tag[2] = 0;
-  edid.name.tag[3] = 0;
+  edid.name.tag[3] = 0xfc;
   edid.name.tag[4] = 0;
 
   strncpy(edid.name.name, "chumby NeTV  ", 13);
 
-  edid.limits.tag[0] = 0xfd;
+  edid.limits.tag[0] = 0x0;
   edid.limits.tag[1] = 0x0;
   edid.limits.tag[2] = 0x0;
-  edid.limits.tag[3] = 0x0;
+  edid.limits.tag[3] = 0xfd;
 
   edid.limits.rangeLimits = 0;
-  edid.limits.minVert = 0x17;
-  edid.limits.maxVert = 60; // 60 hz
-  edid.limits.minHoriz = 37; // constrain to 720p
-  edid.limits.maxHoriz = 46;
-  edid.limits.maxPclk = 8; // 80 MHz max
+  if( mode == MODE720P ) {
+    edid.limits.minVert = 0x17;
+    edid.limits.maxVert = 60; // 60 hz
+    edid.limits.minHoriz = 37; // constrain to 720p
+    edid.limits.maxHoriz = 46;
+    edid.limits.maxPclk = 8; // 80 MHz max
+  } else if ((mode == MODE1080P24) || (mode == MODE1080P30) || (mode == MODE1080P25) ) {
+    edid.limits.minVert = 0x17;
+    edid.limits.maxVert = 35; 
+    edid.limits.minHoriz = 26;
+    edid.limits.maxHoriz = 35;
+    edid.limits.maxPclk = 8; // 80 MHz max
+  } 
   edid.limits.timingSupport = 0;
   edid.limits.unused[0] = 0xa;
   edid.limits.unused[1] = 0x20;
@@ -311,7 +389,7 @@ void make_edid() {
 
   bytes = (char *) &edid;
   for( i = 0; i < 128; i++ ) {
-    if( (i % 16) == 0 ) {
+    if( ((i % 16) == 0) ) {
       printf( "\n" );
     }
     printf( "%02x ", bytes[i] );
@@ -319,7 +397,7 @@ void make_edid() {
   printf( "\n" );
 }
 
-void make_hdmi() {
+void make_hdmi(int mode) {
   struct saneDescriptor sane;
   struct hdmi_ hdmi;
   int i;
@@ -334,7 +412,15 @@ void make_hdmi() {
     sizeof(struct hdmiBlock);
   
   hdmi.video.videoTagCode = 0x41;
-  hdmi.video.shortDescriptor1 = 0x84;
+  if( mode == MODE720P ) {
+    hdmi.video.shortDescriptor1 = 0x84; // native (0x80) | mode 4
+  } else if( mode == MODE1080P24) {
+    hdmi.video.shortDescriptor1 = 0xA0; // native (0x80) | mode 32
+  } else if( mode == MODE1080P30) {
+    hdmi.video.shortDescriptor1 = 0xA2; // native (0x80) | mode 34
+  } else if( mode == MODE1080P25) {
+    hdmi.video.shortDescriptor1 = 0xA1; // native (0x80) | mode 33
+  }
 
   hdmi.audio.audioTagCode = 0x23;
   hdmi.audio.audio[0] = 0x09;
@@ -354,28 +440,81 @@ void make_hdmi() {
   hdmi.hdmi.hdmi[4] = 0x0;
   hdmi.hdmi.hdmi[5] = 0x0;
 
-  sane.pixelclock = 74250000;
-  sane.hActive = 1280;
-  sane.hBlank = 370;
-  sane.vActive = 720;
-  sane.vBlank = 30;
-  sane.hFP = 110;
-  sane.hBP = 220;
-  sane.vFP = 5;
-  sane.vBP = 20;
-  sane.hSync = 40;
-  sane.vSync = 5;
-  sane.hSizemm = 160;
-  sane.vSizemm = 90;
-  sane.hborder = 0;
-  sane.vborder = 0;
-  sane.syncCode = 0x1e; // digital separate sync, vertical sync is positive; hsync is positive
+  if( mode == MODE720P ) {
+    sane.pixelclock = 74250000;
+    sane.hActive = 1280;
+    sane.hBlank = 370;
+    sane.vActive = 720;
+    sane.vBlank = 30;
+    sane.hFP = 110;
+    sane.hBP = 220;
+    sane.vFP = 5;
+    sane.vBP = 20;
+    sane.hSync = 40;
+    sane.vSync = 5;
+    sane.hSizemm = 160;
+    sane.vSizemm = 90;
+    sane.hborder = 0;
+    sane.vborder = 0;
+    sane.syncCode = 0x1e; // digital separate sync, vertical sync is positive; hsync is positive
+  } else if( mode == MODE1080P24 ) {
+    sane.pixelclock = 74250000;
+    sane.hActive = 1920;
+    sane.hBlank = 830;
+    sane.vActive = 1080;
+    sane.vBlank = 45;
+    sane.hFP = 638;
+    sane.hBP = 140;
+    sane.vFP = 4;
+    sane.vBP = 36;
+    sane.hSync = 44;
+    sane.vSync = 5;
+    sane.hSizemm = 160;
+    sane.vSizemm = 90;
+    sane.hborder = 0;
+    sane.vborder = 0;
+    sane.syncCode = 0x1e; // digital separate sync, vertical sync is positive; hsync is positive
+  } else if( mode == MODE1080P30 ) {
+    sane.pixelclock = 74176000;
+    sane.hActive = 1920;
+    sane.hBlank = 280;
+    sane.vActive = 1080;
+    sane.vBlank = 45;
+    sane.hFP = 88;
+    sane.hBP = 148;
+    sane.vFP = 4;
+    sane.vBP = 36;
+    sane.hSync = 44;
+    sane.vSync = 5;
+    sane.hSizemm = 160;
+    sane.vSizemm = 90;
+    sane.hborder = 0;
+    sane.vborder = 0;
+    sane.syncCode = 0x1e; // digital separate sync, vertical sync is positive; hsync is positive
+  } else if( mode == MODE1080P25 ) {
+    sane.pixelclock = 74250000;
+    sane.hActive = 1920;
+    sane.hBlank = 720;
+    sane.vActive = 1080;
+    sane.vBlank = 45;
+    sane.hFP = 528;
+    sane.hBP = 148;
+    sane.vFP = 4;
+    sane.vBP = 36;
+    sane.hSync = 44;
+    sane.vSync = 5;
+    sane.hSizemm = 160;
+    sane.vSizemm = 90;
+    sane.hborder = 0;
+    sane.vborder = 0;
+    sane.syncCode = 0x1e; // digital separate sync, vertical sync is positive; hsync is positive
+  }
 
   make_insane(&sane, &(hdmi.detail));
 
   bytes = (char *) &hdmi;
   for( i = 0; i < sizeof(hdmi); i++ ) {
-    if( (i % 16) == 0 ) {
+    if( ((i % 16) == 0) && (i != 0) ) {
       printf( "\n" );
     }
     printf( "%02x ", bytes[i] );
@@ -403,8 +542,36 @@ void make_hdmi() {
   printf( "\n" );
 }
 
-int main() {
-    make_edid();
-    make_hdmi();
+int main( int argc, char** argv ) {
+  int mode = MODE720P;
+  int mode_arg;
+
+  if( argc != 2 ) {
+    printf( "%s: make_edid [mode]\n", argv[0] );
+    return 0;
+  }
+  
+  mode_arg = strtoul(argv[1], NULL, 0);
+  switch( mode_arg ) {
+  case 4:
+    mode = MODE720P;
+    break;
+  case 32:
+    mode = MODE1080P24;
+    break;
+  case 34:
+    mode = MODE1080P30;
+    break;
+  case 33:
+    mode = MODE1080P25;
+    break;
+  default:
+    printf( "CEA mode number %d not recognized, aborting\n", mode_arg );
+    printf( "Recognized modes are 4 (720p/60), 32 (1080p/24), 34 (1080p/30), and 33 (1080p/25)\n" );
+    return 0;
+  }
+  
+    make_edid(mode);
+    make_hdmi(mode);
     return 0;
 }

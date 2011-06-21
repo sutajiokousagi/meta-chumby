@@ -18,6 +18,7 @@ SRC_URI = "file://helpers/dumpreg.c \
 	file://fpga/hdmi_overlay.bin \
 	file://fpga/hdmi_720p.bin \
 	file://fpga/min720p.edid \
+	file://fpga/min1080p24.edid \
 	file://helpers/dumptiming.c \
 	file://helpers/netv_service \
 "
@@ -58,6 +59,7 @@ do_install() {
 	install -m 0644 fpga/hdmi_overlay.bin ${D}/${base_libdir}/firmware/
 	install -m 0644 fpga/hdmi_720p.bin ${D}/${base_libdir}/firmware/
 	install -m 0644 fpga/min720p.edid ${D}/${base_libdir}/firmware/
+	install -m 0644 fpga/min1080p24.edid ${D}/${base_libdir}/firmware/
 }
 
 FILES_${PN} = "/usr/bin"

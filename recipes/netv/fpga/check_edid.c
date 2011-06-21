@@ -37,7 +37,7 @@ const byte edid_v1_descriptor_flag[] = { 0x00, 0x00 };
 
 #define HDMI_EXTENSION                          0x80
 
-#define EDID_LENGTH                             0x80
+#define EDID_LENGTH                             0x100
 
 #define EDID_HEADER                             0x00
 #define EDID_HEADER_END                         0x07
@@ -196,12 +196,14 @@ get_vendor_sign( byte const* block );
 int
 parse_dpms_capabilities( byte flags );
 
-#if 0
+#if 1
 int
 main( int argc, char** argv )
 {
   byte edid[ EDID_LENGTH ];
   FILE* edid_file;
+  int i;
+  int temp;
 
   myname = argv[ 0 ];
   fprintf( stderr, "%s: parse-edid version %s\n", myname, VERSION );
@@ -214,7 +216,7 @@ main( int argc, char** argv )
     {
       if ( argc == 2 )
 	{
-	  edid_file = fopen( argv[ 1 ], "rb" );
+	  edid_file = fopen( argv[ 1 ], "r" );
 	  if ( !edid_file )
 	    DIE_MSG( "unable to open file for input" );
 	}
@@ -223,12 +225,10 @@ main( int argc, char** argv )
 	edid_file = stdin;
     }
 
-  if ( fread( edid, sizeof( byte ), EDID_LENGTH, edid_file )
-       != EDID_LENGTH )
-
-    {
-      DIE_MSG( "IO error reading EDID" );
-    }
+  for( i = 0; i < EDID_LENGTH; i ++ ) {
+    scanf("%*[ \n\t]%x", &temp );
+    edid[i] = temp & 0xFF;
+  }
 
   fclose( edid_file );
   
