@@ -1,17 +1,16 @@
 diff -Nur u-boot-2009.08.patch-001/include/configs/wintergrasp.h u-boot-2009.08/include/configs/wintergrasp.h
 --- u-boot-2009.08.patch-001/include/configs/wintergrasp.h	2011-06-17 11:58:22.621255050 +0800
 +++ u-boot-2009.08/include/configs/wintergrasp.h	2011-06-17 12:04:09.724711293 +0800
-@@ -79,9 +79,11 @@
+@@ -79,9 +79,10 @@
          "autoload=n\0" \
          "bootargs_mmc=setenv bootargs " \
                  "${bootargs} " \
 -                "root=/dev/mmcblk0p3 rw rootwait\0" \
-+                "root=/dev/mmcblk0p2 rw rootwait " \
-+                "fec_mac=${ethaddr} " \
++                "root=/dev/mmcblk0p5 rw rootwait " \
 +                "loglevel=10 printk.time=1\0" \
          "bootcmd_mmc=run bootargs_mmc; " \
 -                "fatload mmc 0:1 ${loadaddr} ${bootfile}; " \
-+                "ext2load mmc 0:2 ${loadaddr} /boot/${bootfile}; " \
++                "ext2load mmc 0:5 ${loadaddr} /boot/${bootfile}; " \
                  "bootm\0" \
  
  /*

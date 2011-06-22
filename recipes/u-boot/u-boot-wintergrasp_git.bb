@@ -8,10 +8,10 @@ PROVIDES = "virtual/bootloader virtual/chumby-bootimage"
 RPROVIDES = "virtual/bootloader virtual/chumby-bootimage"
 COMPATIBLE_MACHINE = "chumby-wintergrasp"
 
-PR ="r6"
+PR ="r7a"
 
 SRC_URI = "${CHUMBYSG_GIT_HOST}/chumby-sg/u-boot-2009.08-wintergrasp${CHUMBYSG_GIT_EXTENSION};protocol=${CHUMBYSG_GIT_PROTOCOL} \
-           file://sbmagic \
+           file://mk_hdr.sh \
            file://uboot_ivt.bd \
            file://000-board_setup.patch \
            file://001-compiler_fix.patch \
@@ -30,7 +30,7 @@ FILES_${PN} = "/boot"
 
 do_deploy () {
     install -d ${DEPLOY_DIR_IMAGE}
-    install ${WORKDIR}/sbmagic ${DEPLOY_DIR_IMAGE}
+    install ${WORKDIR}/mk_hdr.sh ${DEPLOY_DIR_IMAGE}
     install ${WORKDIR}/uboot_ivt.bd ${DEPLOY_DIR_IMAGE}
     install ${S}/${UBOOT_BINARY} ${DEPLOY_DIR_IMAGE}/${UBOOT_IMAGE}
     package_stagefile_shell ${DEPLOY_DIR_IMAGE}/${UBOOT_IMAGE}
@@ -41,6 +41,8 @@ do_deploy () {
     package_stagefile_shell ${DEPLOY_DIR_IMAGE}/${UBOOT_SYMLINK}
 
     elftosb -p ${DEPLOY_DIR_IMAGE} -z -f imx28 -c ${DEPLOY_DIR_IMAGE}/uboot_ivt.bd -o ${DEPLOY_DIR_IMAGE}/imx28_ivt_uboot.sb
+
+    ./mk_hdr.sh ${@(2052 + (${IMAGE_FATFS_SIZE} / 512))} 1 > sbmagic
 
     rm -f ${DEPLOY_DIR_IMAGE}/boot-${MACHINE}.bin
     touch ${DEPLOY_DIR_IMAGE}/boot-${MACHINE}.bin
