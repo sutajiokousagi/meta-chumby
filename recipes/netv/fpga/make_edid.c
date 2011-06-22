@@ -269,7 +269,7 @@ void make_edid(int mode) {
   }
 
   if( mode == MODE720P ) {
-    sane.pixelclock = 74250000;
+    sane.pixelclock = 74176000;
     sane.hActive = 1280;
     sane.hBlank = 370;
     sane.vActive = 720;
@@ -441,7 +441,7 @@ void make_hdmi(int mode) {
   hdmi.hdmi.hdmi[5] = 0x0;
 
   if( mode == MODE720P ) {
-    sane.pixelclock = 74250000;
+    sane.pixelclock = 74176000;
     sane.hActive = 1280;
     sane.hBlank = 370;
     sane.vActive = 720;

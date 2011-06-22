@@ -2,8 +2,9 @@
 #include <stdlib.h>
 #include <string.h>
 
-// TODO: rewrite
-// FIXME: cleanup 'static' variables
+// meant to be run on build machine
+// to build: gcc check_edid.c -o check_edid
+// to use: ./make_edid <mode> | ./check_edid
 
 typedef unsigned char byte;
 /* byte must be 8 bits */
