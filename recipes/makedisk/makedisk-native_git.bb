@@ -4,7 +4,7 @@ DESCRIPTION = "Disk image creator"
 HOMEPAGE = "http://www.chumby.com/"
 AUTHOR = "Sean Cross"
 LICENSE = "BSD"
-PR = "r1"
+PR = "r2"
 
 SRC_URI = "${CHUMBYSG_GIT_HOST}/chumby-sg/makedisk${CHUMBYSG_GIT_EXTENSION};protocol=${CHUMBYSG_GIT_PROTOCOL}"
 SRCREV = "${AUTOREV}"

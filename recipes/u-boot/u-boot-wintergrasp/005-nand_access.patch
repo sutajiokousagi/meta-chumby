@@ -159,15 +159,14 @@ diff -Nur u-boot-2009.08.patchbeforenand//drivers/mtd/nand/nand_bbt.c u-boot-200
 diff -Nur u-boot-2009.08.patchbeforenand//include/configs/wintergrasp.h u-boot-2009.08/include/configs/wintergrasp.h
 --- u-boot-2009.08.patchbeforenand//include/configs/wintergrasp.h	2011-06-20 16:03:36.655114032 +0800
 +++ u-boot-2009.08/include/configs/wintergrasp.h	2011-06-20 16:05:09.548201672 +0800
-@@ -80,11 +80,23 @@
+@@ -80,10 +80,23 @@
          "bootargs_mmc=setenv bootargs " \
                  "${bootargs} " \
-                 "root=/dev/mmcblk0p2 rw rootwait " \
--                "fec_mac=${ethaddr} " \
+                 "root=/dev/mmcblk0p5 rw rootwait " \
 +                "gpmi " \
                  "loglevel=10 printk.time=1\0" \
          "bootcmd_mmc=run bootargs_mmc; " \
-                 "ext2load mmc 0:2 ${loadaddr} /boot/${bootfile}; " \
+                 "ext2load mmc 0:5 ${loadaddr} /boot/${bootfile}; " \
                  "bootm\0" \
 +        "mtdids=nand0=gpmi-nfc\0" \
 +        "mtdparts=mtdparts=gpmi-nfc:0x1400000@0x0(gpmi-nfc-0-boot)ro,0xec00000@0x1400000(gpmi-nfc-general-use)ro\0" \
