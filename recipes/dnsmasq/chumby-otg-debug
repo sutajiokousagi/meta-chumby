@@ -15,7 +15,7 @@ case "$1" in
         test -d /var/lib/misc/ || mkdir /var/lib/misc/
         modprobe g_ether
         udevadm settle
-        ifconfig $IFACE up 10.0.88.1
+        ifconfig $IFACE up 10.0.88.1 netmask 255.255.255.0
         start-stop-daemon -S -x $DAEMON -- $ARGS
         echo "done."
         ;;
