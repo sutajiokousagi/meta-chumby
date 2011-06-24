@@ -126,10 +126,13 @@ unsigned char read_byte(unsigned char adr) {
 
 unsigned char snoop_hdcp_byte(unsigned char adr) {
   char c;
+  char snoop_orig;
+
+  snoop_orig = read_byte(0x0);
 
   write_byte( 0x1, (unsigned char) adr & 0xFF );
-  write_byte( 0x0, 0x1 | 0x2 );
-  write_byte( 0x0, 0x1 );
+  write_byte( 0x0, (snoop_orig & 0xFC) | 0x1 | 0x2 );
+  write_byte( 0x0, (snoop_orig & 0xFC) | 0x1 );
   
   c = read_byte(0x2);
 }
@@ -175,10 +178,16 @@ int main(int argc, char **argv) {
     unsigned long long source_pkey[40];
     unsigned long long sink_pkey[40];
 
+    char compctl;
+
     if(argc != 1) {
         fprintf(stderr, "Usage: %s\n", argv[0]);
         return 1;
     }
+
+    compctl = read_byte(0x3);
+    compctl &= 0x7F; // clear the Km ready bit
+    write_byte( 0x3, compctl );
 
     for( i = 0; i < 5; i++ ) {
       sink_ksv <<= 8;
@@ -240,9 +249,9 @@ int main(int argc, char **argv) {
       write_byte( i + 0x19, Km & 0xFF );
       Km >>= 8;
     }
-    
-    // set the exclusion on the edid sniffer, just in case it's not already set.
-    write_byte( 0x18, 0x74 ); 
+
+    compctl |= 0x80; // set the Km ready bit
+    write_byte( 0x3, compctl );
 
     return 0;
 }

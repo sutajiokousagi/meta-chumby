@@ -7,3 +7,5 @@ KERNEL=="event*", ATTRS{name}=="Silvermoon Touchscreen", ENV{ID_CLASS}="ts", ENV
 KERNEL=="event*", ATTRS{name}=="tsc2007", ENV{ID_CLASS}="ts", ENV{ID_BUS}="soc"
 
 ACTION=="add", SUBSYSTEM=="scsi", RUN+="/bin/touch /tmp/usbstorage_waiting"
+
+TYPE=="TRIGGER", DRIVER=="pxa168fb_ovly", RUN+="/usr/bin/derive_km"

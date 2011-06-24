@@ -23,19 +23,20 @@ case "$1" in
 	      
 	      echo "forcing attached mode to 720p"
 	      sleep 1  # this may be removeable
-	      putreg 0 0xc  # force HPD
+	      fpga_ctl H  # force HPD
 	      modeline /lib/firmware/min720p.edid
 	      sleep 1
-	      putreg 0 4    # connect once
+	      fpga_ctl E  # force EDID squashing
+	      fpga_ctl h  # reconnect device
 
-	      echo "deriving HDCP keys"
-	      sleep 4       # this timeout can be optimized if we can figure out a way
-	      derive_km     # to measure when the Km transaction is completed
+#	      echo "deriving HDCP keys"
+#	      sleep 4       # this timeout can be optimized if we can figure out a way
+#	      derive_km     # to measure when the Km transaction is completed
 
-	      echo "resetting link with acquired key"
-	      putreg 0 0xc  # disconnect again
-	      sleep 2
-	      putreg 0 4    # connect again, this time with Km setup
+#	      echo "resetting link with acquired key"
+#	      putreg 0 0xc  # disconnect again
+#	      sleep 2
+#	      putreg 0 4    # connect again, this time with Km setup
 	      
 	      echo "setting box and sync"
 	      sleep 2

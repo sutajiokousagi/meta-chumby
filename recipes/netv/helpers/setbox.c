@@ -114,6 +114,13 @@ int puti2c(unsigned char reg, unsigned char val) {
     //    fprintf(stderr, "%d: %02hx -> %02hx\n", reg, old_val, new_val);
 }
 
+int geti2c(unsigned char reg) {
+  unsigned char val;
+
+  read_eeprom("/dev/i2c-0", DEVADDR>>1, reg, &val, sizeof(val));
+  
+  return val;
+}
 
 #define REG_W_L 4
 #define REG_W_H 5
@@ -146,6 +153,8 @@ int main(int argc, char **argv) {
     h  = strtol(argv[4], NULL, 0) - 1;
     if( h > 0 )
       h = h - 1;
+    
+    puti2c(REG_H_H, 0) ; // disable updating
 
     //    val=swab_16(val);
     puti2c(REG_X_H, (x >> 8) & 0xff);
@@ -157,8 +166,9 @@ int main(int argc, char **argv) {
     puti2c(REG_W_H, (w >> 8) & 0xff );
     puti2c(REG_W_L, w & 0xff );
 
-    puti2c(REG_H_H, (h >> 8) & 0xff );
     puti2c(REG_H_L, h & 0xff );
+
+    puti2c(REG_H_H, ((h >> 8) & 0xff) | 0x80 ); // enable updating
 
     return 0;
 }
