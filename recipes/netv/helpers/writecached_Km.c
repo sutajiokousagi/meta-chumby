@@ -64,14 +64,15 @@ int main() {
   FILE *km_file;
   unsigned long long Km;
   int i;
+  int ret;
 
   km_file = fopen("/psp/km_cache", "rb" );
   if( km_file == NULL ) {
     printf( "Can't open Km cache for reading. Aborting without affecting any state.\n" );
   } else {
-    fread( &Km, sizeof(unsigned long long), 1, km_file );
+    ret = fread( &Km, sizeof(unsigned long long), 1, km_file );
 
-    printf( "Cached Km of %014llx found.\n", Km );
+    printf( "Read %d bytes. Cached Km of %014llx found.\n", ret * sizeof(unsigned long long), Km );
     for( i = 0; i < 7; i++ ) {
       write_byte( i + 0x19, Km & 0xFF );
       Km >>= 8;

@@ -296,6 +296,16 @@ int main(int argc, char **argv) {
       
       // don't need to do anything, Km is correct
       return 0;
+    } else if( Km == 0 ) {
+      printf( "Km is zero. This probably means derive_km was fired spuriously on disconnect.\n" );
+      printf( "Aborting without doing anything, since Km = 0 is never a correct condition\n" );
+      printf( "Releasing semaphore.\n" );
+      compctl = read_byte(0x3); // refresh compctl in case other bits changed
+
+      compctl &= 0x7F; // release semaphore
+      write_byte( 0x3, compctl );
+      
+      return 0;
     } else {
       
       km_file = fopen( "/psp/km_cache", "wb" );

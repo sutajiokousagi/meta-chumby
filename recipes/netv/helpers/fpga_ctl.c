@@ -478,7 +478,7 @@ void print_help(char code) {
     printf( "x [r,g,b] [value] set chroma key of r/g/b to [value]\n" );
     printf( "x o     turn off chroma key\n" );
     printf( "x i     turn on chroma key\n" );
-    printf( "#       return device serial number\n" );
+    printf( "n       return device serial number\n" );
 }
 
 int main(int argc, char **argv)
@@ -658,7 +658,7 @@ int main(int argc, char **argv)
     }
     break;
 
-  case '#':
+  case 'n':
     for( i = 0; i < 7; i++ ) {
       read_eeprom("/dev/i2c-0", DEVADDR>>1, FPGA_DNA_ADR + i, &buffer, 1);
       device_id <<= 8;
