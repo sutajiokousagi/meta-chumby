@@ -1,9 +1,11 @@
 /*
- * dcid_utility.c
+ * derive_km
  *
- * Aaron "Caustik" Robinson
- * (c) Copyright Chumby Industries, 2007
- * All rights reserved
+ * Km derivation routine from snooped HDCP public keys & HDCP master key
+ * bunnie@bunniestudios.com    BSD license
+ *
+ * uses I2C access routines by Aaron "Caustik" Robinson
+ *
  */
 
 #include <sys/ioctl.h>
@@ -16,6 +18,7 @@
 #include <unistd.h>
 
 #include <fcntl.h>
+#include <unistd.h>
 
 #define SOURCE 1
 #define SINK 0
@@ -166,7 +169,8 @@ f0: 40 55 00 a0 5a 00 00 00 18 00 00 00 00 00 00 31
 int main(int argc, char **argv) {
     unsigned char reg;
 
-    unsigned int i, num;
+    unsigned int num;
+    int i;
     unsigned int mode;
 
     unsigned long long source_ksv = 0LL;
@@ -175,19 +179,49 @@ int main(int argc, char **argv) {
     unsigned long long Km = 0LL;
     unsigned long long Kmp = 0LL;
     
+    unsigned long long old_Km = 0LL;
+    
     unsigned long long source_pkey[40];
     unsigned long long sink_pkey[40];
 
-    char compctl;
+    unsigned char compctl;
+    unsigned char snoopctl;
+
+    FILE *km_file;
 
     if(argc != 1) {
         fprintf(stderr, "Usage: %s\n", argv[0]);
         return 1;
     }
 
+    // km sense changed to be a "semaphore" bit, use it here accordingly.
+
+    /////////////
+    // this region should be atomic
     compctl = read_byte(0x3);
-    compctl &= 0x7F; // clear the Km ready bit
+    printf( "Checking semaphore...\n" );
+    if( (compctl & 0x80) ) {
+      // semaphore is set
+      printf( "Semaphore set, someone else is running: exiting.\n" );
+      return 1;
+    }
+    // however, atomicity can be broken here: on the other hand, structurally,
+    // we guarantee nobody can steal the lock here by never triggering the HPD
+    // event between the read and the modify-write
+
+    // if we have atomicity problems, the solution is to implement the RMW operation
+    // in the FPGA (i.e., a command that can read and grab the semaphore in one operation)
+    compctl |= 0x80; // set the semaphore
     write_byte( 0x3, compctl );
+    printf( "Grabbed semaphore!\n" );
+    // this region should be atomic
+    //////////////
+    fflush(stdout);
+    
+    for( i = 6; i >= 0; i-- ) {
+      old_Km <<= 8;
+      old_Km |= read_byte( i + 0x19 ) & 0xff;
+    }
 
     for( i = 0; i < 5; i++ ) {
       sink_ksv <<= 8;
@@ -199,8 +233,8 @@ int main(int argc, char **argv) {
       source_ksv |= (snoop_hdcp_byte(4 - i + 0x10) & 0xff);
     }
 
-    printf( "source ksv: %010llx\n", source_ksv );
-    printf( "sink ksv: %010llx\n", sink_ksv );
+    printf( "source public ksv: %010llx\n", source_ksv );
+    printf( "sink public ksv: %010llx\n", sink_ksv );
     compute_keys( source_ksv, SOURCE, source_pkey );
     compute_keys( sink_ksv, SINK, sink_pkey );
 
@@ -240,18 +274,80 @@ int main(int argc, char **argv) {
     printf( "Km : %014llx\n", Km );
     printf( "Km': %014llx\n", Kmp );
 
+    fflush(stdout);
+
     if( Km != Kmp ) {
       printf( "Km is not equal to Km', can't encrypt this stream.\n" );
+      printf( "Releasing semaphore.\n" );
+      compctl = read_byte(0x3); // refresh compctl in case other bits changed
+
+      compctl &= 0x7F; // release semaphore
+      write_byte( 0x3, compctl );
       exit(0);
     }
-    
-    for( i = 0; i < 7; i++ ) {
-      write_byte( i + 0x19, Km & 0xFF );
-      Km >>= 8;
-    }
 
-    compctl |= 0x80; // set the Km ready bit
-    write_byte( 0x3, compctl );
+    if( Km == old_Km ) {
+      printf( "Km is same as cached value, doing nothing.\n" );
+      printf( "Releasing semaphore.\n" );
+      compctl = read_byte(0x3); // refresh compctl in case other bits changed
+
+      compctl &= 0x7F; // release semaphore
+      write_byte( 0x3, compctl );
+      
+      // don't need to do anything, Km is correct
+      return 0;
+    } else {
+      
+      km_file = fopen( "/psp/km_cache", "wb" );
+      if( km_file == NULL ) {
+	printf( "can't open km_file to write cache...but letting life go on.\n" );
+      } else {
+	// write out the Km to the cache file
+
+	// this is a totally-device and compiler-dependent way to do this
+	// but it's fast and easy and it's just cache data so who cares
+	fwrite(&Km, sizeof(unsigned long long), 1, km_file);
+	fflush(km_file);
+	fclose(km_file);
+      }
+      
+      // now commit Km to the fpga
+      for( i = 0; i < 7; i++ ) {
+	write_byte( i + 0x19, Km & 0xFF );
+	Km >>= 8;
+      }
+      
+      // invoke HPD to re-load the stream
+      snoopctl = read_byte(0x0);
+      snoopctl |= 0x08;  // force HPD, leave all other bits intact
+      write_byte( 0x0, snoopctl ); // hpd is now forcing
+
+      printf( "Km has changed since last value, initiating HPD reset of stream and updating cache. This will take 5 seconds.");
+      fflush(stdout);
+      // wait
+      sleep(1);
+      printf( "." );
+      fflush(stdout);
+      snoopctl &= 0xF7;
+      write_byte( 0x0, snoopctl ); // hpd is now releasing
+
+      // wait
+      for( i = 0; i < 4; i ++ ) {
+	printf( "." );
+	fflush(stdout);
+	sleep(1); // this is the dead-zone where we try to keep the semaphore locked down
+	// to prevent a recursive derive_km/HPD loop nightmare
+	// if someone is just jamming cables in and out really fast, it could cause
+	// problems
+      }
+      
+      printf( "\nDone. Releasing semaphore.\n" );
+      // then release semaphore
+      compctl = read_byte(0x3); // refresh compctl in case other bits changed
+
+      compctl &= 0x7F; // release semaphore
+      write_byte( 0x3, compctl );
+    }
 
     return 0;
 }

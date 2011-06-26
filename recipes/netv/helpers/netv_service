@@ -22,24 +22,14 @@ case "$1" in
 	      regutil -w LCD_SPU_DUMB_CTRL=0x210ff003
 	      
 	      echo "forcing attached mode to 720p"
-	      sleep 1  # this may be removeable
+	      fpga_ctl H  # force HPD
+	      sleep 1  # this may be removeable, but just in case FPGA takes a moment to start...
 	      fpga_ctl H  # force HPD
 	      modeline /lib/firmware/min720p.edid
-	      sleep 1
+	      writecached_Km # write the cached Km in, if it exists
 	      fpga_ctl E  # force EDID squashing
 	      fpga_ctl h  # reconnect device
-
-#	      echo "deriving HDCP keys"
-#	      sleep 4       # this timeout can be optimized if we can figure out a way
-#	      derive_km     # to measure when the Km transaction is completed
-
-#	      echo "resetting link with acquired key"
-#	      putreg 0 0xc  # disconnect again
-#	      sleep 2
-#	      putreg 0 4    # connect again, this time with Km setup
-	      
-	      echo "setting box and sync"
-	      sleep 2
+	      # Km re-derivation is now called by an HPD event at this point
 
 	      echo "setting genlock lead and margin"
 	      # the following magic numbers are chosen to pick about 6 line's depth buffering
@@ -50,7 +40,9 @@ case "$1" in
 
 	      putreg 3 0x45  # reset the genlock machine
 	      putreg 3 0x25  # now run in normal mode with "smart genlocking" on
-	      setbox 100 100 1080 520 # center an opening
+
+	      # this is defunct, just for demo purposes
+	      # setbox 100 100 1080 520 # center an opening
 
 		;;
 

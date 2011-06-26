@@ -1,9 +1,10 @@
 /*
- * dcid_utility.c
+ * snoop.c
  *
- * Aaron "Caustik" Robinson
- * (c) Copyright Chumby Industries, 2007
- * All rights reserved
+ * Utility to report snooped EDID and HDCP values
+ * bunnie@bunniestudios.com   BSD license
+ *
+ * I2C routines by Aaron "Caustik" Robinson
  */
 
 #include <sys/ioctl.h>
@@ -124,6 +125,7 @@ int main(int argc, char **argv) {
 
     unsigned int i;
     unsigned int mode;
+    unsigned char snoopctl;
 
     unsigned char edid[256];
 
@@ -134,11 +136,15 @@ int main(int argc, char **argv) {
     mode = strtol(argv[1], NULL, 0);
     mode &= 0x1;
 
+    snoopctl = read_byte(0x0);
+    snoopctl &= 0xFE;
+    snoopctl |= mode;
+
     for( i = 0; i< 256; i++ ) {
       edid[i] = 0xff;
     }
 
-    write_byte( 0x0, mode );
+    write_byte( 0x0, snoopctl );
     if( mode ) {
       printf( "configured for HDCP\n" );
     } else {
@@ -147,8 +153,8 @@ int main(int argc, char **argv) {
 
     for( i = 0; i < (mode ? 0x20 : 0x100); i++ ) {
       write_byte( 0x1, (unsigned char) i & 0xFF );
-      write_byte( 0x0, mode | 0x2 );
-      write_byte( 0x0, mode );
+      write_byte( 0x0, snoopctl | 0x2 );
+      write_byte( 0x0, snoopctl );
       if( (i % 16) == 0 ) {
 	printf( "\n%02x: ", i );
       }

@@ -1,3 +1,10 @@
+/***
+    fpga_ctl.c
+    command line utilities to manipulate FPGA state
+
+    bunnie@bunniestudios.com  BSD licensed
+ ***/
+
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -210,24 +217,24 @@ struct timinginfo {
 #define FPGA_KM_4          0x1D
 #define FPGA_KM_5          0x1E	/*  */
 #define FPGA_KM_6          0x1F
-#define FPGA_MINOR_ADR     0x3e
-#define FPGA_MAJOR_ADR     0x3f
+#define FPGA_DNA_ADR       0x38 
+//#define FPGA_MINOR_ADR     0x3e // defunct
+#define FPGA_MAJOR_ADR     0x3f // only one byte now for version numbering
 
 /////////////////////// probably this stuff might want to go in a helper .c file
 void print_fpga_version() {
-  unsigned char minor = 0xff;
   unsigned char major = 0xff;
 
-  if(read_eeprom("/dev/i2c-0", DEVADDR>>1, FPGA_MINOR_ADR, &minor, 1)) {
-    printf( "can't access FPGA.\n" );
-    return;
-  }
+  //  if(read_eeprom("/dev/i2c-0", DEVADDR>>1, FPGA_MINOR_ADR, &minor, 1)) {
+  //    printf( "can't access FPGA.\n" );
+  //    return;
+  //  }
   if(read_eeprom("/dev/i2c-0", DEVADDR>>1, FPGA_MAJOR_ADR, &major, 1)) {
     printf( "can't access FPGA.\n" );
     return;
   }
   
-  printf( "FPGA reports a version code of: %d.%d\n", major, minor );
+  printf( "FPGA reports a version code of: %d\n", major );
 }
 
 int dump_hdmi_timings() {
@@ -321,8 +328,8 @@ int dump_hdmi_timings() {
     return 0;
 }
 
-#define STATS_CORRECT_MINOR 2
-#define STATS_CORRECT_MAJOR 0
+//#define STATS_CORRECT_MINOR 2
+#define STATS_CORRECT_MAJOR 3
 int dump_registers(int stats) {
     unsigned char buffer[32];
     int i;
@@ -332,11 +339,14 @@ int dump_registers(int stats) {
     unsigned char minor = 0xff;
     unsigned char major = 0xff;
     unsigned int locktol, locktgt;
+
+    unsigned long long device_id = 0LL;
+    unsigned char c;
     
-    if(read_eeprom("/dev/i2c-0", DEVADDR>>1, FPGA_MINOR_ADR, &minor, 1)) {
-      printf( "can't access FPGA.\n" );
-      return;
-    }
+    //    if(read_eeprom("/dev/i2c-0", DEVADDR>>1, FPGA_MINOR_ADR, &minor, 1)) {
+    //      printf( "can't access FPGA.\n" );
+    //      return;
+    //    }
     if(read_eeprom("/dev/i2c-0", DEVADDR>>1, FPGA_MAJOR_ADR, &major, 1)) {
       printf( "can't access FPGA.\n" );
       return;
@@ -360,13 +370,13 @@ int dump_registers(int stats) {
     printf("\n\n");
 
     if( stats ) {
-      if( (STATS_CORRECT_MAJOR != major) || (STATS_CORRECT_MINOR != minor) ) {
-	printf( "Stats interpretations do not match FPGA version (expected: %d.%d, got: %d.%d)\n",
-		STATS_CORRECT_MAJOR, STATS_CORRECT_MINOR,
-		major, minor);
+      if( (STATS_CORRECT_MAJOR != major) ) {
+	printf( "Stats interpretations do not match FPGA version (expected: %d, got: %d)\n",
+		STATS_CORRECT_MAJOR,
+		major);
 	printf( "Going on anyways, but caveat hacker.\n" );
       } 
-      printf( "Select stats (as of version %d.%d): \n", STATS_CORRECT_MAJOR, STATS_CORRECT_MINOR );
+      printf( "Select stats (as of version %d): \n", STATS_CORRECT_MAJOR );
       if( buffer[FPGA_SNOOP_CTL_ADR] & 0x4 ) {
 	printf( "EDID squashing is on, run 'snoop 0' to check result.\n" );
       }
@@ -425,6 +435,13 @@ int dump_registers(int stats) {
       } else {
 	printf( "This stream is probably not HDCP encrypted.\n" );
       }
+
+      for( i = 0; i < 7; i++ ) {
+	read_eeprom("/dev/i2c-0", DEVADDR>>1, FPGA_DNA_ADR + i, &c, 1);
+	device_id <<= 8;
+	device_id |= (c & 0xFF);
+      }
+      printf( "Device ID: %014llx\n", device_id );
     }
     
     return 0;
@@ -461,6 +478,7 @@ void print_help(char code) {
     printf( "x [r,g,b] [value] set chroma key of r/g/b to [value]\n" );
     printf( "x o     turn off chroma key\n" );
     printf( "x i     turn on chroma key\n" );
+    printf( "#       return device serial number\n" );
 }
 
 int main(int argc, char **argv)
@@ -470,7 +488,9 @@ int main(int argc, char **argv)
   unsigned char buffer, adr, data;
   char supplement;
   unsigned int temp;
-  
+  unsigned long long device_id = 0LL;
+  int i;
+
   if(argc < 2) {
     fprintf(stderr, "Usage: %s <op>\n", argv[0]);
     print_help('_');
@@ -636,6 +656,15 @@ int main(int argc, char **argv)
     } else {
       printf( "Not enough or invalid arguments to chroma command.\n" );
     }
+    break;
+
+  case '#':
+    for( i = 0; i < 7; i++ ) {
+      read_eeprom("/dev/i2c-0", DEVADDR>>1, FPGA_DNA_ADR + i, &buffer, 1);
+      device_id <<= 8;
+      device_id |= (buffer & 0xFF);
+    }
+    printf( "Device ID: %014llx\n", device_id );
     break;
 
   default:

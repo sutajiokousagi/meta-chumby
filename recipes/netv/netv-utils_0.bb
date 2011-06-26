@@ -3,7 +3,7 @@ LICENSE = "BSD"
 
 inherit update-rc.d
 
-PR = "r10"
+PR = "r12"
 
 SRC_URI = "file://helpers/dumpreg.c \
 	file://helpers/putreg.c \
@@ -13,6 +13,7 @@ SRC_URI = "file://helpers/dumpreg.c \
 	file://helpers/modeline.c \
 	file://helpers/compute_ksv.c \
 	file://helpers/derive_km.c \
+	file://helpers/writecached_Km.c \
 	file://helpers/fpga_ctl.c \
 	file://helpers/chumby_xilinx.h \
 	file://fpga/hdmi_overlay.bin \
@@ -37,6 +38,7 @@ do_compile() {
 
     ${CC} ${CFLAGS} ${LDFLAGS} -c helpers/compute_ksv.c
     ${CC} ${CFLAGS} ${LDFLAGS} -o derive_km helpers/derive_km.c compute_ksv.o
+    ${CC} ${CFLAGS} ${LDFLAGS} -o writecached_Km helpers/writecached_Km.c
 
     ${CC} ${CFLAGS} ${LDFLAGS} -o fpga_ctl helpers/fpga_ctl.c
 }
@@ -53,6 +55,7 @@ do_install() {
 	install -m 0755 setbox ${D}/usr/bin
 	install -m 0755 modeline ${D}/usr/bin
 	install -m 0755 derive_km ${D}/usr/bin
+	install -m 0755 writecached_Km ${D}/usr/bin
 	install -m 0755 fpga_ctl ${D}/usr/bin
 
 	install -d ${D}/${base_libdir}/firmware
