@@ -3,7 +3,7 @@ LICENSE = "BSD"
 
 inherit update-rc.d
 
-PR = "r16"
+PR = "r17"
 
 SRC_URI = "file://helpers/dumpreg.c \
 	file://helpers/putreg.c \
