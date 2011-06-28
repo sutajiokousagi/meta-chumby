@@ -4,8 +4,8 @@ DESCRIPTION = "Chumby control panel interface"
 HOMEPAGE = "http://www.chumby.com/"
 AUTHOR = "bunnie"
 LICENSE = "GPLv2"
-PR = "r0"
-PN = "cpi-${CNPLATFORM}"
+PR = "r1"
+PACKAGE_ARCH = "${MACHINE}"
 
 PROVIDES = "cpi"
 RPROVIDES = "cpi"
@@ -19,6 +19,9 @@ SRC_URI = "${CHUMBYSG_GIT_HOST}/chumby-clone/https_internal.chumby.com_ironforge
 "
 SRCREV = "${AUTOREV}"
 S = "${WORKDIR}/src"
+
+# Use Falconwing-style daemon for silvermoon
+CNPLATFORM_chumby-silvermoon-netv = "falconwing"
 
 # libb64.chumby doesn't link properly, so we manually statically link it.
 do_compile() {
