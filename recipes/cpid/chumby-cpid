@@ -1,0 +1,19 @@
+#!/bin/sh
+
+case "$1" in
+	start)
+		cpid -d
+		;;
+
+	stop)
+		killall cpid 2> /dev/null
+		;;
+
+	restart)
+		killall cpid
+		cpid -d
+		;;
+	*)
+		echo "Usage: $0 {start|stop|restart}"
+		;;
+esac
