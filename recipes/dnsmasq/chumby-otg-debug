@@ -22,7 +22,7 @@ case "$1" in
     stop)
         echo -n "stopping $DESC: $NAME... "
         start-stop-daemon -K -x $DAEMON
-#        rmmod g_ether
+        rmmod g_ether
         echo "done."
         ;;
     status)

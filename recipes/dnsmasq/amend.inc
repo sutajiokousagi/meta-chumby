@@ -1,4 +1,4 @@
-PR .= "-amend-r2"
+PR .= "-amend-r3"
 
 SRC_URI += "file://chumby-otg-debug"
 INITSCRIPT_NAME = "chumby-otg-debug"
