@@ -332,7 +332,7 @@ int main(int argc, char **argv) {
       snoopctl |= 0x08;  // force HPD, leave all other bits intact
       write_byte( 0x0, snoopctl ); // hpd is now forcing
 
-      printf( "Km has changed since last value, initiating HPD reset of stream and updating cache. This will take 5 seconds.");
+      printf( "Km has changed since last value, initiating HPD reset of stream and updating cache. This will take 3 seconds.");
       fflush(stdout);
       // wait
       sleep(1);
@@ -342,7 +342,7 @@ int main(int argc, char **argv) {
       write_byte( 0x0, snoopctl ); // hpd is now releasing
 
       // wait
-      for( i = 0; i < 4; i ++ ) {
+      for( i = 0; i < 2; i ++ ) {
 	printf( "." );
 	fflush(stdout);
 	sleep(1); // this is the dead-zone where we try to keep the semaphore locked down
