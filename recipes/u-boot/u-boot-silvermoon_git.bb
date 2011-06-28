@@ -2,7 +2,7 @@ inherit chumbysg-git chumby-info
 
 require u-boot.inc
 
-PR = "r4"
+PR = "r5"
 
 PROVIDES = "virtual/bootloader virtual/chumby-bootimage"
 RPROVIDES_${PN} = "virtual/bootloader virtual/chumby-bootimage"
@@ -42,10 +42,12 @@ do_deploy () {
     config_util --cmd=create \
         --mbr=/dev/zero \
         --configname=${CNPLATFORM} \
-        --build_ver=1000 --force --pad \
+        --build_ver=${CHUMBY_BUILD} --force --pad \
         --blockdef=${DEPLOY_DIR_IMAGE}/u-boot-${MACHINE}.bin,1507328,u-bt,1,0,0,0 \
         --blockdef=${DEPLOY_DIR_IMAGE}/zImage-${MACHINE}.bin,3932160,krnA,1,0,0,0 \
         --blockdef=${DEPLOY_DIR_IMAGE}/zImage-${MACHINE}.bin,3932160,krnB,1,0,0,0 \
+        --blockdef=/dev/null,16384,cpid,1,0,0,0 \
+        --blockdef=/dev/null,1024,dcid,1,0,0,0 \
         > ${DEPLOY_DIR_IMAGE}/config_block.bin
 
 
@@ -63,4 +65,19 @@ addtask deploy_bootimage after do_install
 
 pkg_postinst_${PN}() {
     config_util --cmd=putblock --dev=/dev/mmcblk0p1 --block=u-bt < /boot/u-boot.bin
+    
+    # Generate the dcid and cpid config_util if they're missing
+    if ! config_util --cmd=getblock --block=dcid 2&>1 > /dev/null
+    then
+        config_util --cmd=create \
+            --mbr=/dev/zero \
+            --configname=${CNPLATFORM} \
+            --build_ver=${CHUMBY_BUILD} --force --pad \
+            --blockdef=/dev/null,1507328,u-bt,1,0,0,0 \
+            --blockdef=/dev/null,3932160,krnA,1,0,0,0 \
+            --blockdef=/dev/null,3932160,krnB,1,0,0,0 \
+            --blockdef=/dev/null,16384,cpid,1,0,0,0 \
+            --blockdef=/dev/null,1024,dcid,1,0,0,0 \
+        | dd of=/dev/mmcblk0p1 seek=96
+    fi
 }
