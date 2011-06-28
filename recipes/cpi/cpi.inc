@@ -4,11 +4,11 @@ DESCRIPTION = "Chumby control panel interface"
 HOMEPAGE = "http://www.chumby.com/"
 AUTHOR = "bunnie"
 LICENSE = "GPLv2"
-PR = "r2"
+PR = "r3"
 PACKAGE_ARCH = "${MACHINE}"
 
-DEPENDS = "b64 libtomcrypt libtommath tomsfastmath expat"
-RDEPENDS_${PN} = "expat perl"
+DEPENDS = "libtomcrypt libtommath tomsfastmath b64"
+RDEPENDS_${PN} = "expat perl expat"
 
 SRC_URI = "${CHUMBYSG_GIT_HOST}/chumby-clone/https_internal.chumby.com_ironforge_cpi_${RVERSION}${CHUMBYSG_GIT_EXTENSION};subpath=src;protocol=${CHUMBYSG_GIT_PROTOCOL} \
            ${CHUMBYSG_GIT_HOST}/chumby-clone/https_internal.chumby.com_ironforge_cpi_${RVERSION}${CHUMBYSG_GIT_EXTENSION};subpath=include;protocol=${CHUMBYSG_GIT_PROTOCOL} \
@@ -34,5 +34,3 @@ do_install() {
     install -m 0755 ${WORKDIR}/guidgen.sh ${D}${bindir}
     install -m 0755 ${WORKDIR}/chumby_version ${D}${bindir}
 }
-
-FILES_${PN} = "${bindir} /usr/chumby/scripts"
