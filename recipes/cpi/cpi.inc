@@ -4,18 +4,16 @@ DESCRIPTION = "Chumby control panel interface"
 HOMEPAGE = "http://www.chumby.com/"
 AUTHOR = "bunnie"
 LICENSE = "GPLv2"
-PR = "r1"
+PR = "r2"
 PACKAGE_ARCH = "${MACHINE}"
 
-PROVIDES = "cpi"
-RPROVIDES = "cpi"
-
 DEPENDS = "b64 libtomcrypt libtommath tomsfastmath expat"
-RDEPENDS = "expat"
+RDEPENDS_${PN} = "expat perl"
 
 SRC_URI = "${CHUMBYSG_GIT_HOST}/chumby-clone/https_internal.chumby.com_ironforge_cpi_${RVERSION}${CHUMBYSG_GIT_EXTENSION};subpath=src;protocol=${CHUMBYSG_GIT_PROTOCOL} \
            ${CHUMBYSG_GIT_HOST}/chumby-clone/https_internal.chumby.com_ironforge_cpi_${RVERSION}${CHUMBYSG_GIT_EXTENSION};subpath=include;protocol=${CHUMBYSG_GIT_PROTOCOL} \
-           ${CHUMBYSG_GIT_HOST}/chumby-clone/https_internal.chumby.com_firmware_scripts-1.0_${RVERSION}_src${CHUMBYSG_GIT_EXTENSION};subpath=scripts;protocol=${CHUMBYSG_GIT_PROTOCOL} \
+           file://guidgen.sh \
+           file://chumby_version \
 "
 SRCREV = "${AUTOREV}"
 S = "${WORKDIR}/src"
@@ -33,11 +31,8 @@ do_compile() {
 do_install() {
     install -d ${D}${bindir}
     install -m 0755 cpi ${D}${bindir}
-
-    install -d ${D}/usr/chumby/scripts
-    install -m 0755 ../scripts/cpi.sh ${D}/usr/chumby/scripts
-    install -m 0755 ../scripts/guidgen.sh ${D}/usr/chumby/scripts
-    install -m 0755 ../scripts/chumby_version ${D}/usr/chumby/scripts
+    install -m 0755 ${WORKDIR}/guidgen.sh ${D}${bindir}
+    install -m 0755 ${WORKDIR}/chumby_version ${D}${bindir}
 }
 
 FILES_${PN} = "${bindir} /usr/chumby/scripts"
