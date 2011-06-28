@@ -3,7 +3,7 @@ LICENSE = "BSD"
 
 inherit update-rc.d
 
-PR = "r15"
+PR = "r16"
 
 SRC_URI = "file://helpers/dumpreg.c \
 	file://helpers/putreg.c \
@@ -20,6 +20,7 @@ SRC_URI = "file://helpers/dumpreg.c \
 	file://fpga/hdmi_720p.bin \
 	file://fpga/min720p.edid \
 	file://fpga/min1080p24.edid \
+	file://fpga/41-chumby-netv.rules \
 	file://helpers/dumptiming.c \
 	file://helpers/netv_service \
 "
@@ -63,10 +64,14 @@ do_install() {
 	install -m 0644 fpga/hdmi_720p.bin ${D}/${base_libdir}/firmware/
 	install -m 0644 fpga/min720p.edid ${D}/${base_libdir}/firmware/
 	install -m 0644 fpga/min1080p24.edid ${D}/${base_libdir}/firmware/
+
+	install -d ${D}${base_libdir}/udev/rules.d
+	install -m 0644 fpga/41-chumby-netv.rules ${D}${base_libdir}/udev/rules.d
 }
 
 FILES_${PN} = "/usr/bin"
 FILES_${PN} += "${base_libdir}/firmware/"
+FILES_${PN} += "${base_libdir}/udev/rules.d/"
 FILES_${PN} += "${sysconfdir}/init.d/"
 PACKAGE_ARCH = "${MACHINE}"
 
