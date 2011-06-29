@@ -44,6 +44,10 @@ case "$1" in
 	      # this is defunct, just for demo purposes
 	      # setbox 100 100 1080 520 # center an opening
 
+	      # temp fix for the pink line at the bottom
+	      sleep 2
+	      regutil -w LCD_SPU_V_PORCH=0x50005 
+
 		;;
 
 	stop)
