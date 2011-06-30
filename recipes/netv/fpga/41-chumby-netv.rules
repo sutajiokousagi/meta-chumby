@@ -1,0 +1,2 @@
+ACTION=="add", KERNEL=="chumby_xilinx", ENV{ID_CLASS}="fpga", ENV{ID_BUS}="soc", RUN+="/bin/sh -c 'mknod /dev/fpga c $(grep fpga /proc/devices | tr -d [a-zA-Z]) 0'"
+TYPE=="TRIGGER", DRIVER=="pxa168fb_ovly", RUN+="/usr/bin/derive_km"

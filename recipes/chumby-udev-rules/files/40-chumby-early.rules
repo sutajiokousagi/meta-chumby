@@ -1,5 +1,3 @@
-ACTION=="add", KERNEL=="chumby_xilinx", ENV{ID_CLASS}="fpga", ENV{ID_BUS}="soc", RUN+="/bin/sh -c 'mknod /dev/fpga c $(grep fpga /proc/devices | tr -d [a-zA-Z]) 0'"
-
 ATTRS{name}=="STMP3XXX touchscreen", ENV{ID_CLASS}="ts", ENV{ID_BUS}="soc", ENV{.INPUT_CLASS}="ts"
 ATTRS{name}=="stmp3xxx-rotdec", ENV{ID_BUS}="soc", ENV{ID_CLASS}="joystick"
 ATTRS{name}=="bend-sensor", ENV{ID_CLASS}="kbd", ENV{ID_BUS}="soc", RUN+="/bin/sh -c 'mknod /dev/switch c $(grep switch /proc/devices | tr -d [a-zA-Z ]) 0'"
@@ -7,5 +5,3 @@ KERNEL=="event*", ATTRS{name}=="Silvermoon Touchscreen", ENV{ID_CLASS}="ts", ENV
 KERNEL=="event*", ATTRS{name}=="tsc2007", ENV{ID_CLASS}="ts", ENV{ID_BUS}="soc"
 
 ACTION=="add", SUBSYSTEM=="scsi", RUN+="/bin/touch /tmp/usbstorage_waiting"
-
-TYPE=="TRIGGER", DRIVER=="pxa168fb_ovly", RUN+="/usr/bin/derive_km"

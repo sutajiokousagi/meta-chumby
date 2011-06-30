@@ -11,11 +11,6 @@ case "$1" in
 	      fpga_ctl r
 	      cat /lib/firmware/hdmi_overlay.bin > /dev/fpga
 
-              # turn off graphic layer
-	      regutil -w LCD_SPU_DMA_CTRL0=0x08441011
-	      # hard code alpha
-	      regutil -w LCD_SPU_DMA_CTRL1=0x2001ff81
-
 	      # maximize depth of LCD fifos
 	      regutil -w LCD_MISC_CNTL=0x0  #0x5 to distress
 	      # hard-code sync to active high
@@ -57,7 +52,13 @@ case "$1" in
 
 		;;
 
+    restart)
+	$0 stop
+	$0 start
+
+	;;
+
 	*)
-		echo "Usage: $0 {start|stop}" >&2
+		echo "Usage: $0 {start|stop|restart}" >&2
 		;;
 esac
