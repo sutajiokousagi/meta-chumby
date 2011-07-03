@@ -4,13 +4,13 @@
 # nearly divides evenly into 3600 (leaving 1/450 over).  This is used
 # to throttle connections to the server.
 DELAY=$(($RANDOM%3600))
-URL=http://buildbot.chumby.com.sg/build/update-netv.sh
+URL=http://buildbot.chumby.com.sg/updates/_MACHINE_/check.sh
 SCRIPT_PATH=/tmp/update.$$.sh
 LAST_ETAG_PATH=/tmp/last-update-etag
 
 
 echo "Delaying for $DELAY seconds..."
-#sleep $DELAY
+sleep $DELAY
 
 
 # We use the ETag to determine if the file has changed or not.

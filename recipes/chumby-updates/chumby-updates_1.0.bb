@@ -2,7 +2,7 @@ SRC_URI = "file://poll-server.sh"
 S = "${WORKDIR}"
 
 do_compile() {
-	true
+	sed -e 's/_MACHINE_/${MACHINE}/g' -i poll-server.sh
 }
 
 do_install() {
@@ -14,11 +14,17 @@ pkg_postinst() {
 #!/bin/sh -e
         ROOTCRON=/var/cron/tabs/root
 
-        test -e ${ROOTCRON} \
-         && grep '^[^#].*poll-server.sh' $ROOTCRON > /dev/null \
-         || echo "12 * * * * /usr/bin/poll-server.sh" >> $ROOTCRON
+        if test -e ${ROOTCRON}
+	then
+		if grep -q '^[^#].*poll-server.sh' $ROOTCRON
+		then
+			exit 0
+		fi
+	fi
 
+	echo "12 * * * * /usr/bin/poll-server.sh" >> $ROOTCRON
         /etc/init.d/cron restart
+
         exit 0
 }
 
