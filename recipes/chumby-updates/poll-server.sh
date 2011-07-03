@@ -4,7 +4,7 @@
 # nearly divides evenly into 3600 (leaving 1/450 over).  This is used
 # to throttle connections to the server.
 DELAY=$(($RANDOM%3600))
-URL=http://buildbot.chumby.com.sg/updates/_MACHINE_/check.sh
+URL=http://buildbot.chumby.com.sg/updates/_MACHINE_/update.sh
 SCRIPT_PATH=/tmp/update.$$.sh
 LAST_ETAG_PATH=/tmp/last-update-etag
 
