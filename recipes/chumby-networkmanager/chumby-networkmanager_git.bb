@@ -15,7 +15,7 @@ S = "${WORKDIR}/git"
 
 do_install() {
     install -d ${D}${bindir}
-    install -m 0755 ap_scan macgen.sh network_adapter_list.sh network_status.sh start_network ${D}${bindir}
+    install -m 0755 signal_strength ap_scan macgen.sh network_adapter_list.sh network_status.sh start_network ${D}${bindir}
     install -d ${D}/psp
     install -m 0755 ../network_configs ${D}/psp/network_configs
 }
