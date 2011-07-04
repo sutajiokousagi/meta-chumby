@@ -1,6 +1,6 @@
 SRC_URI = "file://poll-server.sh"
 S = "${WORKDIR}"
-PR = "r1"
+PR = "r2"
 
 do_compile() {
 	sed -e 's/_MACHINE_/${MACHINE}/g' -i poll-server.sh

@@ -6,7 +6,7 @@
 DELAY=$(($RANDOM%3600))
 URL=http://buildbot.chumby.com.sg/updates/_MACHINE_/update.sh
 SCRIPT_PATH=/tmp/update.$$.sh
-LAST_ETAG_PATH=/tmp/last-update-etag
+LAST_ETAG_PATH=/tmp/update.last-etag
 
 
 echo "Delaying for $DELAY seconds..."
