@@ -1,0 +1,436 @@
+diff -Nurd lirc-0.8.7-stock/drivers/lirc_silvermoon/lirc_silvermoon.c lirc-0.8.7/drivers/lirc_silvermoon/lirc_silvermoon.c
+--- lirc-0.8.7-stock/drivers/lirc_silvermoon/lirc_silvermoon.c	1970-01-01 07:30:00.000000000 +0730
++++ lirc-0.8.7/drivers/lirc_silvermoon/lirc_silvermoon.c	2011-07-03 00:48:40.694661964 +0800
+@@ -0,0 +1,432 @@
++/*      $Id: lirc_silvermoon.c,v 5.108 2010/08/16 20:20:47 jarodwilson Exp $      */
++/*
++ * lirc_silvermoon.c
++ *
++ * lirc_silvermoon - Device driver that records pulse- and pause-lengths
++ *	       (space-lengths) between DDCD event on a serial port.
++ *
++ * Copyright (C) 1996,97 Ralph Metzler <rjkm@thp.uni-koeln.de>
++ * Copyright (C) 1998 Trent Piepho <xyzzy@u.washington.edu>
++ * Copyright (C) 1998 Ben Pfaff <blp@gnu.org>
++ * Copyright (C) 1999 Christoph Bartelmus <lirc@bartelmus.de>
++ * Copyright (C) 2007 Andrei Tanas <andrei@tanas.ca> (suspend/resume support)
++ *  This program is free software; you can redistribute it and/or modify
++ *  it under the terms of the GNU General Public License as published by
++ *  the Free Software Foundation; either version 2 of the License, or
++ *  (at your option) any later version.
++ *
++ *  This program is distributed in the hope that it will be useful,
++ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
++ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ *  GNU General Public License for more details.
++ *
++ *  You should have received a copy of the GNU General Public License
++ *  along with this program; if not, write to the Free Software
++ *  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
++ *
++ */
++
++/*
++ * Steve's changes to improve transmission fidelity:
++ *   - for systems with the rdtsc instruction and the clock counter, a
++ *     send_pule that times the pulses directly using the counter.
++ *     This means that the LIRC_SERIAL_TRANSMITTER_LATENCY fudge is
++ *     not needed. Measurement shows very stable waveform, even where
++ *     PCI activity slows the access to the UART, which trips up other
++ *     versions.
++ *   - For other system, non-integer-microsecond pulse/space lengths,
++ *     done using fixed point binary. So, much more accurate carrier
++ *     frequency.
++ *   - fine tuned transmitter latency, taking advantage of fractional
++ *     microseconds in previous change
++ *   - Fixed bug in the way transmitter latency was accounted for by
++ *     tuning the pulse lengths down - the send_pulse routine ignored
++ *     this overhead as it timed the overall pulse length - so the
++ *     pulse frequency was right but overall pulse length was too
++ *     long. Fixed by accounting for latency on each pulse/space
++ *     iteration.
++ *
++ * Steve Davies <steve@daviesfam.org>  July 2001
++ */
++
++
++#ifdef HAVE_CONFIG_H
++# include <config.h>
++#endif
++
++#include <linux/version.h>
++#include <linux/autoconf.h>
++
++
++#include <linux/module.h>
++#include <linux/errno.h>
++#include <linux/signal.h>
++#include <linux/sched.h>
++#include <linux/fs.h>
++#include <linux/interrupt.h>
++#include <linux/ioport.h>
++#include <linux/kernel.h>
++#include <linux/major.h>
++#include <linux/time.h>
++#include <linux/string.h>
++#include <linux/types.h>
++#include <linux/wait.h>
++#include <linux/mm.h>
++#include <linux/delay.h>
++#include <linux/poll.h>
++#include <linux/platform_device.h>
++
++#include <asm/system.h>
++#include <linux/uaccess.h>
++#include <linux/io.h>
++#include <linux/irq.h>
++#include <linux/fcntl.h>
++
++#include <mach/gpio_ir.h>
++#include <mach/timer_services.h>
++
++#include "drivers/lirc.h"
++#include "drivers/kcompat.h"
++#include "drivers/lirc_dev/lirc_dev.h"
++
++/*
++ * Circular buffer
++ */
++#define CIRC_BUFF_MASK 0x3ff
++#define CIRC_BUFF_LENGTH 0x400
++static unsigned int cbuffer[CIRC_BUFF_LENGTH];
++static unsigned int cb_start=0, cb_end=0;
++
++
++#define IR_SHIFT(x)     (x % (sizeof(int) * 8)) /* Shift6*/
++#define GPIO_BIT(x)     (1 << ((x) & 0x1f))
++
++
++#define LIRC_DRIVER_VERSION "$Revision: 5.108 $"
++#define LIRC_DRIVER_NAME "lirc_silvermoon"
++
++#define RBUF_LEN 1024
++
++
++
++/* return value: space length delta */
++
++
++static void rbwrite(struct cir_device *cir, lirc_t l)
++{
++	if (lirc_buffer_full(cir->lirc_driver->rbuf)) {
++		/* no new signals will be accepted */
++		dev_err(&cir->pdev->dev, "Buffer overrun\n");
++		return;
++	}
++	dev_dbg(&cir->pdev->dev, "Writing 0x%08x to buffer\n", l);
++	lirc_buffer_write(cir->lirc_driver->rbuf, (void *)&l);
++}
++
++
++static void process_times(unsigned long data)
++{
++	struct cir_device *cir = (struct cir_device *)data;
++	int event_count = 0;
++
++	while (cb_start != cb_end) {
++		unsigned int length = cbuffer[cb_start];
++		unsigned int active;
++
++		event_count++;
++
++		active = !(length >> 31);
++
++		/* Mask off the "active" bit */
++		length &= ~0x80000000;
++
++		/* Convert from timer units to microseconds */
++		length = (length*10000)/32768;
++
++		/* Submit the packet to LIRC */
++			if (active)
++				rbwrite(cir, LIRC_PULSE(length));
++			else
++				rbwrite(cir, LIRC_SPACE(length));
++
++		/* Increment our buffer */
++		cb_start = (cb_start+1) & CIRC_BUFF_MASK;
++	}
++
++	dev_dbg(&cir->pdev->dev, "Submitted %d packets to lirc\n", event_count);
++
++	wake_up_interruptible(&cir->lirc_driver->rbuf->wait_poll);
++
++	return;
++}
++
++DEFINE_TIMER(process_time_timer, process_times, 0, 0);
++
++
++static irqreturn_t irq_handler(int i, void *dev_id)
++{
++	struct cir_device *cir = (struct cir_device *)dev_id;
++	static unsigned long this, prev;
++
++	/* Use hardware timers to determine pulse length */
++	prev = this;
++	this = timer_services_counter_read(COUNTER_0);
++
++	/* This is true when the buffer has just been emptied, so
++	 * the time will need to be 0.
++	 */
++	//if (cb_end == cb_start)
++	//	prev = this;
++
++	cbuffer[cb_end] = ((this - prev) & 0x7fffffffL)
++			| ((__raw_readl(cir->mmio_base + 0x00) & 0x40) << 25);
++
++	cb_end = (cb_end+1) & CIRC_BUFF_MASK;
++	if (cb_end == cb_start)
++		cb_start = (cb_start+1) & CIRC_BUFF_MASK;
++
++	/* Queue the timer-processing activity to occur 20 msecs in the
++	 * future.  If we get another pulse/space, this timer will get
++	 * reset.  In this way, IR codes are batched.
++	 */
++	process_time_timer.data = (unsigned long)cir;
++	mod_timer(&process_time_timer, jiffies + msecs_to_jiffies(20));
++
++	return IRQ_HANDLED;
++}
++
++
++
++static int set_use_inc(void *data)
++{
++	struct cir_device *cir = (struct cir_device *)data;
++	dev_dbg(&cir->pdev->dev, "Incremented LIRC driver use count\n");
++	MOD_INC_USE_COUNT;
++	return 0;
++}
++
++static void set_use_dec(void *data)
++{
++	struct cir_device *cir = (struct cir_device *)data;
++	MOD_DEC_USE_COUNT;
++	dev_dbg(&cir->pdev->dev, "Decremented LIRC driver use count\n");
++}
++
++
++
++static struct lirc_driver lirc_silvermoon_driver = {
++	.name		= LIRC_DRIVER_NAME,
++	.minor		= -1,
++	.code_length	= 1,
++	.sample_rate	= 0,
++	.data		= NULL,
++	.add_to_buf	= NULL,
++#ifndef LIRC_REMOVE_DURING_EXPORT
++	.get_queue	= NULL,
++#endif
++	.rbuf		= NULL,
++	.set_use_inc	= set_use_inc,
++	.set_use_dec	= set_use_dec,
++	.fops		= NULL,
++	.dev		= NULL,
++	.owner		= THIS_MODULE,
++	.features 	= LIRC_CAN_REC_MODE2,
++};
++
++
++
++/**
++ * cir_enable - enable the cir -unmask
++ *
++ * Turn on the cir.
++ */
++void cir_enable(struct cir_dev *dev)
++{
++	struct cir_device *cir = dev->cir;
++	__raw_writel(GPIO_BIT(IR_SHIFT(cir->pin)), cir->mmio_base + GAPMASK0);
++	__raw_writel(GPIO_BIT(IR_SHIFT(cir->pin)), cir->mmio_base + GSFER0);
++	__raw_writel(GPIO_BIT(IR_SHIFT(cir->pin)), cir->mmio_base + GSRER0);
++}
++
++EXPORT_SYMBOL(cir_enable);
++
++/**
++ * cir_disable - shut down the cir - mask
++ *
++ * Turn off the cir port.
++ */
++void cir_disable(struct cir_dev *dev)
++{
++	struct cir_device *cir = dev->cir;
++	__raw_writel(GPIO_BIT(IR_SHIFT(cir->pin)), cir->mmio_base + GCPMASK0);
++}
++
++EXPORT_SYMBOL(cir_disable);
++
++
++
++#ifdef CONFIG_PM
++static int cir_suspend(struct platform_device *dev,
++			       pm_message_t state)
++{
++	return 0;
++}
++
++static int cir_resume(struct platform_device *dev)
++{
++	unsigned long flags;
++	//lirc_buffer_clear(&rbuf);
++	return 0;
++}
++#else
++#define cir_suspend     NULL
++#define cir_resume      NULL
++#endif
++
++
++static int __devinit cir_probe(struct platform_device *pdev)
++{
++	struct cir_device *cir;
++	struct resource *res;
++	int ret = 0;
++
++	cir = kzalloc(sizeof(struct cir_device), GFP_KERNEL);
++	if (cir == NULL) {
++		dev_err(&pdev->dev, "failed to allocate memory\n");
++		return -ENOMEM;
++	}
++
++	process_time_timer.data = (unsigned long)cir;
++
++	/* Allocate GPIO memory range */
++	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
++	if (res == NULL) {
++		dev_err(&pdev->dev,"no memory resource defined\n");
++		kfree(cir);
++		ret = -ENODEV;
++	}
++	cir->mmio_base = ioremap_nocache(res->start, SZ_256);
++	dev_dbg(&pdev->dev, "cir->address 0x%p", cir->mmio_base);
++
++	/* Figure out which GPIO IRQ to use */
++	cir->irq = platform_get_irq(pdev, 0);
++	dev_dbg(&pdev->dev, "cir->irq : %d \n", cir->irq);
++	if (cir->irq < 0) {
++		dev_err(&pdev->dev, "no IRQ resource defined\n");
++		ret = -ENODEV;
++		goto err_free_io;
++	}
++
++	/* Actually set up the IRQ */
++	ret = request_irq(cir->irq, irq_handler,
++			  IRQF_TRIGGER_FALLING | IRQF_TRIGGER_RISING,
++			  "IR port", cir);
++	dev_dbg(&pdev->dev, "ret from request irq. %d\n", ret);
++	if (ret) {
++		dev_err(&pdev->dev, "Unable to request IRQ: %d\n", ret);
++		goto err_free_io;
++	}
++
++	cir->pin = IRQ_TO_GPIO(cir->irq);
++
++	platform_set_drvdata(pdev, cir);
++
++	cir->pdev = pdev;
++	cir->lirc_driver = &lirc_silvermoon_driver;
++	cir->lirc_driver->data = cir;
++
++	/* Init lirc's read buffer */
++	cir->lirc_driver->rbuf = kzalloc(sizeof(struct lirc_buffer), GFP_KERNEL);
++	if (cir->lirc_driver->rbuf == NULL) {
++		dev_err(&pdev->dev, "failed to allocate memory for rbuf\n");
++		ret = -ENOMEM;
++		goto err_free_io;
++	}
++
++	ret = lirc_buffer_init(cir->lirc_driver->rbuf, sizeof(lirc_t), RBUF_LEN);
++	if (ret < 0) {
++		dev_err(&pdev->dev, "Unable to init lirc buffer: No memory\n");
++		goto err_free_io;
++	}
++
++	/* Set up the lirc driver */
++	cir->lirc_driver->minor = lirc_register_driver(cir->lirc_driver);
++	if (cir->lirc_driver->minor < 0) {
++		dev_err(&pdev->dev, "Unable to register lirc driver\n");
++		ret = -EIO;
++		goto err_free_io;
++	}
++
++	dev_dbg(&pdev->dev, " Initialize CIR driver completed \n");
++	return 0;
++
++	err_free_io:
++	if (cir && cir->irq > 0)
++		free_irq(cir->irq, cir);
++	if (cir)
++		kfree(cir);
++	return ret;
++}
++
++
++static int __devexit cir_remove(struct platform_device *pdev)
++{
++	struct cir_device *cir;
++
++	cir = platform_get_drvdata(pdev);
++	if (cir == NULL)
++		return -ENODEV;
++
++	if (cir->irq > 0)
++		free_irq(cir->irq, cir);
++
++	if (cir->lirc_driver && cir->lirc_driver->rbuf) {
++		lirc_buffer_free(cir->lirc_driver->rbuf);
++		kfree(cir->lirc_driver->rbuf);
++		lirc_unregister_driver(cir->lirc_driver->minor);
++	}
++
++	kfree(cir);
++	return 0;
++}
++
++
++static struct platform_driver aspenite_cir_driver = {
++	.driver         = {
++		.name   = "aspenite-cir",
++	},
++	.probe          = cir_probe,
++	.remove         = __devexit_p(cir_remove),
++	.suspend        = cir_suspend,
++	.resume         = cir_resume,
++};
++
++
++static int __init lirc_silvermoon_init_module(void)
++{
++	int result;
++	result = platform_driver_register(&aspenite_cir_driver);
++
++	return 0;
++
++exit_release:
++	return result;
++}
++
++
++static void __exit lirc_silvermoon_exit_module(void)
++{
++	platform_driver_unregister(&aspenite_cir_driver);
++}
++
++
++late_initcall(lirc_silvermoon_init_module);
++module_exit(lirc_silvermoon_exit_module);
++
++MODULE_DESCRIPTION("Infra-red receiver driver for serial ports.");
++MODULE_AUTHOR("Ralph Metzler, Trent Piepho, Ben Pfaff, "
++	      "Christoph Bartelmus, Andrei Tanas");
++MODULE_LICENSE("GPL");
++
++EXPORT_NO_SYMBOLS;
++
