@@ -7,6 +7,7 @@ PV = "0.1.8+svnr${SRCPV}"
 CONFLICTS = "ipkg"
 INC_PR = "r6"
 RDEPENDS_${PN} = "gpgme"
+DEPENDS = "gpgme"
 
 SRC_URI = "svn://opkg.googlecode.com/svn;module=trunk;proto=http \
 	   file://configure \
