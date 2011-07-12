@@ -3,7 +3,13 @@ HOMEPAGE = "http://www.thekelleys.org.uk/dnsmasq/doc.html"
 SECTION = "console/network"
 LICENSE = "GPL"
 
-PR = "r2-amend-r5"
+PR = "r2-amend-r6"
+
+# This used to be the OTG-debug package, but that was deprecated
+# in order to separate functionality.  We make this RRECOMMEND the
+# otg-debug package in order to force it to install when this package
+# is updated.
+RRECOMMENDS_${PN} = "chumby-otg-debug"
 
 #at least versions 2.15 and prior are moved to the archive folder on the server
 SRC_URI = "http://www.thekelleys.org.uk/dnsmasq/${@['archive/', ''][float(bb.data.getVar('PV',d,1).split('.')[1]) > 15]}dnsmasq-${PV}.tar.gz;name=dnsmasq-${PV} \
