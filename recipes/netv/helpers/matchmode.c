@@ -190,6 +190,7 @@ match_mode(int fd, struct fb_var_screeninfo *var)
         var->vsync_len = timing_info.vsync_width_lines;
         var->pixclock = timing_info.pixclk_in_MHz * 1000;
 
+	var->activate |= FB_ACTIVATE_NOW | FB_ACTIVATE_FORCE;
 }
 
 int
