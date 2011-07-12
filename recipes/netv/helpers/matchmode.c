@@ -226,5 +226,9 @@ main(int argc, char **argv)
 
 
 	close(fd);
+	
+	/* Hack to force the display to take the values */
+	close(open("/dev/fb0", O_RDWR));
+
 	return 0;
 }
