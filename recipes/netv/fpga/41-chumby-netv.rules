@@ -1,3 +1,5 @@
 ACTION=="add", KERNEL=="chumby_xilinx", ENV{ID_CLASS}="fpga", ENV{ID_BUS}="soc", RUN+="/bin/sh -c 'mknod /dev/fpga c $(grep fpga /proc/devices | tr -d [a-zA-Z]) 0'"
 DRIVER=="pxa168fb_ovly", ENV{TYPE}=="trigger", RUN+="/usr/bin/derive_km"
 DRIVER=="pxa168fb_ovly", ENV{TYPE}=="trigger", RUN+="/usr/bin/matchmode"
+DRIVER=="pxa168fb_ovly", ENV{TYPE}=="trigger", RUN+="/usr/bin/setplayer r"
+DRIVER=="pxa168fb_ovly", ENV{TYPE}=="trigger", RUN+="/usr/bin/setbrowser r"
