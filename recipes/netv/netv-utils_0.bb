@@ -3,7 +3,7 @@ LICENSE = "BSD"
 
 inherit update-rc.d
 
-PR = "r20"
+PR = "r21"
 
 SRC_URI = "file://helpers/dumpreg.c \
 	file://helpers/putreg.c \
@@ -23,6 +23,7 @@ SRC_URI = "file://helpers/dumpreg.c \
 	file://fpga/41-chumby-netv.rules \
 	file://helpers/dumptiming.c \
 	file://helpers/netv_service \
+	file://helpers/matchmode.c \
 "
 
 S = "${WORKDIR}"
@@ -36,6 +37,7 @@ do_compile() {
     ${CC} ${CFLAGS} ${LDFLAGS} -o snoop helpers/snoop.c parse-edid.o
     ${CC} ${CFLAGS} ${LDFLAGS} -o setbox helpers/setbox.c
     ${CC} ${CFLAGS} ${LDFLAGS} -o modeline helpers/modeline.c
+    ${CC} ${CFLAGS} ${LDFLAGS} -o matchmode helpers/matchmode.c
 
     ${CC} ${CFLAGS} ${LDFLAGS} -c helpers/compute_ksv.c
     ${CC} ${CFLAGS} ${LDFLAGS} -o derive_km helpers/derive_km.c compute_ksv.o
@@ -48,28 +50,29 @@ do_install() {
         install -d ${D}${sysconfdir}/init.d
 	install -m 0755 helpers/netv_service ${D}${sysconfdir}/init.d/netv_service
 
-	install -d ${D}/usr/bin
-	install -m 0755 dumpreg ${D}/usr/bin
-	install -m 0755 dumptiming ${D}/usr/bin
-	install -m 0755 putreg ${D}/usr/bin
-	install -m 0755 snoop ${D}/usr/bin
-	install -m 0755 setbox ${D}/usr/bin
-	install -m 0755 modeline ${D}/usr/bin
-	install -m 0755 derive_km ${D}/usr/bin
-	install -m 0755 writecached_Km ${D}/usr/bin
-	install -m 0755 fpga_ctl ${D}/usr/bin
+	install -d ${D}${bindir}
+	install -m 0755 dumpreg ${D}${bindir}
+	install -m 0755 dumptiming ${D}${bindir}
+	install -m 0755 putreg ${D}${bindir}
+	install -m 0755 snoop ${D}${bindir}
+	install -m 0755 setbox ${D}${bindir}
+	install -m 0755 modeline ${D}${bindir}
+	install -m 0755 derive_km ${D}${bindir}
+	install -m 0755 writecached_Km ${D}${bindir}
+	install -m 0755 fpga_ctl ${D}${bindir}
+	install -m 0755 matchmode ${D}${bindir}
 
 	install -d ${D}/${base_libdir}/firmware
-	install -m 0644 fpga/hdmi_overlay.bin ${D}/${base_libdir}/firmware/
-	install -m 0644 fpga/hdmi_720p.bin ${D}/${base_libdir}/firmware/
-	install -m 0644 fpga/min720p.edid ${D}/${base_libdir}/firmware/
-	install -m 0644 fpga/min1080p24.edid ${D}/${base_libdir}/firmware/
+	install -m 0644 fpga/hdmi_overlay.bin ${D}${base_libdir}/firmware/
+	install -m 0644 fpga/hdmi_720p.bin ${D}${base_libdir}/firmware/
+	install -m 0644 fpga/min720p.edid ${D}${base_libdir}/firmware/
+	install -m 0644 fpga/min1080p24.edid ${D}${base_libdir}/firmware/
 
 	install -d ${D}${base_libdir}/udev/rules.d
 	install -m 0644 fpga/41-chumby-netv.rules ${D}${base_libdir}/udev/rules.d
 }
 
-FILES_${PN} = "/usr/bin"
+FILES_${PN} = "${bindir}"
 FILES_${PN} += "${base_libdir}/firmware/"
 FILES_${PN} += "${base_libdir}/udev/rules.d/"
 FILES_${PN} += "${sysconfdir}/init.d/"
