@@ -1,0 +1,145 @@
+diff -Nur linux-2.6.35.3.lastpatch/drivers/misc/Kconfig linux-2.6.35.3/drivers/misc/Kconfig
+--- linux-2.6.35.3.lastpatch/drivers/misc/Kconfig	2011-07-06 15:12:09.435344221 +0800
++++ linux-2.6.35.3/drivers/misc/Kconfig	2011-07-06 16:37:52.983406985 +0800
+@@ -366,6 +366,11 @@
+ 	bool "UID based statistics tracking exported to /proc/uid_stat"
+ 	default n
+ 
++config MEM_DEBUG
++	bool "Memory debug tool"
++	depends on ARCH_MXS && ARCH_MX28
++	default n
++
+ source "drivers/misc/c2port/Kconfig"
+ source "drivers/misc/eeprom/Kconfig"
+ source "drivers/misc/cb710/Kconfig"
+diff -Nur linux-2.6.35.3.lastpatch/drivers/misc/Makefile linux-2.6.35.3/drivers/misc/Makefile
+--- linux-2.6.35.3.lastpatch/drivers/misc/Makefile	2011-07-06 15:12:09.345344054 +0800
++++ linux-2.6.35.3/drivers/misc/Makefile	2011-07-06 16:06:17.109330003 +0800
+@@ -34,3 +34,5 @@
+ obj-$(CONFIG_VMWARE_BALLOON)	+= vmware_balloon.o
+ obj-$(CONFIG_ANDROID_PMEM)	+= pmem.o
+ obj-$(CONFIG_UID_STAT)		+= uid_stat.o
++obj-$(CONFIG_MEM_DEBUG) += mem_debug.o
++
+diff -Nur linux-2.6.35.3.lastpatch/drivers/misc/mem_debug.c linux-2.6.35.3/drivers/misc/mem_debug.c
+--- linux-2.6.35.3.lastpatch/drivers/misc/mem_debug.c	1970-01-01 07:30:00.000000000 +0730
++++ linux-2.6.35.3/drivers/misc/mem_debug.c	2011-07-06 17:20:29.392826523 +0800
+@@ -0,0 +1,117 @@
++/*
++ * The code contained herein is licensed under the GNU General Public
++ * License. You may obtain a copy of the GNU General Public License
++ * Version 2 or later at the following locations:
++ *
++ * http://www.opensource.org/licenses/gpl-license.html
++ * http://www.gnu.org/copyleft/gpl.html
++ */
++
++#include <linux/module.h>
++#include <linux/proc_fs.h>
++
++#include <../../mach-mx28/include/mach/mx28.h>
++
++#define NAME "mem_dbg"
++
++static unsigned int proc_addr = 0;
++
++static int proc_addr_rd(
++             char *buf,
++             char **start,
++             off_t offset,
++             int count,
++             int *eof,
++             void *data)
++{
++  int len;
++
++  len = sprintf(buf, "0x%08x\n", proc_addr);
++  *eof = 1;
++
++  return len;
++}
++
++static int proc_addr_wr(
++             struct file *file,
++             const char *buf,
++             unsigned long count,
++             void *data)
++{
++  if ((count >= 2) &&
++      ((buf[0] == 'I') || (buf[0] == 'i')) && 
++      ((buf[1] == 'O') || (buf[1] == 'o')))
++    proc_addr = MX28_SOC_IO_ADDRESS(simple_strtoul(&buf[2], NULL, 0));
++  else
++    proc_addr = simple_strtoul(buf, NULL, 0);
++
++  return count;
++}
++
++static int proc_val_rd(
++             char *buf,
++             char **start,
++             off_t offset,
++             int count,
++             int *eof,
++             void *data)
++{
++  int len;
++
++  len = sprintf(buf, "0x%08x\n", *((unsigned int *) proc_addr));
++  *eof = 1;
++
++  return len;
++}
++
++static int proc_val_wr(
++             struct file *file,
++             const char *buf,
++             unsigned long count,
++             void *data)
++{
++  *((unsigned int *) proc_addr) = simple_strtoul(buf, NULL, 0);
++
++  return count;
++}
++
++static int __init Init(void)
++{
++  struct proc_dir_entry *pde;
++
++  proc_mkdir("mem_dbg", 0);
++
++  pde = create_proc_read_entry(
++          "mem_dbg/addr",
++          0,
++          NULL,
++          proc_addr_rd,
++          NULL);
++  pde->write_proc = proc_addr_wr;
++
++  pde = create_proc_read_entry(
++          "mem_dbg/val",
++          0,
++          NULL,
++          proc_val_rd,
++          NULL);
++  pde->write_proc = proc_val_wr;
++
++  pr_info("%s : driver loaded\n", NAME);
++
++  return 0;
++}
++
++static void __exit Exit(void)
++{
++  remove_proc_entry("mem_dbg/addr", NULL);
++  remove_proc_entry("mem_dbg/val", NULL);
++  remove_proc_entry("mem_dbg", NULL);
++}
++
++module_init(Init);
++module_exit(Exit);
++
++MODULE_DESCRIPTION("memory debug driver");
++MODULE_AUTHOR("chumby");
++MODULE_LICENSE("GPL");

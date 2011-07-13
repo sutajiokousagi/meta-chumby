@@ -1,0 +1,237 @@
+diff -Nur u-boot-2009.08.lastpatch.0/board/freescale/wintergrasp/wintergrasp.c u-boot-2009.08/board/freescale/wintergrasp/wintergrasp.c
+--- u-boot-2009.08.lastpatch.0/board/freescale/wintergrasp/wintergrasp.c	2011-07-05 15:17:29.965062549 +0800
++++ u-boot-2009.08/board/freescale/wintergrasp/wintergrasp.c	2011-07-12 12:20:23.063340271 +0800
+@@ -291,3 +292,127 @@
+ 	pin_set_group(&gpmi_pins);
+ }
+ #endif
++
++#ifdef CONFIG_BOOTMODE
++enum
++{
++  BOOTMODE_INVALID = 0,
++
++  BOOTMODE_UPDATER,
++  BOOTMODE_MMC,
++  BOOTMODE_NAND
++};
++
++int bootmode = BOOTMODE_INVALID;
++
++int setup_bootmode_access(void)
++{
++  int m = REG_RD_ADDR(GLOBAL_BOOT_MODE_ADDR);
++
++#ifdef CONFIG_UPDATER
++  if (*((int *) UPDATER_GLOB_ADDR) == UPDATER_MAGIC)
++    bootmode = BOOTMODE_UPDATER;
++  else
++#endif
++
++  if (m == BOOT_MODE_SD0)
++    bootmode = BOOTMODE_MMC;
++  else
++
++  if (m == BOOT_MODE_NAND)
++    bootmode = BOOTMODE_NAND;
++
++  return 0;
++}
++
++int is_bootmode_updater()
++{
++  return bootmode == BOOTMODE_UPDATER;
++}
++
++int is_bootmode_mmc()
++{
++  return bootmode == BOOTMODE_MMC;
++}
++
++int is_bootmode_nand()
++{
++  return bootmode == BOOTMODE_NAND;
++}
++
++void set_bootmode_env()
++{
++  if (is_bootmode_updater())
++  {
++    char *updater_run_script = (char *) (UPDATER_GLOB_ADDR + sizeof(int));
++
++    setenv("bootmode", "updater");
++
++#ifdef CONFIG_UPDATER
++    setenv("updater_run_script", updater_run_script);
++#endif
++
++    if (*updater_run_script)
++    {
++
++#ifndef CONFIG_SYS_HUSH_PARSER
++      run_command(updater_run_script, 0);
++#else
++      parse_string_outer(
++        updater_run_script,
++        FLAG_PARSE_SEMICOLON | FLAG_EXIT_FROM_LOOP);
++#endif
++
++    }
++  } else
++
++  if (is_bootmode_mmc())
++    setenv("bootmode", "mmc");
++  else
++
++  if (is_bootmode_nand())
++    setenv("bootmode", "nand");
++}
++
++int do_bootmode_run(cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
++{
++  char *bootcmd = NULL;
++  int rcode = 0;
++
++  if (is_bootmode_updater())
++    bootcmd = getenv("bootcmd_ram");
++  else
++
++  if (is_bootmode_mmc())
++    bootcmd = getenv("bootcmd_mmc");
++  else
++
++  if (is_bootmode_nand())
++    bootcmd = getenv("bootcmd_mtd");
++
++  if (bootcmd == NULL)
++    rcode = 1;
++  else
++  {
++
++#ifndef CONFIG_SYS_HUSH_PARSER
++    if (run_command(bootcmd, flag) < 0)
++      rcode = 1;
++#else
++    if (parse_string_outer(
++          bootcmd,
++          FLAG_PARSE_SEMICOLON | FLAG_EXIT_FROM_LOOP) != 0)
++      rcode = 1;
++#endif
++
++  }
++
++  return rcode;
++}
++
++U_BOOT_CMD(
++  bootmode_run, 1, 1, do_bootmode_run,
++  "boot according to bootmode",
++  ""
++);
++#endif
+diff -Nur u-boot-2009.08.lastpatch.0/common/env_common.c u-boot-2009.08/common/env_common.c
+--- u-boot-2009.08.lastpatch.0/common/env_common.c	2011-07-05 15:13:40.584457784 +0800
++++ u-boot-2009.08/common/env_common.c	2011-07-06 14:27:25.042651824 +0800
+@@ -37,6 +37,10 @@
+ 	extern void disable_nvram(void);
+ #endif
+ 
++#ifdef CONFIG_BOOTMODE
++  extern void set_bootmode_env();
++#endif
++
+ #undef DEBUG_ENV
+ #ifdef DEBUG_ENV
+ #define DEBUGF(fmt,args...) printf(fmt ,##args)
+@@ -133,6 +137,9 @@
+ #if defined(CONFIG_PCI_BOOTDELAY) && (CONFIG_PCI_BOOTDELAY > 0)
+ 	"pcidelay="	MK_STR(CONFIG_PCI_BOOTDELAY)	"\0"
+ #endif
++#ifdef CONFIG_UPDATER
++  "updater_glob_addr=" MK_STR(UPDATER_GLOB_ADDR) "\0"
++#endif
+ #ifdef  CONFIG_EXTRA_ENV_SETTINGS
+ 	CONFIG_EXTRA_ENV_SETTINGS
+ #endif
+@@ -269,6 +276,11 @@
+ #ifdef CONFIG_AMIGAONEG3SE
+ 	disable_nvram();
+ #endif
++
++#ifdef CONFIG_BOOTMODE
++  set_bootmode_env();
++#endif
++
+ }
+ 
+ #ifdef CONFIG_AUTO_COMPLETE
+diff -Nur u-boot-2009.08.lastpatch.0/common/env_mmc.c u-boot-2009.08/common/env_mmc.c
+--- u-boot-2009.08.lastpatch.0/common/env_mmc.c	2011-07-05 15:13:40.494457546 +0800
++++ u-boot-2009.08/common/env_mmc.c	2011-07-05 15:13:15.781059057 +0800
+@@ -140,7 +140,7 @@
+ 	struct mmc *mmc = find_mmc_device(mmc_env_devno);
+ 
+ 	if (init_mmc_for_env(mmc))
+-		return;
++		return use_default();
+ 
+ 	if (read_env(mmc, CONFIG_ENV_SIZE, CONFIG_ENV_OFFSET, env_ptr))
+ 		return use_default();
+diff -Nur u-boot-2009.08.lastpatch.0/include/configs/wintergrasp.h u-boot-2009.08/include/configs/wintergrasp.h
+--- u-boot-2009.08.lastpatch.0/include/configs/wintergrasp.h	2011-07-05 15:17:29.971729233 +0800
++++ u-boot-2009.08/include/configs/wintergrasp.h	2011-07-12 12:11:43.847208369 +0800
+@@ -68,7 +68,7 @@
+ #define CONFIG_BOOTDELAY	1
+ #define CONFIG_BOOTFILE		uImage
+ #define CONFIG_BOOTARGS		"console=ttyAM0,115200n8 "
+-#define CONFIG_BOOTCOMMAND	"run bootcmd_mmc"
++#define CONFIG_BOOTCOMMAND	"bootmode_run"
+ #define CONFIG_LOADADDR		0x42000000
+ #define CONFIG_SYS_LOAD_ADDR	CONFIG_LOADADDR
+ 
+@@ -228,7 +228,21 @@
+ #else
+  #define GLOBAL_BOOT_MODE_ADDR 0x0001a7f0
+ #endif
++#define BOOT_MODE_NAND 0x4
+ #define BOOT_MODE_SD0 0x9
+ #define BOOT_MODE_SD1 0xa
+ 
++#define TWIST(x) \
++          ((((x) >> 24) & 0xff) | \
++           (((x) >> 8) & 0xff00) | \
++           (((x) << 8) & 0xff0000) | \
++           (((x) << 24) & 0xff000000))
++
++#define CONFIG_INITRD_TAG
++#define CONFIG_BOOTMODE
++#define CONFIG_UPDATER
++
++#define UPDATER_GLOB_ADDR 0x42800000
++#define UPDATER_MAGIC TWIST(0x03451c00)
++
+ #endif /* __MX28_EVK_H */
+diff -Nur u-boot-2009.08.lastpatch.0/lib_arm/board.c u-boot-2009.08/lib_arm/board.c
+--- u-boot-2009.08.lastpatch.0/lib_arm/board.c	2011-07-05 15:13:44.004466801 +0800
++++ u-boot-2009.08/lib_arm/board.c	2011-07-12 12:12:28.996437231 +0800
+@@ -265,6 +265,10 @@
+ 
+ int print_cpuinfo (void);
+ 
++#ifdef CONFIG_BOOTMODE
++int setup_bootmode_access(void);
++#endif
++
+ init_fnc_t *init_sequence[] = {
+ #if defined(CONFIG_ARCH_CPU_INIT)
+ 	arch_cpu_init,		/* basic arch cpu dependent setup */
+@@ -292,6 +300,9 @@
+ #if defined(CONFIG_CMD_PCI) || defined (CONFIG_PCI)
+ 	arm_pci_init,
+ #endif
++#ifdef CONFIG_BOOTMODE
++  setup_bootmode_access,
++#endif
+ 	display_dram_config,
+ 	NULL,
+ };

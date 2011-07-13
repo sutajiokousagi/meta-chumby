@@ -4,6 +4,9 @@ sources {
 	power_prep="./power_prep";
 	sdram_prep="./boot_prep";
 	u_boot="./u-boot-chumby-wintergrasp.bin";
+
+  pict0="./4_1.bin";
+  pict1="./4_2.bin";
 }
 
 section (0) {
@@ -23,6 +26,10 @@ section (0) {
 	load sdram_prep;
         load ivt (entry = sdram_prep:_start) > 0x8000;
         hab call 0x8000;
+
+  load pict0 > 0x42900000;
+  load pict1 > 0x42a00000;
+
 	//----------------------------------------------------------
 	//  Load and call u_boot - ELF ARM image
 	//----------------------------------------------------------

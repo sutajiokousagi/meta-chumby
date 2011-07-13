@@ -1,7 +1,7 @@
 #
 # Automatically generated make config: don't edit
 # Linux kernel version: 2.6.35.3
-# Tue Jun  7 11:59:19 2011
+# Wed Jul  6 16:09:13 2011
 #
 CONFIG_ARM=y
 CONFIG_SYS_SUPPORTS_APM_EMULATION=y
@@ -282,7 +282,7 @@ CONFIG_MXS_AUART_PORTS=5
 # CONFIG_MXS_AUART4_DMA_ENABLE is not set
 CONFIG_MXS_RAM_FREQ_SCALING=y
 # CONFIG_MXS_RAM_MDDR is not set
-CONFIG_MXS_RAM_DDR=y
+# CONFIG_MXS_RAM_DDR is not set
 
 #
 # Processor Type
@@ -671,6 +671,7 @@ CONFIG_MISC_DEVICES=y
 CONFIG_MXS_PERSISTENT=y
 # CONFIG_ANDROID_PMEM is not set
 # CONFIG_UID_STAT is not set
+CONFIG_MEM_DEBUG=y
 # CONFIG_C2PORT is not set
 
 #
@@ -778,9 +779,8 @@ CONFIG_MII=y
 # CONFIG_KS8842 is not set
 # CONFIG_KS8851 is not set
 # CONFIG_KS8851_MLL is not set
-CONFIG_FEC=y
-# CONFIG_FEC_1588 is not set
-# CONFIG_FEC2 is not set
+# CONFIG_FEC is not set
+# CONFIG_FEC_L2SWITCH is not set
 # CONFIG_NETDEV_1000 is not set
 # CONFIG_NETDEV_10000 is not set
 CONFIG_WLAN=y

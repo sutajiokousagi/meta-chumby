@@ -1,0 +1,55 @@
+diff -Nur u-boot-2009.08.lastpatch/common/env_common.c u-boot-2009.08/common/env_common.c
+--- u-boot-2009.08.lastpatch/common/env_common.c	2011-07-06 14:27:25.042651824 +0800
++++ u-boot-2009.08/common/env_common.c	2011-07-12 16:58:29.905935393 +0800
+@@ -140,6 +140,12 @@
+ #ifdef CONFIG_UPDATER
+   "updater_glob_addr=" MK_STR(UPDATER_GLOB_ADDR) "\0"
+ #endif
++#ifdef PICT0_ADDR
++  "pict0_addr=" MK_STR(PICT0_ADDR) "\0"
++#endif
++#ifdef PICT1_ADDR
++  "pict1_addr=" MK_STR(PICT1_ADDR) "\0"
++#endif
+ #ifdef  CONFIG_EXTRA_ENV_SETTINGS
+ 	CONFIG_EXTRA_ENV_SETTINGS
+ #endif
+diff -Nur u-boot-2009.08.lastpatch/include/configs/wintergrasp.h u-boot-2009.08/include/configs/wintergrasp.h
+--- u-boot-2009.08.lastpatch/include/configs/wintergrasp.h	2011-07-12 12:11:43.847208369 +0800
++++ u-boot-2009.08/include/configs/wintergrasp.h	2011-07-12 17:37:00.967872769 +0800
+@@ -81,9 +81,11 @@
+                 "${bootargs} " \
+                 "root=/dev/mmcblk0p5 rw rootwait " \
+                 "gpmi " \
++                "logo_offset=${pict1_addr} " \
+                 "loglevel=10 printk.time=1\0" \
+         "bootcmd_mmc=run bootargs_mmc; " \
+                 "ext2load mmc 0:5 ${loadaddr} /boot/${bootfile}; " \
++                "loadimg ${pict1_addr}; " \
+                 "bootm\0" \
+         "mtdids=nand0=gpmi-nfc\0" \
+         "mtdparts=mtdparts=gpmi-nfc:0x1400000@0x0(gpmi-nfc-0-boot)ro,0xec00000@0x1400000(gpmi-nfc-general-use)ro\0" \
+@@ -91,11 +93,13 @@
+                 "${bootargs} " \
+                 "ubi.mtd=1 root=ubi0:rootfs rw rootfstype=ubifs rootwait " \
+                 "gpmi " \
++                "logo_offset=${pict1_addr} " \
+                 "loglevel=10 printk.time=1\0" \
+         "bootcmd_mtd=run bootargs_mtd; " \
+                 "ubi part gpmi-nfc-general-use; " \
+                 "ubifsmount rootfs; " \
+                 "ubifsload ${loadaddr} /boot/${bootfile}; " \
++                "loadimg ${pict1_addr}; " \
+                 "bootm\0" \
+ 
+ /*
+@@ -247,4 +251,9 @@
+ 
+ #define CONFIG_LOADIMG
+ 
++#define PICT0_ADDR 0x42900000
++#define PICT1_ADDR 0x42a00000
++
++#define CONFIG_PREBOOT "loadimg ${pict0_addr}"
++
+ #endif /* __MX28_EVK_H */
