@@ -11,7 +11,13 @@ RDEPENDS_${PN} = "expat"
 
 PACKAGE_ARCH = "${MACHINE}"
 
+
+# NeTV stores data in the config_block of partition 1
 CNPLATFORM_chumby-silvermoon-netv = "netv"
+
+# Wintergrap does the same
+CNPLATFORM_chumby-wintergrasp = "netv"
+
 
 SRC_URI = "${CHUMBYSG_GIT_HOST}/chumby-clone/dcid${CHUMBYSG_GIT_EXTENSION};subpath=src;protocol=${CHUMBYSG_GIT_PROTOCOL} \
            ${CHUMBYSG_GIT_HOST}/chumby-clone/dcid${CHUMBYSG_GIT_EXTENSION};subpath=include;protocol=${CHUMBYSG_GIT_PROTOCOL} \

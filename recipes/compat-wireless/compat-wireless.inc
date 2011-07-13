@@ -3,7 +3,7 @@ HOMEPAGE = "http://wireless.kernel.org/en/users/Download"
 SECTION = "kernel/modules"
 LICENSE = "GPL"
 RDEPENDS = "wireless-tools"
-PR = "r0"
+PR = "r1"
 
 COMPAT_WIRELESS_VERSION = "2011-04-17"
 

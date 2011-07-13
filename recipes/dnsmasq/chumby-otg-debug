@@ -3,7 +3,7 @@ IFACE=usb0
 DAEMON=/usr/bin/dnsmasq
 NAME=chumby-otg-debug
 DESC="chumby OTG debug mode"
-ARGS="-F 10.0.88.50,10.0.88.100,1h -i $IFACE"
+ARGS="-F 10.0.88.4,10.0.88.4,1h -i $IFACE"
 
 test -f $DAEMON || exit 0
 
