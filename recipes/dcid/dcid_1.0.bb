@@ -4,7 +4,7 @@ DESCRIPTION = "Chumby Daughter Card ID interface"
 HOMEPAGE = "http://www.chumby.com/"
 AUTHOR = "bunnie"
 LICENSE = "GPLv2"
-PR = "r0"
+PR = "r1a"
 
 DEPENDS = "b64 libtomcrypt libtommath tomsfastmath expat"
 RDEPENDS_${PN} = "expat"
@@ -15,8 +15,8 @@ PACKAGE_ARCH = "${MACHINE}"
 # NeTV stores data in the config_block of partition 1
 CNPLATFORM_chumby-silvermoon-netv = "netv"
 
-# Wintergrap does the same
-CNPLATFORM_chumby-wintergrasp = "netv"
+# Wintergrasp on partition 2
+CNPLATFORM_chumby-wintergrasp = "wintergrasp"
 
 
 SRC_URI = "${CHUMBYSG_GIT_HOST}/chumby-clone/dcid${CHUMBYSG_GIT_EXTENSION};subpath=src;protocol=${CHUMBYSG_GIT_PROTOCOL} \
