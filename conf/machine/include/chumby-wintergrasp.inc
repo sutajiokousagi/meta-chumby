@@ -17,9 +17,9 @@ chumby_make_rom () {
     if [ -f ${DEPLOY_DIR_IMAGE}/${IMAGE_LINK_NAME}.ext3 ]; then
       makedisk -o ${DEPLOY_DIR_IMAGE}/rom-${MACHINE}-${IMAGE_BASENAME}.img \
                -a ${@(${IMAGE_FATFS_SIZE} / 1024)}k:0x0b:usr.fat \
+               -a ${@(${IMAGE_CONFIG_BLOCK_SIZE} / 1024)}k:0xda:${DEPLOY_DIR_IMAGE}/config_block-${MACHINE}.part \
                -a 16M:0x53:${DEPLOY_DIR_IMAGE}/boot-${MACHINE}.bin \
                -a 0M:0x05:dummy \
-               -a 0M:0x00:dummy \
                -a ${ROOTFS_SIZE}k:0x83:${DEPLOY_DIR_IMAGE}/${IMAGE_LINK_NAME}.ext3 \
                -a ${ROOTFS_SIZE}k:0x83:${DEPLOY_DIR_IMAGE}/${IMAGE_LINK_NAME}.ext3
       package_stagefile_shell ${DEPLOY_DIR_IMAGE}/rom-${MACHINE}-${IMAGE_BASENAME}.img
