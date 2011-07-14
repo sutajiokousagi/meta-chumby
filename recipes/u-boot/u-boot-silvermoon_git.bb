@@ -2,7 +2,7 @@ inherit chumbysg-git chumby-info
 
 require u-boot.inc
 
-PR = "r6"
+PR = "r7"
 
 PROVIDES = "virtual/bootloader virtual/chumby-bootimage"
 RPROVIDES_${PN} = "virtual/bootloader virtual/chumby-bootimage"
@@ -16,6 +16,7 @@ BRANCH_NAME = "master"
 BRANCH_NAME_chumby-silvermoon-netv = "netv"
 
 SRC_URI = "${CHUMBYSG_GIT_HOST}/chumby-sg/u-boot-2009.07-silvermoon${CHUMBYSG_GIT_EXTENSION};subpath=src;protocol=${CHUMBYSG_GIT_PROTOCOL};branch=${BRANCH_NAME} \
+           file://logo.raw.gz \
 "
 
 SRCREV = "${AUTOREV}"
@@ -62,6 +63,12 @@ do_deploy () {
     package_stagefile_shell ${DEPLOY_DIR_IMAGE}/boot-${MACHINE}.bin
 }
 addtask deploy_bootimage after do_install
+
+do_install_append_chumby-silvermoon-netv() {
+    install -d ${D}/boot
+    gzip ${WORKDIR}/logo.raw || true
+    install -m 0755 ${WORKDIR}/logo.raw.gz ${D}/boot
+}
 
 pkg_postinst_${PN}() {
     config_util --cmd=putblock --dev=/dev/mmcblk0p1 --block=u-bt < /boot/u-boot.bin
