@@ -2,7 +2,7 @@ inherit chumbysg-git chumby-info
 
 require recipes/linux/linux.inc
 
-PR = "r12"
+PR = "r13"
 RDEPENDS_${PN} = "config-util"
 
 COMPATIBLE_MACHINE = "chumby-silvermoon-netv"
@@ -17,6 +17,6 @@ S = "${WORKDIR}/src"
 DEFAULT_PREFERENCE = "-1"
 DEFAULT_PREFERENCE_chumby-silvermoon-netv = "1"
 
-pkg_postinst_${PN}() {
+pkg_postinst_kernel_append() {
     config_util --cmd=putblock --dev=/dev/mmcblk0p1 --block=krnA < /boot/zImage
 }
