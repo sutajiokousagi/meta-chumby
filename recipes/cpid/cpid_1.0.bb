@@ -7,7 +7,9 @@ inherit update-rc.d
 INITSCRIPT_NAME = "chumby-cpid"
 INITSCRIPT_PARAMS = "defaults 5 95"
 
-PR = "r10"
+PR = "r11a"
+
+CNPLATFORM_chumby-wintergrasp = "wintergrasp"
 
 SRC_URI = "${CHUMBYSG_GIT_HOST}/chumby-clone/${PN}${CHUMBYSG_GIT_EXTENSION};protocol=${CHUMBYSG_GIT_PROTOCOL} \
           file://chumby-cpid \
@@ -19,7 +21,7 @@ DEPENDS = "beecrypt"
 RDEPENDS_${PN} = "beecrypt"
 
 do_compile() {
-    ${CC} crypto.c hal.c main.c makePackets.c -o cpid ${CFLAGS} ${LDFLAGS} -lbeecrypt
+    ${CC} -DCNPLATFORM_${CNPLATFORM} crypto.c hal.c main.c makePackets.c -o cpid ${CFLAGS} ${LDFLAGS} -lbeecrypt
 }
 
 do_install() {
