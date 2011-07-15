@@ -1,9 +1,10 @@
 #!/bin/sh
 IFACE=usb0
-DAEMON=/usr/bin/dnsmasq
+DAEMON=/usr/sbin/udhcpd
 NAME=chumby-otg-debug
 DESC="chumby OTG debug mode"
-ARGS="-F 10.0.88.4,10.0.88.4,1h -i $IFACE"
+PIDFILE="/var/run/chumby-otg-dhcp.pid"
+ARGS="/etc/udhcpd.conf"
 
 test -f $DAEMON || exit 0
 
@@ -16,25 +17,26 @@ case "$1" in
         modprobe g_ether
         udevadm settle
         ifconfig $IFACE up 10.0.88.1 netmask 255.255.255.0
-        start-stop-daemon -S -x $DAEMON -- $ARGS
+        $DAEMON $ARGS
         echo "done."
         ;;
     stop)
         echo -n "stopping $DESC: $NAME... "
-        start-stop-daemon -K -x $DAEMON
+        if [ -e $PIDFILE ]
+        then
+            kill $(cat $PIDFILE)
+        fi
         rmmod g_ether
         echo "done."
         ;;
     status)
         echo -n "dnsmasq "
-        start-stop-daemon -q -K -t -x $DAEMON
-        RET=$?
-        if [ "$RET" = "0" ]; then
-                PID=`cat /var/run/dnsmasq.pid`
+        if [ -e "$PIDFILE" ]; then
+                PID=$(cat $PIDFILE)
                 echo "($PID) is running"
         else
                 echo "is not running"
-                exit $RET
+                exit 1
         fi
         ;;
     restart)
