@@ -5,7 +5,7 @@ DESCRIPTION = "Chromeless web browser for NeTV with some added sugar"
 HOMEPAGE = "http://www.chumby.com/"
 AUTHOR = "Torin"
 LICENSE = "GPLv3"
-PR = "r13"
+PR = "r14"
 DEPENDS = "qt4-embedded"
 RDEPENDS_${PN} = "task-qt4e-base"
 
