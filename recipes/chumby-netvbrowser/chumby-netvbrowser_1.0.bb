@@ -5,7 +5,7 @@ DESCRIPTION = "Chromeless web browser for NeTV with some added sugar"
 HOMEPAGE = "http://www.chumby.com/"
 AUTHOR = "Torin"
 LICENSE = "GPLv3"
-PR = "r15"
+PR = "r16"
 DEPENDS = "qt4-embedded"
 RDEPENDS_${PN} = "task-qt4e-base"
 
@@ -15,7 +15,7 @@ SRCREV = "${AUTOREV}"
 S = "${WORKDIR}/git"
 
 INITSCRIPT_NAME = "chumby-netvbrowser"
-INITSCRIPT_PARAMS = "defaults 40 70"
+INITSCRIPT_PARAMS = "defaults 60 40"
 
 do_install() {
     install -d ${D}${bindir}
