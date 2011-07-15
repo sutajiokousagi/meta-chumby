@@ -1,0 +1,30 @@
+diff -Nur u-boot-2009.08.lastpatch/config.mk u-boot-2009.08/config.mk
+--- u-boot-2009.08.lastpatch/config.mk	2011-07-15 12:38:57.469455064 +0800
++++ u-boot-2009.08/config.mk	2011-07-15 13:37:24.021766597 +0800
+@@ -134,6 +134,14 @@
+ CPPFLAGS += -DTEXT_BASE=$(TEXT_BASE)
+ endif
+ 
++ifneq ($(IMAGE_FATFS_SIZE),)
++CPPFLAGS += -DIMAGE_FATFS_SIZE=$(IMAGE_FATFS_SIZE)
++endif
++
++ifneq ($(IMAGE_CONFIG_BLOCK_SIZE),)
++CPPFLAGS += -DIMAGE_CONFIG_BLOCK_SIZE=$(IMAGE_CONFIG_BLOCK_SIZE)
++endif
++
+ ifneq ($(OBJTREE),$(SRCTREE))
+ CPPFLAGS += -I$(OBJTREE)/include2 -I$(OBJTREE)/include
+ endif
+diff -Nur u-boot-2009.08.lastpatch/include/configs/wintergrasp.h u-boot-2009.08/include/configs/wintergrasp.h
+--- u-boot-2009.08.lastpatch/include/configs/wintergrasp.h	2011-07-15 12:38:56.345560092 +0800
++++ u-boot-2009.08/include/configs/wintergrasp.h	2011-07-15 13:29:44.282023194 +0800
+@@ -216,7 +216,7 @@
+ #elif defined(CONFIG_FSL_ENV_IN_MMC)
+ 	#define CONFIG_ENV_IS_IN_MMC	1
+ 	/* Assoiated with the MMC layout defined in mmcops.c */
+-	#define CONFIG_ENV_OFFSET               (0x800 + 512) /* 2 KB  + 512 (MBR + SBMAGIC) */
++	#define CONFIG_ENV_OFFSET               (0x800 + IMAGE_FATFS_SIZE + IMAGE_CONFIG_BLOCK_SIZE + 512) /* 2 KB (MBR) + FATFS_SIZE + CONFIG_BLOCK_SIZE + 512 (SBMAGIC) */
+ 	#define CONFIG_ENV_SIZE                 (0x20000 - 0x400) /* 127 KB */
+ #else
+ 	#define CONFIG_ENV_IS_NOWHERE	1
