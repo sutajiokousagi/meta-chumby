@@ -1,5 +1,7 @@
 inherit chumbysg-git chumby-info
 
+EXTRA_OEMAKE = "CROSS_COMPILE=${TARGET_PREFIX} IMAGE_FATFS_SIZE=${IMAGE_FATFS_SIZE} IMAGE_CONFIG_BLOCK_SIZE=${IMAGE_CONFIG_BLOCK_SIZE}"
+
 require u-boot.inc
 
 DEPENDS = "chumby-blobs elftosb-native"
@@ -8,7 +10,7 @@ PROVIDES = "virtual/bootloader virtual/chumby-bootimage"
 RPROVIDES = "virtual/bootloader virtual/chumby-bootimage"
 COMPATIBLE_MACHINE = "chumby-wintergrasp"
 
-PR ="r10"
+PR ="r11"
 
 SRC_URI = "${CHUMBYSG_GIT_HOST}/chumby-sg/u-boot-2009.08-wintergrasp${CHUMBYSG_GIT_EXTENSION};protocol=${CHUMBYSG_GIT_PROTOCOL} \
            file://000-board_setup.patch \
@@ -21,6 +23,7 @@ SRC_URI = "${CHUMBYSG_GIT_HOST}/chumby-sg/u-boot-2009.08-wintergrasp${CHUMBYSG_G
            file://007-unified_uboot_mmc_nand_ram.patch \
            file://008-load_image.patch \
            file://009-logo_during_boot.patch \
+           file://010-allow_dynamic_env_placing_for_mmc.patch \
 "
 
 SRCREV = "${AUTOREV}"
@@ -41,7 +44,7 @@ do_deploy () {
 
     elftosb -p ${DEPLOY_DIR_IMAGE} -z -f imx28 -c ${DEPLOY_DIR_IMAGE}/uboot_ivt.bd -o ${DEPLOY_DIR_IMAGE}/imx28_ivt_uboot.sb
 
-    ./mk_hdr.sh ${@(2052 + ((${IMAGE_FATFS_SIZE} + ${IMAGE_CONFIG_BLOCK_SIZE}) / 512))} 1 > sbmagic
+    ./mk_hdr.sh ${@(4 + 2048 + ((${IMAGE_FATFS_SIZE} + ${IMAGE_CONFIG_BLOCK_SIZE}) / 512))} 1 > sbmagic
 
     rm -f ${DEPLOY_DIR_IMAGE}/boot-${MACHINE}.bin
     touch ${DEPLOY_DIR_IMAGE}/boot-${MACHINE}.bin
