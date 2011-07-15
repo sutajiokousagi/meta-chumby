@@ -466,17 +466,17 @@ diff -Nur linux-2.6.35.3.lastpatch/arch/arm/mach-mx28/mx28evk_pins.c linux-2.6.3
 +#endif
 diff -Nur linux-2.6.35.3.lastpatch/drivers/video/mxs/chumbyfbfw.c linux-2.6.35.3/drivers/video/mxs/chumbyfbfw.c
 --- linux-2.6.35.3.lastpatch/drivers/video/mxs/chumbyfbfw.c	2011-06-22 16:55:56.611097250 +0800
-+++ linux-2.6.35.3/drivers/video/mxs/chumbyfbfw.c	2011-07-13 15:06:37.619984277 +0800
-@@ -48,8 +48,6 @@
++++ linux-2.6.35.3/drivers/video/mxs/chumbyfbfw.c	2011-07-15 16:00:03.999517689 +0800
+@@ -48,7 +48,7 @@
  
  #include <linux/init.h>
  
 -#define LOGO_OFFSET 0x44844000
--
++void __init mx28evk_lcd_pins_init(void);
+ 
  #define REGHW_LCDIF_CTRL1_RD() __raw_readl(lcdif_regbase + HW_LCDIF_CTRL1)
  #define REGHW_LCDIF_CTRL1_CLR(x) __raw_writel(x, lcdif_regbase + HW_LCDIF_CTRL1_CLR)
- #define REGHW_LCDIF_CTRL1_SET(x) __raw_writel(x, lcdif_regbase + HW_LCDIF_CTRL1_SET)
-@@ -79,6 +77,8 @@
+@@ -79,6 +79,8 @@
  #define REGHW_PXP_S0OFFSET_WR(x) __raw_writel(x, pxp_regbase + HW_PXP_S0OFFSET)
  #define REGHW_PXP_S0BACKGROUND_WR(x) __raw_writel(x, pxp_regbase + HW_PXP_S0BACKGROUND)
  
@@ -485,7 +485,7 @@ diff -Nur linux-2.6.35.3.lastpatch/drivers/video/mxs/chumbyfbfw.c linux-2.6.35.3
  // CHUMBY_fbsize
  //
  // Multiple framebuffers are presented as /dev/fbN.  This descriptor
-@@ -1360,14 +1360,16 @@
+@@ -1360,14 +1362,16 @@
      }
  
  
@@ -504,7 +504,7 @@ diff -Nur linux-2.6.35.3.lastpatch/drivers/video/mxs/chumbyfbfw.c linux-2.6.35.3
          if(old_fb) {
              memcpy(data->planes[0]->virt_start, old_fb, 320*240*2);
              memcpy(data->virt_start, old_fb, 320*240*2);
-@@ -1377,6 +1379,7 @@
+@@ -1377,6 +1381,7 @@
              CHLOG("Unable to call ioremap!");
      }
  // ! CHUMBY_logo
@@ -512,18 +512,14 @@ diff -Nur linux-2.6.35.3.lastpatch/drivers/video/mxs/chumbyfbfw.c linux-2.6.35.3
  
  
      chumbyfwfb_fix.smem_start = data->phys_start;
-@@ -1472,8 +1475,11 @@
+@@ -1470,6 +1475,7 @@
+     }
  
+ 
++    mx28evk_lcd_pins_init();
  
      // Init the LCD.
-+    if (logo_offset == NULL)
-+    {
      CHLOG("Calling init_lcdif()...\n");
-     mxs_init_lcdif();
-+    }
- 
- 
-     CHLOG("Calling pentry->init_panel()...\n");
 @@ -1648,9 +1654,18 @@
      return 0;
  }
@@ -542,54 +538,4 @@ diff -Nur linux-2.6.35.3.lastpatch/drivers/video/mxs/chumbyfbfw.c linux-2.6.35.3
  MODULE_LICENSE("GPL");
  __setup("lcd_panel=", default_panel_select);
 +__setup("logo_offset=", logo_offset_setup);
- 
-diff -Nur linux-2.6.35.3.lastpatch/drivers/video/mxs/lcd_lms350.c linux-2.6.35.3/drivers/video/mxs/lcd_lms350.c
---- linux-2.6.35.3.lastpatch/drivers/video/mxs/lcd_lms350.c	2011-06-22 16:55:56.614432342 +0800
-+++ linux-2.6.35.3/drivers/video/mxs/lcd_lms350.c	2011-07-13 13:53:50.255165317 +0800
-@@ -43,6 +43,12 @@
- #define DOTCLK_V_WAIT_CNT (DOTCLK_V_PULSE_WIDTH + DOTCLK_VB_PORCH)
- #define DOTCLK_V_PERIOD (DOTCLK_VF_PORCH + DOTCLK_V_ACTIVE + DOTCLK_V_WAIT_CNT)
- 
-+#if defined(CONFIG_FB_CHUMBYFBFW)
-+extern unsigned char *logo_offset;
-+
-+void __init mx28evk_lcd_pins_init(void);
-+#endif
-+
- static struct mxs_platform_bl_data bl_data;
- static struct clk *lcd_clk;
- 
-@@ -67,6 +73,11 @@
- 		goto out;
- 	}
- 
-+#if defined(CONFIG_FB_CHUMBYFBFW)
-+  if (logo_offset == NULL)
-+  {
-+#endif
-+
- 	/*
- 	 * Make sure we do a high-to-low transition to reset the panel.
- 	 * First make it low for 100 msec, hi for 10 msec, low for 10 msec,
-@@ -86,6 +97,10 @@
-         __raw_writel(BM_LCDIF_CTRL1_RESET, REGS_LCDIF_BASE + HW_LCDIF_CTRL1_SET); /* high */
- 	mdelay(1);
- 
-+#if defined(CONFIG_FB_CHUMBYFBFW)
-+  }
-+#endif
-+
- 	setup_dotclk_panel(DOTCLK_V_PULSE_WIDTH, DOTCLK_V_PERIOD,
- 			DOTCLK_V_WAIT_CNT, DOTCLK_V_ACTIVE,
- 			DOTCLK_H_PULSE_WIDTH, DOTCLK_H_PERIOD,
-@@ -194,6 +209,10 @@
- 
- 	printk( "init_bl finished\n" );
- 
-+#if defined(CONFIG_FB_CHUMBYFBFW)
-+  mx28evk_lcd_pins_init();
-+#endif
-+
- 	return 0;
- }
  
