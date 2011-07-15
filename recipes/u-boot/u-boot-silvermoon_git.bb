@@ -2,7 +2,7 @@ inherit chumbysg-git chumby-info
 
 require u-boot.inc
 
-PR = "r12"
+PR = "r13"
 
 PROVIDES = "virtual/bootloader virtual/chumby-bootimage"
 RPROVIDES_${PN} = "virtual/bootloader virtual/chumby-bootimage"
@@ -12,8 +12,9 @@ DEPENDS = "virtual/kernel chumby-blobs config-util-native"
 RDEPENDS_${PN} = "config-util"
 
 
-BRANCH_NAME = "master"
+BRANCH_NAME = "ERROR"
 BRANCH_NAME_chumby-silvermoon-netv = "netv"
+BRANCH_NAME_chumby-silvermoon-chumby8 = "master"
 
 SRC_URI = "${CHUMBYSG_GIT_HOST}/chumby-sg/u-boot-2009.07-silvermoon${CHUMBYSG_GIT_EXTENSION};subpath=src;protocol=${CHUMBYSG_GIT_PROTOCOL};branch=${BRANCH_NAME} \
            file://logo.raw.gz \
