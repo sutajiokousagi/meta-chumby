@@ -2,7 +2,7 @@ inherit chumbysg-git chumby-info
 
 require u-boot.inc
 
-PR = "r8"
+PR = "r13"
 
 PROVIDES = "virtual/bootloader virtual/chumby-bootimage"
 RPROVIDES_${PN} = "virtual/bootloader virtual/chumby-bootimage"
@@ -12,8 +12,9 @@ DEPENDS = "virtual/kernel chumby-blobs config-util-native"
 RDEPENDS_${PN} = "config-util"
 
 
-BRANCH_NAME = "master"
+BRANCH_NAME = "ERROR"
 BRANCH_NAME_chumby-silvermoon-netv = "netv"
+BRANCH_NAME_chumby-silvermoon-chumby8 = "master"
 
 SRC_URI = "${CHUMBYSG_GIT_HOST}/chumby-sg/u-boot-2009.07-silvermoon${CHUMBYSG_GIT_EXTENSION};subpath=src;protocol=${CHUMBYSG_GIT_PROTOCOL};branch=${BRANCH_NAME} \
            file://logo.raw.gz \
@@ -25,6 +26,34 @@ S = "${WORKDIR}/src"
 DEFAULT_PREFERENCE = "-1"
 DEFAULT_PREFERENCE_chumby-silvermoon-netv = "1"
 DEFAULT_PREFERENCE_chumby-silvermoon-chumby8 = "1"
+
+do_compile () {
+        unset LDFLAGS
+        unset CFLAGS
+        unset CPPFLAGS
+        unset TOPDIR
+	export CROSS_COMPILE="${TARGET_PREFIX}"
+        oe_runmake ${UBOOT_MACHINE}
+        oe_runmake all
+        oe_runmake tools env
+        gzip ${WORKDIR}/logo.raw || true
+}
+
+do_install () {
+        install -d ${D}/boot
+        install ${S}/${UBOOT_BINARY} ${D}/boot/${UBOOT_IMAGE}
+        ln -sf ${UBOOT_IMAGE} ${D}/boot/${UBOOT_BINARY}
+
+        if [ -e ${WORKDIR}/fw_env.config ] ; then
+            install -d ${D}${base_sbindir}
+                install -d ${D}${sysconfdir}
+                install -m 644 ${WORKDIR}/fw_env.config ${D}${sysconfdir}/fw_env.config
+                install -m 755 ${S}/tools/env/fw_printenv ${D}${base_sbindir}/fw_printenv
+                install -m 755 ${S}/tools/env/fw_printenv ${D}${base_sbindir}/fw_setenv
+        fi
+    # Put this here, because the do_install_append doesn't seem to be working
+    install -m 0755 ${WORKDIR}/logo.raw.gz ${D}/boot
+}
 
 do_deploy () {
 
@@ -63,12 +92,6 @@ do_deploy () {
     package_stagefile_shell ${DEPLOY_DIR_IMAGE}/boot-${MACHINE}.bin
 }
 addtask deploy_bootimage after do_install
-
-do_install_append_chumby-silvermoon-netv() {
-    install -d ${D}/boot
-    gzip ${WORKDIR}/logo.raw || true
-    install -m 0755 ${WORKDIR}/logo.raw.gz ${D}/boot
-}
 
 pkg_postinst_${PN}() {
     config_util --cmd=putblock --dev=/dev/mmcblk0p1 --block=u-bt < /boot/u-boot.bin
