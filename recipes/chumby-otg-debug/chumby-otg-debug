@@ -14,7 +14,7 @@ case "$1" in
     start)
         echo -n "starting $DESC: $NAME... "
         test -d /var/lib/misc/ || mkdir /var/lib/misc/
-        modprobe g_ether
+        modprobe g_ether host_addr=16:0F:15:5A:E1:21 dev_addr=16:0F:15:5A:E1:20
         udevadm settle
         ifconfig $IFACE up 10.0.88.1 netmask 255.255.255.0
         $DAEMON $ARGS
