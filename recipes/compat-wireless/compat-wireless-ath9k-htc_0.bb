@@ -1,6 +1,6 @@
 include compat-wireless.inc
 
-SRC += "file://add-phy-virt.patch"
+PR .= "-amend-r1"
 
 do_configure() {
 	cd ${S}
