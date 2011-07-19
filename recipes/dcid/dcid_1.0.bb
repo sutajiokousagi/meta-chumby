@@ -39,7 +39,7 @@ do_install() {
 
 pkg_postinst_${PN}() {
     if test "x$D" != "x"; then exit 1; fi     # Don't do postinst on build system
-    if dcid -o 2> /dev/null; then exit 0; fi  # Don't overwrite existing DCIDs.
+    if dcid -o > /dev/null 2> /dev/null; then exit 0; fi  # Don't overwrite existing DCIDs.
 
     # Program default dcid
     echo '<?xml version="1.0"?><chum><vers>0002</vers><rgin>0001</rgin><skin>0001</skin><part>1000</part><camp>0006</camp></chum>' | dcid -i
