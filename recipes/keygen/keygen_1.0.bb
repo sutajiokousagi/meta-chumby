@@ -1,8 +1,9 @@
 inherit chumbysg-git-private
+
 DESCRIPTION = "Cryptoprocessor daemon, used in lieu of a real processor"
 LICENSE = "BSD"
 
-PR = "r4"
+PR = "r5"
 
 SRC_URI = "${CHUMBYSG_GIT_HOST}/chumby-clone/${PN}${CHUMBYSG_GIT_EXTENSION};protocol=${CHUMBYSG_GIT_PROTOCOL}"
 SRCREV = "${AUTOREV}"
@@ -28,10 +29,10 @@ do_install() {
 
 pkg_postinst_${PN}() {
     if test "x$D" != "x"; then exit 1; fi  # Don't do postinst on build system
-    echo "To generate a keyfile, run:"
-    echo '    keygen `fpga_ctl n | cut -d" " -f3` 00000000000000000000000000060000'
-    echo '    config_util --cmd=putblock --block=cpid < /tmp/keyfile'
-    echo '    /etc/init.d/chumby-cpid restart'
-    echo '    rm -f /tmp/keyfile*'
-    echo '    opkg remove keygen'
+
+    keygen `fpga_ctl n | cut -d" " -f3` 00000000000000000000000000060000
+    config_util --cmd=putblock --block=cpid < /tmp/keyfile
+    /etc/init.d/chumby-cpid restart
+    rm -f /tmp/keyfile*
+    (while [ -e /usr/lib/opkg/lock ]; do sleep 1; done; opkg remove keygen)&
 }
