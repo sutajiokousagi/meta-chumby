@@ -4,7 +4,7 @@ DESCRIPTION = "Chumby Daughter Card ID interface"
 HOMEPAGE = "http://www.chumby.com/"
 AUTHOR = "bunnie"
 LICENSE = "GPLv2"
-PR = "r2"
+PR = "r3"
 
 DEPENDS = "b64 libtomcrypt libtommath tomsfastmath expat"
 RDEPENDS_${PN} = "expat"
@@ -35,4 +35,12 @@ do_compile() {
 do_install() {
     install -d ${D}${bindir}
     install -m 0755 dcid ${D}${bindir}
+}
+
+pkg_postinst_${PN}() {
+    if test "x$D" != "x"; then exit 1; fi     # Don't do postinst on build system
+    if dcid -o 2> /dev/null; then exit 0; fi  # Don't overwrite existing DCIDs.
+
+    # Program default dcid
+    echo '<?xml version="1.0"?><chum><vers>0002</vers><rgin>0001</rgin><skin>0001</skin><part>1000</part><camp>0006</camp></chum>' | dcid -i
 }
