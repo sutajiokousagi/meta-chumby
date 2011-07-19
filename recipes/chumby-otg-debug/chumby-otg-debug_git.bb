@@ -1,4 +1,5 @@
 inherit update-rc.d
+PR = "r2"
 
 SRC_URI += "file://chumby-otg-debug file://udhcpd.conf"
 INITSCRIPT_NAME = "chumby-otg-debug"
