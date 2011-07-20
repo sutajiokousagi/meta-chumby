@@ -2,7 +2,7 @@ inherit chumbysg-git chumby-info
 
 require u-boot.inc
 
-PR = "r13"
+PR = "r14"
 
 PROVIDES = "virtual/bootloader virtual/chumby-bootimage"
 RPROVIDES_${PN} = "virtual/bootloader virtual/chumby-bootimage"
