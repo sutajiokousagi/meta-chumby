@@ -4,7 +4,7 @@ DESCRIPTION = "Chumby Daughter Card ID interface"
 HOMEPAGE = "http://www.chumby.com/"
 AUTHOR = "bunnie"
 LICENSE = "GPLv2"
-PR = "r1a"
+PR = "r2"
 
 DEPENDS = "b64 libtomcrypt libtommath tomsfastmath expat"
 RDEPENDS_${PN} = "expat"
@@ -28,17 +28,11 @@ S = "${WORKDIR}/src"
 
 do_compile() {
     ${CC} -Wall -g -DCNPLATFORM_${CNPLATFORM} -I.. -I../include ${CFLAGS} \
-          ${LDFLAGS} \
-          *.c main/*.c -o dcid
-    ${CC} -Wall -g -DCNPLATFORM_${CNPLATFORM} -I.. -I../include ${CFLAGS} \
           -DDCID_ALLOW_WRITE ${LDFLAGS} \
-          *.c main/*.c -o dcid-write-enabled
+          *.c main/*.c -o dcid
 }
 
 do_install() {
     install -d ${D}${bindir}
     install -m 0755 dcid ${D}${bindir}
-    install -m 0755 dcid-write-enabled ${D}${bindir}
 }
-
-FILES_${PN}-write-enabled = "${bindir}/dcid-write-enabled"
