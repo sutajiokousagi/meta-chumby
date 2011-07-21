@@ -65,31 +65,6 @@ do_deploy () {
     rm -f ${UBOOT_SYMLINK}
     ln -sf ${UBOOT_IMAGE} ${UBOOT_SYMLINK}
     package_stagefile_shell ${DEPLOY_DIR_IMAGE}/${UBOOT_SYMLINK}
-
-
-    install -d ${DEPLOY_DIR_IMAGE}
-
-    config_util --cmd=create \
-        --mbr=/dev/zero \
-        --configname=${CNPLATFORM} \
-        --build_ver=${CHUMBY_BUILD} --force --pad \
-        --blockdef=${DEPLOY_DIR_IMAGE}/u-boot-${MACHINE}.bin,1507328,u-bt,1,0,0,0 \
-        --blockdef=${DEPLOY_DIR_IMAGE}/zImage-${MACHINE}.bin,3932160,krnA,1,0,0,0 \
-        --blockdef=${DEPLOY_DIR_IMAGE}/zImage-${MACHINE}.bin,3932160,krnB,1,0,0,0 \
-        --blockdef=/dev/null,16384,cpid,1,0,0,0 \
-        --blockdef=/dev/null,1024,dcid,1,0,0,0 \
-        > ${DEPLOY_DIR_IMAGE}/config_block.bin
-
-
-    rm -f ${DEPLOY_DIR_IMAGE}/boot-${MACHINE}.bin
-    touch ${DEPLOY_DIR_IMAGE}/boot-${MACHINE}.bin
-    dd conv=notrunc of=${DEPLOY_DIR_IMAGE}/boot-${MACHINE}.bin seek=0 count=96 if=${DEPLOY_DIR_IMAGE}/obm.bin
-    dd conv=notrunc of=${DEPLOY_DIR_IMAGE}/boot-${MACHINE}.bin seek=96 count=32 if=${DEPLOY_DIR_IMAGE}/config_block.bin 
-    dd conv=notrunc of=${DEPLOY_DIR_IMAGE}/boot-${MACHINE}.bin seek=128 count=2944 if=${DEPLOY_DIR_IMAGE}/u-boot-${MACHINE}.bin
-    dd conv=notrunc of=${DEPLOY_DIR_IMAGE}/boot-${MACHINE}.bin seek=3072 count=7680 if=${DEPLOY_DIR_IMAGE}/zImage-${MACHINE}.bin
-    dd conv=notrunc of=${DEPLOY_DIR_IMAGE}/boot-${MACHINE}.bin seek=10752 count=7680 if=${DEPLOY_DIR_IMAGE}/zImage-${MACHINE}.bin
-
-    package_stagefile_shell ${DEPLOY_DIR_IMAGE}/boot-${MACHINE}.bin
 }
 addtask deploy_bootimage after do_install
 
