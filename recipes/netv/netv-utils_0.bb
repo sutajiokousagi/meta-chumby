@@ -3,7 +3,9 @@ LICENSE = "BSD"
 
 inherit update-rc.d
 
-PR = "r24"
+PR = "r25"
+
+PACKAGE_ARCH = "${MACHINE}"
 
 SRC_URI = "file://helpers/dumpreg.c \
 	file://helpers/putreg.c \
@@ -24,9 +26,6 @@ SRC_URI = "file://helpers/dumpreg.c \
 	file://helpers/dumptiming.c \
 	file://helpers/netv_service \
 	file://helpers/matchmode.c \
-	file://gnupg/pubring.gpg \
-	file://gnupg/secring.gpg \
-	file://gnupg/trustdb.gpg \
 "
 
 S = "${WORKDIR}"
@@ -73,21 +72,12 @@ do_install() {
 
 	install -d ${D}${base_libdir}/udev/rules.d
 	install -m 0644 fpga/41-chumby-netv.rules ${D}${base_libdir}/udev/rules.d
-
-	install -d ${D}/home/root/.gnupg
-	install -m 0600 gnupg/pubring.gpg ${D}/home/root/.gnupg/pubring.gpg
-	install -m 0600 gnupg/secring.gpg ${D}/home/root/.gnupg/secring.gpg
-	install -m 0600 gnupg/trustdb.gpg ${D}/home/root/.gnupg/trustdb.gpg
 }
 
 FILES_${PN} = "${bindir}"
 FILES_${PN} += "${base_libdir}/firmware/"
 FILES_${PN} += "${base_libdir}/udev/rules.d/"
 FILES_${PN} += "${sysconfdir}/init.d/"
-FILES_${PN} += "/home/root/.gnupg/pubring.gpg"
-FILES_${PN} += "/home/root/.gnupg/secring.gpg"
-FILES_${PN} += "/home/root/.gnupg/trustdb.gpg"
-PACKAGE_ARCH = "${MACHINE}"
 
 INITSCRIPT_NAME = "netv_service"
 INITSCRIPT_PARAMS = "defaults 50 50"
