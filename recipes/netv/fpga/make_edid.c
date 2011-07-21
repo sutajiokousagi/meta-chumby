@@ -336,6 +336,23 @@ void make_edid(int mode) {
     sane.hborder = 0;
     sane.vborder = 0;
     sane.syncCode = 0x1e; // digital separate sync, vertical sync is positive; hsync is positive
+  } else if( mode == MODE480P ) {
+    sane.pixelclock = 27027000;
+    sane.hActive = 720;
+    sane.hBlank = 138;
+    sane.vActive = 480;
+    sane.vBlank = 45;
+    sane.hFP = 16;
+    sane.hBP = 60;
+    sane.vFP = 9;
+    sane.vBP = 30;
+    sane.hSync = 44;
+    sane.vSync = 5;
+    sane.hSizemm = 160;
+    sane.vSizemm = 90;
+    sane.hborder = 0;
+    sane.vborder = 0;
+    sane.syncCode = 0x18; // digital separate sync, vertical sync is negative; hsync is negative
   }
 
   make_insane(&sane, &(edid.detail));
@@ -373,7 +390,14 @@ void make_edid(int mode) {
     edid.limits.minHoriz = 26;
     edid.limits.maxHoriz = 35;
     edid.limits.maxPclk = 8; // 80 MHz max
-  } 
+  } else if ( mode == MODE480P ) {
+    edid.limits.minVert = 0x17;
+    edid.limits.maxVert = 60; 
+    edid.limits.minHoriz = 26;
+    edid.limits.maxHoriz = 35;
+    edid.limits.maxPclk = 8; // 80 MHz max
+  }
+
   edid.limits.timingSupport = 0;
   edid.limits.unused[0] = 0xa;
   edid.limits.unused[1] = 0x20;
