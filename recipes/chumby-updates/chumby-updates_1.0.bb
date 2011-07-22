@@ -1,6 +1,10 @@
-SRC_URI = "file://poll-update-server.sh"
+SRC_URI = "file://poll-update-server.sh \
+           file://secring.gpg \
+           file://trustdb.gpg \
+           file://trusted.gpg \
+"
 S = "${WORKDIR}"
-PR = "r3"
+PR = "r4"
 
 do_compile() {
 	sed -e 's/_MACHINE_/${MACHINE}/g' -i poll-update-server.sh
@@ -9,6 +13,11 @@ do_compile() {
 do_install() {
 	install -d ${D}${bindir}
 	install -m 0755 poll-update-server.sh ${D}${bindir}
+
+	install -d ${D}/etc/opkg
+	install -m 0600 secring.gpg ${D}/etc/opkg
+	install -m 0600 trustdb.gpg ${D}/etc/opkg
+	install -m 0600 trusted.gpg ${D}/etc/opkg
 }
 
 pkg_postinst() {
