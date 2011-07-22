@@ -3,7 +3,7 @@ inherit chumbysg-git-private
 DESCRIPTION = "Cryptoprocessor daemon, used in lieu of a real processor"
 LICENSE = "BSD"
 
-PR = "r5"
+PR = "r6"
 
 SRC_URI = "${CHUMBYSG_GIT_HOST}/chumby-clone/${PN}${CHUMBYSG_GIT_EXTENSION};protocol=${CHUMBYSG_GIT_PROTOCOL}"
 SRCREV = "${AUTOREV}"
@@ -30,6 +30,8 @@ do_install() {
 pkg_postinst_${PN}() {
     if test "x$D" != "x"; then exit 1; fi  # Don't do postinst on build system
 
+    ifconfig wlan0 up
+    ifconfig wlan1 up
     keygen `fpga_ctl n | cut -d" " -f3` 00000000000000000000000000060000
     config_util --cmd=putblock --block=cpid < /tmp/keyfile
     /etc/init.d/chumby-cpid restart
