@@ -1,0 +1,11 @@
+diff -ur cron3.0pl1-stock/pathnames.h cron3.0pl1/pathnames.h
+--- cron3.0pl1-stock/pathnames.h	2011-07-20 01:30:05.195962968 +0800
++++ cron3.0pl1/pathnames.h	2011-07-20 01:34:09.851962967 +0800
+@@ -49,7 +49,6 @@
+ 			 */
+ #define	ALLOW_FILE	"allow"		/*-*/
+ #define DENY_FILE	"deny"		/*-*/
+-#define LOG_FILE	"log"		/*-*/
+ 
+ 			/* where should the daemon stick its PID?
+ 			 */
