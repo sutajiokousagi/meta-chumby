@@ -2,6 +2,12 @@
 #include <string.h>
 #include <stdlib.h>
 
+#define MODE720P 0
+#define MODE1080P24 1
+#define MODE1080P30 2
+#define MODE1080P25 3
+#define HYBRID 4
+#define MODE480P 5
 //// this program is intended to be run on the build host
 //// just run gcc make_edid.c -o make_edid
 
@@ -130,8 +136,13 @@ struct edid_ {
 };
 
 struct videoDataBlock {
-  byte videoTagCode; // 0x41
+  byte videoTagCode; // 0x41 if single, 0x42 (or more) if hybrid
   byte shortDescriptor1; // just one descriptor supported here, should be "0x84"
+#if HYBRID
+  byte shortDescriptor2; // for hybrid mode
+  byte shortDescriptor3; // for hybrid mode
+  //  byte shortDescriptor4; // for hybrid mode
+#endif
 };
 
 struct audioDataBlock {
@@ -166,6 +177,11 @@ struct hdmi_ {
   // vendor-specific datablock: This has the mandatory HDMI vendor block
 
   struct detailDescriptors detail; // as many of these as you want
+#if HYBRID
+  struct detailDescriptors detail2; // as many of these as you want
+  struct detailDescriptors detail3; // as many of these as you want
+  //  struct detailDescriptors detail4; // as many of these as you want
+#endif
 
   // pad to zero and add checksum
 };
@@ -207,11 +223,6 @@ void make_insane(struct saneDescriptor *sane, struct detailDescriptors *insane) 
   
 }
 
-#define MODE720P 0
-#define MODE1080P24 1
-#define MODE1080P30 2
-#define MODE1080P25 3
-#define MODE480P 4
 
 void make_edid(int mode) {
   struct saneDescriptor sane;
@@ -258,21 +269,38 @@ void make_edid(int mode) {
   edid.TimingsI = 0; // let's see if we can get off with supporting no standard timings
   edid.TimingsII = 0;
   edid.TimingsReserved = 0;
-  
-  for( i = 0; i < 8; i++ ) { // all bogus timings
-    if( mode == MODE720P ) {
-      edid.timings[i].horizPixels = 0x81; // 1280
-      edid.timings[i].AR_refresh = 0xc0; // 16:9, 60 hz
-    } else if( (mode == MODE1080P24) || (mode == MODE1080P30 || (mode == MODE1080P25)) ) {
+
+  if( mode == HYBRID ) {
+    i = 0;
+    // 720p timing
+    edid.timings[i].horizPixels = 0x81; // 1280
+    edid.timings[i].AR_refresh = 0xc0; // 16:9, 60 hz
+    
+    i = 1;
+    // 480p timing
+    edid.timings[i].horizPixels = 0x3b; // 720x480
+    edid.timings[i].AR_refresh = 0x0; // 16:10, 60 hz
+    
+    for( i = 2; i < 8; i++ ) { // all bogus timings
       edid.timings[i].horizPixels = 1; // 1920 @ 24 hz not representable
       edid.timings[i].AR_refresh = 1;
-    } else if( (mode == MODE480P ) ) {
-      edid.timings[i].horizPixels = 0x3b; // 720x480
-      edid.timings[i].AR_refresh = 0x0; // 16:10, 60 hz
+    }
+  } else {
+    for( i = 0; i < 8; i++ ) { // all bogus timings
+      if( mode == MODE720P ) {
+	edid.timings[i].horizPixels = 0x81; // 1280
+	edid.timings[i].AR_refresh = 0xc0; // 16:9, 60 hz
+      } else if( (mode == MODE1080P24) || (mode == MODE1080P30 || (mode == MODE1080P25)) ) {
+	edid.timings[i].horizPixels = 1; // 1920 @ 24 hz not representable
+	edid.timings[i].AR_refresh = 1;
+      } else if( (mode == MODE480P ) ) {
+	edid.timings[i].horizPixels = 0x3b; // 720x480
+	edid.timings[i].AR_refresh = 0x0; // 16:10, 60 hz
+      }
     }
   }
 
-  if( mode == MODE720P ) {
+  if( mode == MODE720P || mode == HYBRID ) {
     sane.pixelclock = 74176000;
     sane.hActive = 1280;
     sane.hBlank = 370;
@@ -400,6 +428,12 @@ void make_edid(int mode) {
     edid.limits.minHoriz = 26;
     edid.limits.maxHoriz = 35;
     edid.limits.maxPclk = 8; // 80 MHz max
+  } else if ( mode == HYBRID ) {
+    edid.limits.minVert = 0x17;
+    edid.limits.maxVert = 60; 
+    edid.limits.minHoriz = 26;
+    edid.limits.maxHoriz = 46;
+    edid.limits.maxPclk = 8; // 80 MHz max
   }
 
   edid.limits.timingSupport = 0;
@@ -433,13 +467,21 @@ void make_hdmi(int mode) {
 
   hdmi.tag = 0x2;
   hdmi.revision = 0x3;
+#if HYBRID
+  hdmi.numDescrips = 0x43; // lower nibble is # of resolutions described
+#else
   hdmi.numDescrips = 0x41; // sink deice supports basic audio, 1 native DTD
+#endif
   hdmi.offset = 4 + sizeof(struct videoDataBlock) +
     sizeof(struct audioDataBlock) + 
     sizeof(struct speakerDataBlock) +
     sizeof(struct hdmiBlock);
-  
+
+#if HYBRID
+  hdmi.video.videoTagCode = 0x43; // lower nibble is # of resolutions describd
+#else
   hdmi.video.videoTagCode = 0x41;
+#endif
   if( mode == MODE720P ) {
     hdmi.video.shortDescriptor1 = 0x84; // native (0x80) | mode 4
   } else if( mode == MODE1080P24) {
@@ -448,6 +490,11 @@ void make_hdmi(int mode) {
     hdmi.video.shortDescriptor1 = 0xA2; // native (0x80) | mode 34
   } else if( mode == MODE1080P25) {
     hdmi.video.shortDescriptor1 = 0xA1; // native (0x80) | mode 33
+  } else if( mode == HYBRID ) {
+    hdmi.video.shortDescriptor1 = 0x84; // native (0x80) | mode 4
+    hdmi.video.shortDescriptor2 = 0x20; // mode 32, 1080p24
+    hdmi.video.shortDescriptor3 = 0x02; // mode 2, 480p
+    //    hdmi.video.shortDescriptor4 = 0x22; // mode 34, 1080p30
   } else if( mode == MODE480P ) {
     hdmi.video.shortDescriptor1 = 0x82; // native (0x80) | mode 2
   }
@@ -470,7 +517,7 @@ void make_hdmi(int mode) {
   hdmi.hdmi.hdmi[4] = 0x0;
   hdmi.hdmi.hdmi[5] = 0x0;
 
-  if( mode == MODE720P ) {
+  if( mode == MODE720P || mode == HYBRID ) {
     sane.pixelclock = 74176000;
     sane.hActive = 1280;
     sane.hBlank = 370;
@@ -558,6 +605,68 @@ void make_hdmi(int mode) {
   }
 
   make_insane(&sane, &(hdmi.detail));
+  
+#if HYBRID 
+  // add supplemental timing records here
+  // 1080p24
+    sane.pixelclock = 74250000;
+    sane.hActive = 1920;
+    sane.hBlank = 830;
+    sane.vActive = 1080;
+    sane.vBlank = 45;
+    sane.hFP = 638;
+    sane.hBP = 140;
+    sane.vFP = 4;
+    sane.vBP = 36;
+    sane.hSync = 44;
+    sane.vSync = 5;
+    sane.hSizemm = 160;
+    sane.vSizemm = 90;
+    sane.hborder = 0;
+    sane.vborder = 0;
+    sane.syncCode = 0x1e; // digital separate sync, vertical sync is positive; hsync is positive
+    make_insane(&sane, &(hdmi.detail2));
+    
+    // 480p
+    sane.pixelclock = 27027000;
+    sane.hActive = 720;
+    sane.hBlank = 138;
+    sane.vActive = 480;
+    sane.vBlank = 45;
+    sane.hFP = 16;
+    sane.hBP = 60;
+    sane.vFP = 9;
+    sane.vBP = 30;
+    sane.hSync = 44;
+    sane.vSync = 6;
+    sane.hSizemm = 160;
+    sane.vSizemm = 90;
+    sane.hborder = 0;
+    sane.vborder = 0;
+    sane.syncCode = 0x18; // digital separate sync, vertical sync is negative; hsync is negative
+    make_insane(&sane, &(hdmi.detail3));
+
+#if 0 // not supporting this anymore, it causes 1080p60 to trigger on some sources
+    // 1080p30
+    sane.pixelclock = 74176000;
+    sane.hActive = 1920;
+    sane.hBlank = 280;
+    sane.vActive = 1080;
+    sane.vBlank = 45;
+    sane.hFP = 88;
+    sane.hBP = 148;
+    sane.vFP = 4;
+    sane.vBP = 36;
+    sane.hSync = 44;
+    sane.vSync = 5;
+    sane.hSizemm = 160;
+    sane.vSizemm = 90;
+    sane.hborder = 0;
+    sane.vborder = 0;
+    sane.syncCode = 0x1e; // digital separate sync, vertical sync is positive; hsync is positive
+    make_insane(&sane, &(hdmi.detail4));
+#endif
+#endif
 
   bytes = (char *) &hdmi;
   for( i = 0; i < sizeof(hdmi); i++ ) {
@@ -593,11 +702,21 @@ int main( int argc, char** argv ) {
   int mode = MODE720P;
   int mode_arg;
 
+#if HYBRID
+  if( argc != 1 ) {
+    printf( "%s: make_edid_hybrid (takes no arguments, all hard-coded)\n", argv[0] );
+    return 0;
+  }
+#else
   if( argc != 2 ) {
     printf( "%s: make_edid [mode]\n", argv[0] );
     return 0;
   }
-  
+#endif
+
+#if HYBRID
+  mode = HYBRID;
+#else
   mode_arg = strtoul(argv[1], NULL, 0);
   switch( mode_arg ) {
   case 4:
@@ -617,6 +736,7 @@ int main( int argc, char** argv ) {
     printf( "Recognized modes are 4 (720p/60), 32 (1080p/24), 34 (1080p/30), and 33 (1080p/25)\n" );
     return 0;
   }
+#endif
   
     make_edid(mode);
     make_hdmi(mode);
