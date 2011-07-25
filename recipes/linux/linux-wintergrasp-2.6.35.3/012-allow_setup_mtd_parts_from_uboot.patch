@@ -1,0 +1,24 @@
+diff -Nur linux-2.6.35.3.lastpatch/arch/arm/mach-mx28/device.c linux-2.6.35.3/arch/arm/mach-mx28/device.c
+--- linux-2.6.35.3.lastpatch/arch/arm/mach-mx28/device.c	2011-07-15 17:58:44.524463208 +0800
++++ linux-2.6.35.3/arch/arm/mach-mx28/device.c	2011-07-22 13:46:49.127497289 +0800
+@@ -375,7 +375,7 @@
+ 	.min_prop_delay_in_ns    = 5,
+ 	.max_prop_delay_in_ns    = 9,
+ 	.max_chip_count          = 2,
+-	.boot_area_size_in_bytes = 20 * SZ_1M,
++	.boot_area_size_in_bytes = 0,
+ 	.partition_source_types  = gpmi_nfc_partition_source_types,
+ 	.partitions              = 0,
+ 	.partition_count         = 0,
+diff -Nur linux-2.6.35.3.lastpatch/drivers/mtd/nand/gpmi-nfc/gpmi-nfc-mil.c linux-2.6.35.3/drivers/mtd/nand/gpmi-nfc/gpmi-nfc-mil.c
+--- linux-2.6.35.3.lastpatch/drivers/mtd/nand/gpmi-nfc/gpmi-nfc-mil.c	2011-07-15 17:58:50.461144365 +0800
++++ linux-2.6.35.3/drivers/mtd/nand/gpmi-nfc/gpmi-nfc-mil.c	2011-07-22 14:02:34.713363432 +0800
+@@ -2292,7 +2292,7 @@
+ 	/* Initialize the MTD data structures. */
+ 
+ 	mtd->priv  = nand;
+-	mtd->name  = "gpmi-nfc-main";
++	mtd->name  = "gpmi-nfc";
+ 	mtd->owner = THIS_MODULE;
+ 	nand->priv = this;
+ 
