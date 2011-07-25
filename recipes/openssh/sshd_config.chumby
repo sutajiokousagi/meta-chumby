@@ -1,0 +1,7 @@
+Protocol 2
+PermitEmptyPasswords yes
+UsePrivilegeSeparation yes
+Compression no
+ClientAliveInterval 15
+ClientAliveCountMax 4
+Subsystem       sftp    /usr/libexec/sftp-server

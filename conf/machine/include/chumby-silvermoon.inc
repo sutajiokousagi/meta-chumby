@@ -43,3 +43,38 @@ ROOT_FLASH_SIZE = "180"
 IMAGE_ROOTFS_SIZE = "180000"
 
 
+chumby_make_rom () {
+    install -d ${DEPLOY_DIR_IMAGE}
+
+    # Create the config block header
+    config_util --cmd=create \
+        --mbr=/dev/zero \
+        --configname=${CNPLATFORM} \
+        --build_ver=${CHUMBY_BUILD} --force --pad \
+        --blockdef=${DEPLOY_DIR_IMAGE}/u-boot-${MACHINE}.bin,1507328,u-bt,1,0,0,0 \
+        --blockdef=${DEPLOY_DIR_IMAGE}/zImage-${MACHINE}.bin,3932160,krnA,1,0,0,0 \
+        --blockdef=${DEPLOY_DIR_IMAGE}/zImage-${MACHINE}.bin,3932160,krnB,1,0,0,0 \
+        --blockdef=/dev/null,16384,cpid,1,0,0,0 \
+        --blockdef=/dev/null,1024,dcid,1,0,0,0 \
+        > ${DEPLOY_DIR_IMAGE}/config_block.bin
+
+
+    # Populate the config block
+    rm -f ${DEPLOY_DIR_IMAGE}/boot-${MACHINE}.bin
+    touch ${DEPLOY_DIR_IMAGE}/boot-${MACHINE}.bin
+    dd conv=notrunc of=${DEPLOY_DIR_IMAGE}/boot-${MACHINE}.bin seek=0 count=96 if=${DEPLOY_DIR_IMAGE}/obm.bin
+    dd conv=notrunc of=${DEPLOY_DIR_IMAGE}/boot-${MACHINE}.bin seek=96 count=32 if=${DEPLOY_DIR_IMAGE}/config_block.bin
+    dd conv=notrunc of=${DEPLOY_DIR_IMAGE}/boot-${MACHINE}.bin seek=128 count=2944 if=${DEPLOY_DIR_IMAGE}/u-boot-${MACHINE}.bin
+    dd conv=notrunc of=${DEPLOY_DIR_IMAGE}/boot-${MACHINE}.bin seek=3072 count=7680 if=${DEPLOY_DIR_IMAGE}/zImage-${MACHINE}.bin
+    dd conv=notrunc of=${DEPLOY_DIR_IMAGE}/boot-${MACHINE}.bin seek=10752 count=7680 if=${DEPLOY_DIR_IMAGE}/zImage-${MACHINE}.bin
+
+    package_stagefile_shell ${DEPLOY_DIR_IMAGE}/boot-${MACHINE}.bin
+
+
+
+    # Make full boot ROM
+    makedisk -o ${DEPLOY_DIR_IMAGE}/rom-${MACHINE}-${IMAGE_BASENAME}.img \
+             -a 16M:0x53:${DEPLOY_DIR_IMAGE}/boot-${MACHINE}.bin \
+             -a ${ROOTFS_SIZE}k:0x83:${DEPLOY_DIR_IMAGE}/${IMAGE_LINK_NAME}.ext3
+    package_stagefile_shell ${DEPLOY_DIR_IMAGE}/rom-${MACHINE}-${IMAGE_BASENAME}.img
+}
