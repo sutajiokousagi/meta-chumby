@@ -1,0 +1,12 @@
+diff -Nur u-boot-2009.08.lastpatch.4/cpu/arm926ejs/mx28/mmcops.c u-boot-2009.08.lastpatch/cpu/arm926ejs/mx28/mmcops.c
+--- u-boot-2009.08.lastpatch.4/cpu/arm926ejs/mx28/mmcops.c	2011-07-18 15:55:46.890591477 +0800
++++ u-boot-2009.08.lastpatch/cpu/arm926ejs/mx28/mmcops.c	2011-07-18 15:56:19.770667640 +0800
+@@ -24,7 +24,7 @@
+ #include <exports.h>
+ #include <mmc.h>
+ 
+-#ifdef CONFIG_GENERIC_MMC
++#ifdef CONFIG_MXS_MMC_CMD
+ #define MMCOPS_DEBUG
+ 
+ #define MBR_SIGNATURE		0xaa55

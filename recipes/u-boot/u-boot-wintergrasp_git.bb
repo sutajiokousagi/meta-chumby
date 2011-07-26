@@ -10,7 +10,7 @@ PROVIDES = "virtual/bootloader virtual/chumby-bootimage"
 RPROVIDES = "virtual/bootloader virtual/chumby-bootimage"
 COMPATIBLE_MACHINE = "chumby-wintergrasp"
 
-PR ="r11"
+PR ="r12"
 
 SRC_URI = "${CHUMBYSG_GIT_HOST}/chumby-sg/u-boot-2009.08-wintergrasp${CHUMBYSG_GIT_EXTENSION};protocol=${CHUMBYSG_GIT_PROTOCOL} \
            file://000-board_setup.patch \
@@ -24,6 +24,10 @@ SRC_URI = "${CHUMBYSG_GIT_HOST}/chumby-sg/u-boot-2009.08-wintergrasp${CHUMBYSG_G
            file://008-load_image.patch \
            file://009-logo_during_boot.patch \
            file://010-allow_dynamic_env_placing_for_mmc.patch \
+           file://011-disable_mxs_mmc_command.patch \
+           file://012-allow_uboot_env_in_nand_mmc.patch \
+           file://013-setup_mtd_partition.patch \
+           file://014-uboot_multiple_nand_env_copies.patch \
 "
 
 SRCREV = "${AUTOREV}"

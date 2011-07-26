@@ -1,0 +1,137 @@
+diff -Nur u-boot-2009.08.lastpatch/common/env_nand.c u-boot-2009.08/common/env_nand.c
+--- u-boot-2009.08.lastpatch/common/env_nand.c	2011-07-22 15:34:46.391013732 +0800
++++ u-boot-2009.08/common/env_nand.c	2011-07-22 18:14:34.264788565 +0800
+@@ -269,6 +269,20 @@
+ (void)
+ {
+ 	int ret = 0;
++
++#if defined(CONFIG_ENV_COPIES_NAND)
++  int m;
++#endif
++
++	if (CONFIG_ENV_RANGE < CONFIG_ENV_SIZE)
++		return 1;
++	puts ("Erasing Nand...\n");
++
++#if defined(CONFIG_ENV_COPIES_NAND)
++  for (m = 0; m < CONFIG_ENV_COPIES_NAND; m++)
++  {
++#endif
++
+ 	nand_erase_options_t nand_erase_options;
+ 
+ 	nand_erase_options.length = CONFIG_ENV_RANGE;
+@@ -283,15 +297,28 @@
+   CONFIG_ENV_OFFSET
+ #endif
+ 
++#if defined(CONFIG_ENV_COPIES_NAND)
++  + (m * CONFIG_ENV_SECT_SIZE_NAND)
++#endif
++
+   ;
+ 
+-	if (CONFIG_ENV_RANGE < CONFIG_ENV_SIZE)
+-		return 1;
+-	puts ("Erasing Nand...\n");
+ 	if (nand_erase_opts(&nand_info[0], &nand_erase_options))
++
++#if !defined(CONFIG_ENV_COPIES_NAND)
+ 		return 1;
++#else
++    ;
++  }
++#endif
+ 
+ 	puts ("Writing to Nand... ");
++
++#if defined(CONFIG_ENV_COPIES_NAND)
++  for (m = 0; m < CONFIG_ENV_COPIES_NAND; m++)
++  {
++#endif
++
+ 	if (writeenv(
+     
+ #if defined(CONFIG_ENV_IS_IN_NAND_MMC) 
+@@ -300,11 +327,23 @@
+     CONFIG_ENV_OFFSET
+ #endif
+ 
++#if defined(CONFIG_ENV_COPIES_NAND)
++    + (m * CONFIG_ENV_SECT_SIZE_NAND)
++#endif
++
+     , (u_char *) env_ptr)) {
+ 		puts("FAILED!\n");
++
++#if !defined(CONFIG_ENV_COPIES_NAND)
+ 		return 1;
++#endif
++
+ 	}
+ 
++#if defined(CONFIG_ENV_COPIES_NAND)
++  }
++#endif
++
+ 	puts ("done\n");
+ 	return ret;
+ }
+@@ -417,6 +456,13 @@
+ #if !defined(ENV_IS_EMBEDDED)
+ 	int ret;
+ 
++#if defined(CONFIG_ENV_COPIES_NAND)
++  int m;
++
++  for (m = 0; m < CONFIG_ENV_COPIES_NAND; m++)
++  {
++#endif
++
+ 	ret = readenv(
+   
+ #if defined(CONFIG_ENV_IS_IN_NAND_MMC) 
+@@ -425,11 +471,31 @@
+   CONFIG_ENV_OFFSET
+ #endif
+   
++#if defined(CONFIG_ENV_COPIES_NAND)
++  + (m * CONFIG_ENV_SECT_SIZE_NAND)
++#endif
++
+   , (u_char *) env_ptr);
+ 	if (ret)
++
++#if !defined(CONFIG_ENV_COPIES_NAND)
+ 		return use_default();
++#else
++  ; else
++#endif
+ 
+ 	if (crc32(0, env_ptr->data, ENV_SIZE) != env_ptr->crc)
++
++#if defined(CONFIG_ENV_COPIES_NAND)
++    ; else 
++    {
++      printf("env_nand : using copy %d\n", m);
++
++      return;
++    }
++  }
++#endif
++
+ 		return use_default();
+ #endif /* ! ENV_IS_EMBEDDED */
+ }
+diff -Nur u-boot-2009.08.lastpatch/include/configs/wintergrasp.h u-boot-2009.08/include/configs/wintergrasp.h
+--- u-boot-2009.08.lastpatch/include/configs/wintergrasp.h	2011-07-22 15:34:46.624463868 +0800
++++ u-boot-2009.08/include/configs/wintergrasp.h	2011-07-22 16:41:11.439690088 +0800
+@@ -213,6 +213,7 @@
+ 	#define CONFIG_ENV_OFFSET_NAND	0x1400000 /* Nand env, offset: 20M */
+ 	#define CONFIG_ENV_SECT_SIZE_NAND    (128 * 1024)
+ 	#define CONFIG_ENV_SIZE_NAND         CONFIG_ENV_SECT_SIZE_NAND
++  #define CONFIG_ENV_COPIES_NAND 4
+ 
+ #if defined(CONFIG_FSL_ENV_IN_NAND)
+   #define CONFIG_ENV_OFFSET CONFIG_ENV_OFFSET_NAND

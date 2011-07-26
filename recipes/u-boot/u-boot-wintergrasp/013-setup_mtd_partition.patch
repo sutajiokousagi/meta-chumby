@@ -1,0 +1,31 @@
+diff -Nur u-boot-2009.08.lastpatch/include/configs/wintergrasp.h u-boot-2009.08/include/configs/wintergrasp.h
+--- u-boot-2009.08.lastpatch/include/configs/wintergrasp.h	2011-07-21 17:33:25.518460667 +0800
++++ u-boot-2009.08/include/configs/wintergrasp.h	2011-07-22 15:20:51.060244957 +0800
+@@ -80,7 +80,7 @@
+         "bootargs_mmc=setenv bootargs " \
+                 "${bootargs} " \
+                 "root=/dev/mmcblk0p5 rw rootwait " \
+-                "gpmi " \
++                "gpmi ${mtdparts} " \
+                 "logo_offset=${pict1_addr} " \
+                 "loglevel=10 printk.time=1\0" \
+         "bootcmd_mmc=run bootargs_mmc; " \
+@@ -88,15 +88,15 @@
+                 "loadimg ${pict1_addr}; " \
+                 "bootm\0" \
+         "mtdids=nand0=gpmi-nfc\0" \
+-        "mtdparts=mtdparts=gpmi-nfc:0x1400000@0x0(gpmi-nfc-0-boot)ro,0xec00000@0x1400000(gpmi-nfc-general-use)ro\0" \
++        "mtdparts=mtdparts=gpmi-nfc:0x1600000(boot),-(root)\0" \
+         "bootargs_mtd=setenv bootargs " \
+                 "${bootargs} " \
+                 "ubi.mtd=1 root=ubi0:rootfs rw rootfstype=ubifs rootwait " \
+-                "gpmi " \
++                "gpmi ${mtdparts} " \
+                 "logo_offset=${pict1_addr} " \
+                 "loglevel=10 printk.time=1\0" \
+         "bootcmd_mtd=run bootargs_mtd; " \
+-                "ubi part gpmi-nfc-general-use; " \
++                "ubi part root; " \
+                 "ubifsmount rootfs; " \
+                 "ubifsload ${loadaddr} /boot/${bootfile}; " \
+                 "loadimg ${pict1_addr}; " \
