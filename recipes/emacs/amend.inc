@@ -1,1 +1,1 @@
-DEPENDS += "libtool"
+DEPENDS += "dbus"
