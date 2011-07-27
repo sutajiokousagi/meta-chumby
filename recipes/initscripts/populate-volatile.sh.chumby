@@ -164,10 +164,14 @@ apply_cfgfile() {
   }
 
 # bind /var to a writable partition
-mkdir -p /media/storage/var/psp
+mkdir -p /media/storage/var
 if ! mount | grep -q "/dev/mmcblk0p3 on /var"
 then
 	mount -obind /media/storage/var /var
+	if [ ! -d /var/psp ]
+	then
+		cp -a /psp/* /var/psp/
+	fi
 	mount -obind /media/storage/var/psp /psp
 fi
 
