@@ -8,7 +8,7 @@ do_install_append() {
 # extra directories in /media.  Remove them from the list here.
 # Also, change root's home path.
 dirs755 = "/bin /boot /dev ${sysconfdir} ${sysconfdir}/default \
-           ${sysconfdir}/skel /lib /mnt /proc /home /sbin \
+           ${sysconfdir}/skel /lib /mnt /proc /home /sbin /psp \
            ${prefix} ${bindir} ${docdir} /usr/games ${includedir} \
            ${libdir} ${sbindir} ${datadir} \
            ${datadir}/common-licenses ${datadir}/dict ${infodir} \
