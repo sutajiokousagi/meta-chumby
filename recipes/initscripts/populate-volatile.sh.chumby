@@ -163,14 +163,24 @@ apply_cfgfile() {
 
   }
 
+# Pre-populate our migrated /var
+if [ ! -d /media/storage/var ]
+then
+	mkdir -p /media/storage/var
+	cp -a /var/* /media/storage/var/
+fi
+
 # bind /var to a writable partition
 mkdir -p /media/storage/var
 if ! mount | grep -q "/dev/mmcblk0p3 on /var"
 then
 	mount -obind /media/storage/var /var
-	if [ ! -d /var/psp ]
+
+	# Pre-populate our migrated /psp if needed
+	if [ ! -d /media/storage/var/psp ]
 	then
-		cp -a /psp/* /var/psp/
+		mkdir /media/storage/var/psp
+		cp -a /psp/* /media/storage/var/var/psp/
 	fi
 	mount -obind /media/storage/var/psp /psp
 fi
