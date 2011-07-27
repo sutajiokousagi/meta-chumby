@@ -3,6 +3,11 @@ ALREADY_RW=1
 if mount | grep /dev/root | grep -q rw; then ALREADY_RW=0; fi
 if [ ${ALREADY_RW} -ne 0 ]; then mount -oremount,rw /; fi
 
+# XXX Hack Somehow this gets put here.  Why?!
+# There are only a handful of scripts running before this one.
+# Remove it so lo can be brought up.
+rm -f /var/run/ifstate
+
 # get splash funcs
 if [ -f /etc/default/splashfuncs ]; then
   . /etc/default/splashfuncs

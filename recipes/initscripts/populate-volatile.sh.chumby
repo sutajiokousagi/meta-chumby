@@ -175,12 +175,13 @@ mkdir -p /media/storage/var
 if ! mount | grep -q "/dev/mmcblk0p3 on /var"
 then
 	mount -obind /media/storage/var /var
+	mkdir -p /var/lib/opkg
 
 	# Pre-populate our migrated /psp if needed
 	if [ ! -d /media/storage/var/psp ]
 	then
 		mkdir /media/storage/var/psp
-		cp -a /psp/* /media/storage/var/var/psp/
+		cp -a /psp/* /media/storage/var/psp/
 	fi
 	mount -obind /media/storage/var/psp /psp
 fi
