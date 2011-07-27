@@ -1,0 +1,11 @@
+#!/bin/sh
+
+if ! test -e /etc/.configured; then
+	mount | grep /dev/root | grep -q rw
+	ALREADY_RO=1
+	if mount | grep /dev/root | grep -q rw; then ALREADY_RW=0; fi
+	if [ ${ALREADY_RW} -ne 0 ]; then mount -oremount,rw /; fi
+	> /etc/.configured
+	if [ ${ALREADY_RW} -ne 0 ]; then mount -oremount,ro /; fi
+fi
+

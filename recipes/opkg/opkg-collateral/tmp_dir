@@ -1,4 +1,3 @@
-# We have whole /tmp in volatile tmpfs which is better than wear leveling NAND or uSD
-# But also bad for big upgrades where tmpfs eats whole memory,
-# device starts swapping (possibly using more NAND/uSD than temporary unpack) and then segfaults because of lack of space
-option tmp_dir /var/lib/opkg/tmp
+# We can theoretically store temp data on /tmp, but during large updates (such as
+# updating qt) we can fill up memory, which is very bad.
+option tmp_dir /media/storage
