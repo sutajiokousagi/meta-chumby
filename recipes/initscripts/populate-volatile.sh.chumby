@@ -6,7 +6,7 @@ CFGDIR="/etc/default/volatiles"
 TMPROOT="/var/tmp"
 COREDEF="00_core"
 
-ALREADY_RO=1
+ALREADY_RW=1
 if mount | grep /dev/root | grep -q rw; then ALREADY_RW=0; fi
 
 [ "${VERBOSE}" != "no" ] && echo "Populating volatile Filesystems."
@@ -164,10 +164,11 @@ apply_cfgfile() {
   }
 
 # bind /var to a writable partition
-mkdir -p /media/storage/var
+mkdir -p /media/storage/var/psp
 if ! mount | grep -q "/dev/mmcblk0p3 on /var"
 then
 	mount -obind /media/storage/var /var
+	mount -obind /media/storage/var/psp /psp
 fi
 
 
