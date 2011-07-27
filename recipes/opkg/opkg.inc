@@ -5,7 +5,7 @@ LICENSE = "GPLv2"
 SRCREV = "609"
 PV = "0.1.8+svnr${SRCPV}"
 CONFLICTS = "ipkg"
-INC_PR = "r9"
+INC_PR = "r10"
 RDEPENDS_${PN} = "gpgme"
 DEPENDS = "gpgme"
 
@@ -26,5 +26,4 @@ EXTRA_OECONF += " --enable-gpg \
                   --disable-openssl \ 
                   --disable-ssl-curl \
                   --disable-curl \
-                  --with-opkglockfile=/var/lib/opkg/lock \
                   --enable-sha256"
