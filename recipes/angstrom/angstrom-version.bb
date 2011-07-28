@@ -2,11 +2,9 @@ LICENSE = "MIT"
 
 PV = "${DISTRO_VERSION}"
 PR = "r${CHUMBY_BUILD}"
-PE = "1"
 
 SRC_URI = "file://lsb_release"
 
-PACKAGES = "${PN}"
 PACKAGE_ARCH = "${MACHINE_ARCH}"
 
 do_install() {
