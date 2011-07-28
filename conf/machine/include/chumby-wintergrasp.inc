@@ -15,6 +15,7 @@ chumby_make_rom () {
     install -d ${DEPLOY_DIR_IMAGE}
     touch ${DEPLOY_DIR_IMAGE}/dummy
     if [ -f ${DEPLOY_DIR_IMAGE}/${IMAGE_LINK_NAME}.ext3 ]; then
+      rm -f ${DEPLOY_DIR_IMAGE}/rom-${MACHINE}-${IMAGE_BASENAME}.img.gz
       makedisk -o ${DEPLOY_DIR_IMAGE}/rom-${MACHINE}-${IMAGE_BASENAME}.img \
                -a ${@(${IMAGE_FATFS_SIZE} / 1024)}k:0x0b:usr.fat \
                -a ${@(${IMAGE_CONFIG_BLOCK_SIZE} / 1024)}k:0xda:${DEPLOY_DIR_IMAGE}/config_block-${MACHINE}.part \
@@ -23,5 +24,6 @@ chumby_make_rom () {
                -a ${ROOTFS_SIZE}k:0x83:${DEPLOY_DIR_IMAGE}/${IMAGE_LINK_NAME}.ext3 \
                -a ${ROOTFS_SIZE}k:0x83:${DEPLOY_DIR_IMAGE}/${IMAGE_LINK_NAME}.ext3
       package_stagefile_shell ${DEPLOY_DIR_IMAGE}/rom-${MACHINE}-${IMAGE_BASENAME}.img
-    fi
+      gzip ${DEPLOY_DIR_IMAGE}/rom-${MACHINE}-${IMAGE_BASENAME}.img
+   fi
 }
