@@ -5,12 +5,12 @@ LICENSE = "GPLv2"
 SRCREV = "609"
 PV = "0.1.8+svnr${SRCPV}"
 CONFLICTS = "ipkg"
-INC_PR = "r6"
+INC_PR = "r10"
 RDEPENDS_${PN} = "gpgme"
 DEPENDS = "gpgme"
 
 SRC_URI = "svn://opkg.googlecode.com/svn;module=trunk;proto=http \
-	   file://configure \
+	   file://configure.chumby \
 "
 
 S = "${WORKDIR}/trunk"
@@ -19,7 +19,7 @@ inherit autotools pkgconfig
 
 do_install_prepend() {
   install -d ${D}${sysconfdir}/rcS.d
-  install -m 0755 ${WORKDIR}/configure ${D}${sysconfdir}/rcS.d/S40configure
+  install -m 0755 ${WORKDIR}/configure.chumby ${D}${sysconfdir}/rcS.d/S40configure
 }
 
 EXTRA_OECONF += " --enable-gpg \ 

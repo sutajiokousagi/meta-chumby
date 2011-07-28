@@ -1,0 +1,35 @@
+#!/bin/sh
+ALREADY_RW=1
+if mount | grep /dev/root | grep -q rw; then ALREADY_RW=0; fi
+if [ ${ALREADY_RW} -ne 0 ]; then mount -oremount,rw /; fi
+
+# XXX Hack Somehow this gets put here.  Why?!
+# There are only a handful of scripts running before this one.
+# Remove it so lo can be brought up.
+rm -f /var/run/ifstate
+
+# get splash funcs
+if [ -f /etc/default/splashfuncs ]; then
+  . /etc/default/splashfuncs
+## tell boot status to "pulsate" really long busy cycle here
+status_pulse || true
+fi
+
+# run configure in bg
+if [  -f /etc/default/splashfuncs ]; then
+  opkg-cl configure &
+  PID=$!
+  
+  # while configure still running loop
+  while test -d /proc/$PID; do
+  # tick to splash so it doesn't time out
+    status_tick || true
+    sleep 1
+  done
+else
+  opkg-cl configure
+fi
+
+# delete myself
+rm -f /etc/rcS.d/S40configure
+if [ ${ALREADY_RW} -ne 0 ]; then mount -oremount,ro /; fi

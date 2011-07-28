@@ -22,3 +22,4 @@ pkg_postrm_${PN} () {
 require update-alternatives-merge.inc
 
 EXTRA_OECONF_append_visstrim_m10 = " --with-opkglockfile=/var/lock/opkg.lock"
+EXTRA_OECONF = " --with-opkglockfile=/var/lib/opkg/lock"

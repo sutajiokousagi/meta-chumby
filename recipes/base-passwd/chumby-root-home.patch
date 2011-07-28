@@ -1,0 +1,9 @@
+diff -ur base-passwd-stock/passwd.master base-passwd/passwd.master
+--- base-passwd-stock/passwd.master	2011-07-27 20:46:45.800649046 +0800
++++ base-passwd/passwd.master	2011-07-27 20:47:39.468648226 +0800
+@@ -1,4 +1,4 @@
+-root::0:0:root:/home/root:/bin/sh
++root::0:0:root:/media/storage/root:/bin/sh
+ daemon:*:1:1:daemon:/usr/sbin:/bin/sh
+ bin:*:2:2:bin:/bin:/bin/sh
+ sys:*:3:3:sys:/dev:/bin/sh
