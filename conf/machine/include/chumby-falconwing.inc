@@ -65,8 +65,10 @@ chumby_make_rom() {
     dd conv=notrunc of=${DEPLOY_DIR_IMAGE}/boot-${MACHINE}.bin seek=10240 count=8192 if=${DEPLOY_DIR_IMAGE}/zImage-${MACHINE}.bin
 
     # Make full boot ROM
+    rm -f ${DEPLOY_DIR_IMAGE}/rom-${MACHINE}-${IMAGE_BASENAME}.img.gz
     install -d ${DEPLOY_DIR_IMAGE}
     makedisk -o ${DEPLOY_DIR_IMAGE}/rom-${MACHINE}-${IMAGE_BASENAME}.img \
              -a 16M:0x53:${DEPLOY_DIR_IMAGE}/boot-${MACHINE}.bin \
              -a ${ROOTFS_SIZE}k:0x83:${DEPLOY_DIR_IMAGE}/${IMAGE_LINK_NAME}.ext3
+    gzip ${DEPLOY_DIR_IMAGE}/rom-${MACHINE}-${IMAGE_BASENAME}.img
 }
