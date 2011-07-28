@@ -3,8 +3,9 @@ HOMEPAGE = "http://www.chumby.com/"
 AUTHOR = "Sean Cross"
 LICENSE = "BSD"
 
-PROVIDES = "chumby-blobs"
 COMPATIBLE_MACHINE = "chumby-falconwing"
+PACKAGE_ARCH = "${MACHINE}"
+PROVIDES = "chumby-blobs"
 
 SRC_URI = "http://files.chumby.com/source/falconwing/build2370/bootstream-1.0.tgz"
 S = "${WORKDIR}/bootstream-1.0/images"
@@ -45,14 +46,6 @@ do_deploy() {
     install ${S}/5_1.bin ${DEPLOY_DIR_IMAGE}/5_1.bin
     install ${S}/5_2.bin ${DEPLOY_DIR_IMAGE}/5_2.bin
     install ${S}/5_3.bin ${DEPLOY_DIR_IMAGE}/5_3.bin
-#    package_stagefile_shell ${DEPLOY_DIR_IMAGE}/power
-#    package_stagefile_shell ${DEPLOY_DIR_IMAGE}/clocks
-#    package_stagefile_shell ${DEPLOY_DIR_IMAGE}/sdram_prep
-#    package_stagefile_shell ${DEPLOY_DIR_IMAGE}/4_1.bin
-#    package_stagefile_shell ${DEPLOY_DIR_IMAGE}/4_2.bin
-#    package_stagefile_shell ${DEPLOY_DIR_IMAGE}/5_1.bin
-#    package_stagefile_shell ${DEPLOY_DIR_IMAGE}/5_2.bin
-#    package_stagefile_shell ${DEPLOY_DIR_IMAGE}/5_3.bin
 }
 do_deploy[dirs] = "${S}"
 addtask deploy before do_build after do_compile
