@@ -10,7 +10,7 @@
 SECTION = "bootloaders"
 PRIORITY = "optional"
 LICENSE = "GPLv2"
-PR = "r12"
+PR = "r13"
 COMPATIBLE_MACHINE = "chumby-falconwing"
 PACKAGE_ARCH = "${MACHINE}"
 PROVIDES = "virtual/bootloader"
