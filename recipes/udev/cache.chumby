@@ -6,10 +6,10 @@ export TZ=/etc/localtime
 
 if [ "$DEVCACHE" != "" ]; then
 	if [ ! -e $DEVCACHE ] || \
-	   cmp -s /tmp/uname /etc/udev/saved.uname || \
-	   cmp -s /tmp/cmdline /etc/udev/saved.cmdline || \
-	   cmp -s /tmp/devices /etc/udev/saved.devices || \
-	   cmp -s /tmp/atags /etc/udev/saved.atags; then
+	   ! cmp -s /tmp/uname /etc/udev/saved.uname || \
+	   ! cmp -s /tmp/cmdline /etc/udev/saved.cmdline || \
+	   ! cmp -s /tmp/devices /etc/udev/saved.devices || \
+	   ! cmp -s /tmp/atags /etc/udev/saved.atags; then
 		echo -n "System changed.  Regenerating dev cache: "
 		mount -oremount,rw /
 		mv /tmp/uname /etc/udev/saved.uname
