@@ -11,56 +11,16 @@
 SECTION = "bootloaders"
 PRIORITY = "optional"
 LICENSE = "GPLv2"
-DEPENDS = "chumby-bootshell chumby-blobs-falconwing config-util-native virtual/kernel"
-DEPENDS_${PN} = "chumby-bootshell chumby-blobs-falconwing config-util-native virtual/kernel"
-PROVIDES = "virtual/bootloader virtual/chumby-bootimage"
-RPROVIDES = "virtual/bootloader virtual/chumby-bootimage"
 PR = "r8"
-PV = "1.0"
 
 SRC_URI = "file://bootstream-chumby.bin"
 
 COMPATIBLE_MACHINE = "chumby-falconwing"
-
-FILES_${PN} = "/boot"
-
-
+PACKAGE_ARCH = "${MACHINE}"
+PROVIDES = "virtual/chumby-bootimage"
 
 do_install () {
-    install -d ${D}/boot
     install -d ${DEPLOY_DIR_IMAGE}
     install -m 0755 ${WORKDIR}/bootstream-chumby.bin ${DEPLOY_DIR_IMAGE}
 }
 
-do_deploy () {
-
-    config_util --cmd=create \
-        --mbr=/dev/zero \
-        --configname=falconwing \
-        --build_ver=1000 --force --pad \
-        --blockdef=${DEPLOY_DIR_IMAGE}/chumby_shell.bin,215040,boot,1,0,0,0 \
-        --blockdef=${DEPLOY_DIR_IMAGE}/4_1.bin,153600,img1,1,0,0,0 \
-        --blockdef=${DEPLOY_DIR_IMAGE}/4_2.bin,153600,img2,1,0,0,0 \
-        --blockdef=${DEPLOY_DIR_IMAGE}/5_1.bin,153600,img3,1,0,0,0 \
-        --blockdef=${DEPLOY_DIR_IMAGE}/5_2.bin,153600,img4,1,0,0,0 \
-        --blockdef=${DEPLOY_DIR_IMAGE}/5_3.bin,153600,img5,1,0,0,0 \
-        --blockdef=${DEPLOY_DIR_IMAGE}/zImage-${MACHINE}.bin,4194304,krnA,1,0,0,0 \
-        --blockdef=${DEPLOY_DIR_IMAGE}/zImage-${MACHINE}.bin,4194304,krnB,1,0,0,0 \
-        > ${DEPLOY_DIR_IMAGE}/config_block.bin
-
-
-    rm -f ${DEPLOY_DIR_IMAGE}/boot-${MACHINE}.bin
-    touch ${DEPLOY_DIR_IMAGE}/boot-${MACHINE}.bin
-    dd conv=notrunc of=${DEPLOY_DIR_IMAGE}/boot-${MACHINE}.bin seek=4 count=64 if=${DEPLOY_DIR_IMAGE}/bootstream-chumby.bin
-    dd conv=notrunc of=${DEPLOY_DIR_IMAGE}/boot-${MACHINE}.bin seek=96 count=32 if=${DEPLOY_DIR_IMAGE}/config_block.bin 
-    dd conv=notrunc of=${DEPLOY_DIR_IMAGE}/boot-${MACHINE}.bin seek=128 count=420 if=${DEPLOY_DIR_IMAGE}/chumby_shell.bin
-    dd conv=notrunc of=${DEPLOY_DIR_IMAGE}/boot-${MACHINE}.bin seek=548 count=300 if=${DEPLOY_DIR_IMAGE}/4_1.bin 
-    dd conv=notrunc of=${DEPLOY_DIR_IMAGE}/boot-${MACHINE}.bin seek=848 count=300 if=${DEPLOY_DIR_IMAGE}/4_2.bin
-    dd conv=notrunc of=${DEPLOY_DIR_IMAGE}/boot-${MACHINE}.bin seek=1148 count=300 if=${DEPLOY_DIR_IMAGE}/5_1.bin 
-    dd conv=notrunc of=${DEPLOY_DIR_IMAGE}/boot-${MACHINE}.bin seek=1448 count=300 if=${DEPLOY_DIR_IMAGE}/5_2.bin 
-    dd conv=notrunc of=${DEPLOY_DIR_IMAGE}/boot-${MACHINE}.bin seek=1748 count=300 if=${DEPLOY_DIR_IMAGE}/5_3.bin
-    dd conv=notrunc of=${DEPLOY_DIR_IMAGE}/boot-${MACHINE}.bin seek=2048 count=8192 if=${DEPLOY_DIR_IMAGE}/zImage-${MACHINE}.bin
-    dd conv=notrunc of=${DEPLOY_DIR_IMAGE}/boot-${MACHINE}.bin seek=10240 count=8192 if=${DEPLOY_DIR_IMAGE}/zImage-${MACHINE}.bin
-#    package_stagefile_shell ${DEPLOY_DIR_IMAGE}/boot-${MACHINE}.bin
-}
-addtask deploy before do_build after do_compile
