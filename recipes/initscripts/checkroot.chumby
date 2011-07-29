@@ -24,21 +24,31 @@ test -x /sbin/update && update
 if [ ! -e /dev/mmcblk0p3 ] || ! dd if=/dev/mmcblk0p3 of=/dev/null count=1
 then
 	echo -e "n\np\n3\n\n\nw\nq\n" | fdisk /dev/mmcblk0
+
+	killall -STOP udevd
+
 	partx -a /dev/mmcblk0
-	udevadm settle # Wait for mmcblk0p3 to appear
-	if [ ! -e /dev/mmcblk0p3 ]
-	then
-		echo "Failed to create storage partition"
-	else
-		mkfs.ext4 /dev/mmcblk0p3
-		mkdir /mnt
-		mount /dev/mmcblk0p3 /mnt
-		mkdir -p /mnt/var/psp
-		cp -a /var/* /mnt/var/
-		mkdir /mnt/var/psp
-		cp -a /psp/* /mnt/var/psp/
-		umount /mnt
-	fi
+	mknod /dev/mmcblk0p3 b 179 3
+	for i in 1 2 3 4 5
+	do
+		if dd if=/dev/mmcblk0p3 of=/dev/null count=1
+		then
+			break
+		else
+			sleep 1
+		fi
+	done
+
+	mkfs.ext4 /dev/mmcblk0p3
+	mkdir /mnt
+	mount /dev/mmcblk0p3 /mnt
+	mkdir -p /mnt/var/psp
+	cp -a /var/* /mnt/var/
+	mkdir /mnt/var/psp
+	cp -a /psp/* /mnt/var/psp/
+	umount /mnt
+
+	killall -CONT udevd
 fi
 
 #
