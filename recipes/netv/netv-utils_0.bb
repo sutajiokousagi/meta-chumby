@@ -3,7 +3,7 @@ LICENSE = "BSD"
 
 inherit update-rc.d
 
-PR = "r30"
+PR = "r29"
 
 PACKAGE_ARCH = "${MACHINE}"
 
@@ -74,8 +74,6 @@ do_install() {
 
 	install -d ${D}${base_libdir}/udev/rules.d
 	install -m 0644 fpga/41-chumby-netv.rules ${D}${base_libdir}/udev/rules.d
-
-	install -m 0644 fpga/hdmi_720p.bin ${DEPLOY_DIR_IMAGE}/hdmi_720p.bin
 }
 
 FILES_${PN} = "${bindir}"

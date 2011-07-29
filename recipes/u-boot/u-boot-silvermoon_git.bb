@@ -2,7 +2,7 @@ inherit chumbysg-git chumby-info
 
 require u-boot.inc
 
-PR = "r15"
+PR = "r16"
 
 PROVIDES = "virtual/bootloader virtual/chumby-bootimage"
 RPROVIDES_${PN} = "virtual/bootloader virtual/chumby-bootimage"
@@ -59,6 +59,7 @@ do_deploy () {
 
     install -d ${DEPLOY_DIR_IMAGE}
     install ${S}/${UBOOT_BINARY} ${DEPLOY_DIR_IMAGE}/${UBOOT_IMAGE}
+    install ${WORKDIR}/logo.raw.gz ${DEPLOY_DIR_IMAGE}/logo.raw.gz
     package_stagefile_shell ${DEPLOY_DIR_IMAGE}/${UBOOT_IMAGE}
 
     cd ${DEPLOY_DIR_IMAGE}
@@ -72,7 +73,7 @@ pkg_postinst_${PN}() {
     config_util --cmd=putblock --dev=/dev/mmcblk0p1 --block=u-bt < /boot/u-boot.bin
     
     # Generate the dcid and cpid config_util if they're missing
-    if ! config_util --cmd=getblock --block=dcid 2&>1 > /dev/null
+    if ! config_util --cmd=getblock --block=logo 2>&1 > /dev/null
     then
         config_util --cmd=create \
             --mbr=/dev/zero \
@@ -83,6 +84,10 @@ pkg_postinst_${PN}() {
             --blockdef=/dev/null,3932160,krnB,1,0,0,0 \
             --blockdef=/dev/null,16384,cpid,1,0,0,0 \
             --blockdef=/dev/null,1024,dcid,1,0,0,0 \
+            --blockdef=/dev/null,340992,720p,1,0,0,0 \
+            --blockdef=/dev/null,1843200,logo,1,0,0,0 \
         | dd of=/dev/mmcblk0p1 seek=96
+        config_util --cmd=putblock --block=720p < /lib/firmware/hdmi_720p.bin
+        config_util --cmd=putblock --block=logo < /boot/logo.raw.gz
     fi
 }
