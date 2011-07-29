@@ -2,8 +2,6 @@
 
 . /etc/default/rcS
 
-echo "$0: Start Ifstate:"; cat /var/run/ifstate
-
 CFGDIR="/etc/default/volatiles"
 TMPROOT="/var/tmp"
 COREDEF="00_core"
