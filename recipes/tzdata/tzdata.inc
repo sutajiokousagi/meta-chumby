@@ -3,7 +3,7 @@ SECTION = "base"
 PRIORITY = "optional"
 DEPENDS = "tzcode-native"
 
-INC_PR = "r8"
+INC_PR = "r9"
 
 DEFAULT_TIMEZONE ?= "Europe/London"
 
@@ -45,8 +45,18 @@ do_install () {
         fi
 
         # Install a sane default for timezones
-        install -d ${D}${sysconfdir}
-        cp -pPR ${WORKDIR}/build${datadir}/zoneinfo/${DEFAULT_TIMEZONE} ${D}${sysconfdir}/localtime
+        install -d ${D}/psp
+        cp -pPR ${WORKDIR}/build${datadir}/zoneinfo/${DEFAULT_TIMEZONE} ${D}/psp/localtime
+}
+
+
+
+pkg_postinst_${PN}() {
+        if [ ! -e ${sysconfdir}/localtime ]
+        then
+                install -d ${sysconfdir}
+                ln -sf /psp/localtime ${sysconfdir}/localtime
+        fi
 }
 
 PACKAGE_ARCH = "all"
