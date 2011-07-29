@@ -3,7 +3,7 @@ LICENSE = "BSD"
 
 inherit update-rc.d
 
-PR = "r29"
+PR = "r30"
 
 PACKAGE_ARCH = "${MACHINE}"
 
@@ -74,6 +74,9 @@ do_install() {
 
 	install -d ${D}${base_libdir}/udev/rules.d
 	install -m 0644 fpga/41-chumby-netv.rules ${D}${base_libdir}/udev/rules.d
+
+	install -d ${DEPLOY_DIR_IMAGE}
+	install -m 0644 fpga/hdmi_720p.bin ${DEPLOY_DIR_IMAGE}
 }
 
 FILES_${PN} = "${bindir}"
@@ -83,3 +86,7 @@ FILES_${PN} += "${sysconfdir}/init.d/"
 
 INITSCRIPT_NAME = "netv_service"
 INITSCRIPT_PARAMS = "defaults 50 50"
+
+pkg_postinst_${PN}() {
+	config_util --cmd=putblock --dev=/dev/mmcblk0p1 --block=720p < ${base_libdir}/firmware/hdmi_720p.bin
+}
