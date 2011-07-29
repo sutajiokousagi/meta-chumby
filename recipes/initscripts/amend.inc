@@ -3,7 +3,7 @@ SRC_URI += "file://checkroot.chumby \
             file://finish.sh.chumby \
             file://bootmisc.sh.chumby \
 "
-PR .= "-amend-r2"
+PR .= "-amend-r3"
 
 do_install_append() {
         install -m 0755 ${WORKDIR}/checkroot.chumby ${D}${sysconfdir}/init.d/checkroot

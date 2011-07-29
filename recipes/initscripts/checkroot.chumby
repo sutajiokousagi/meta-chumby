@@ -21,7 +21,7 @@ test -x /sbin/update && update
 #
 # Ensure our storage partition exists.  If not, recreate it.
 #
-if [ ! -e /dev/mmcblk0p3 ]
+if [ ! -e /dev/mmcblk0p3 ] || ! dd if=/dev/mmcblk0p3 of=/dev/null count=1
 then
 	echo -e "n\np\n3\n\n\nw\nq\n" | fdisk /dev/mmcblk0
 	partx -a /dev/mmcblk0
@@ -31,6 +31,13 @@ then
 		echo "Failed to create storage partition"
 	else
 		mkfs.ext4 /dev/mmcblk0p3
+		mkdir /mnt
+		mount /dev/mmcblk0p3 /mnt
+		mkdir -p /mnt/var/psp
+		cp -a /var/* /mnt/var/
+		mkdir /mnt/var/psp
+		cp -a /psp/* /mnt/var/psp/
+		umount /mnt
 	fi
 fi
 
