@@ -10,7 +10,7 @@
 SECTION = "bootloaders"
 PRIORITY = "optional"
 LICENSE = "GPLv2"
-PR = "r11"
+PR = "r12"
 COMPATIBLE_MACHINE = "chumby-falconwing"
 PACKAGE_ARCH = "${MACHINE}"
 PROVIDES = "virtual/bootloader"
@@ -26,9 +26,7 @@ do_compile () {
 
 FILES_${PN} = "/boot"
 
-addtask deploy before do_build after do_compile
-
-do_deploy () {
+do_install () {
     install -d ${DEPLOY_DIR_IMAGE}
     install -m 0644 output/chumby_boot.rom ${DEPLOY_DIR_IMAGE}/chumby_shell.bin
 }
