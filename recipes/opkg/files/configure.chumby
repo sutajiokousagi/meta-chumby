@@ -1,7 +1,15 @@
 #!/bin/sh
 ALREADY_RW=1
 if mount | grep /dev/root | grep -q rw; then ALREADY_RW=0; fi
-if [ ${ALREADY_RW} -ne 0 ]; then mount -oremount,rw /; fi
+if [ ${ALREADY_RW} -ne 0 ]; then
+    echo "$0: / wasn't already rw.  Mounting / as rw."
+    mount -oremount,rw /
+else
+    echo "$0: / was already rw.  Ignoring."
+fi
+
+rm -rf /tmp
+ln -sf /var/tmp /tmp
 
 # XXX Hack Somehow this gets put here.  Why?!
 # There are only a handful of scripts running before this one.
@@ -32,4 +40,31 @@ fi
 
 # delete myself
 rm -f /etc/rcS.d/S40configure
-if [ ${ALREADY_RW} -ne 0 ]; then mount -oremount,ro /; fi
+if [ ${ALREADY_RW} -ne 0 ]; then
+    cat > /tmp/cleanup.sh <<EOL
+#!/bin/sh
+    echo "$0: / wasn't rw when we started.  Remounting / as ro since we're quitting."
+    for i in \$(seq 5)
+    do
+        if mount -o remount,ro -text4 /dev/mmcblk0p2 / 
+        then
+            break
+        fi
+        sleep 1
+    done
+    if [ \$i -ge 5 ]
+    then
+        echo "$0: Failed to remount /   File listing:"
+        lsof
+        echo "$0: Listing of /"
+        ls -l /
+        echo "$0: Mounted volumes:"
+        mount
+    fi
+    rm -f /tmp/cleanup.sh
+EOL
+    chmod a+x /tmp/cleanup.sh
+    exec /tmp/cleanup.sh
+else
+    echo "$0: / was already rw when we started.  Not remounting since we're quitting."
+fi

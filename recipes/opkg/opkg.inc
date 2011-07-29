@@ -5,7 +5,7 @@ LICENSE = "GPLv2"
 SRCREV = "609"
 PV = "0.1.8+svnr${SRCPV}"
 CONFLICTS = "ipkg"
-INC_PR = "r10"
+INC_PR = "r11"
 RDEPENDS_${PN} = "gpgme"
 DEPENDS = "gpgme curl"
 
