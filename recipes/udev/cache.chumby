@@ -12,6 +12,7 @@ if [ "$DEVCACHE" != "" ]; then
 	   ! cmp -s /tmp/atags /etc/udev/saved.atags; then
 		echo -n "System changed.  Regenerating dev cache: "
 		mount -oremount,rw /
+		(cd /; tar cf $DEVCACHE dev)
 		mv /tmp/uname /etc/udev/saved.uname
 		mv /tmp/cmdline /etc/udev/saved.cmdline
 		mv /tmp/devices /etc/udev/saved.devices
