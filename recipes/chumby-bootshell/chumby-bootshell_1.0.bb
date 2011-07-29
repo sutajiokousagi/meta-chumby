@@ -10,10 +10,10 @@
 SECTION = "bootloaders"
 PRIORITY = "optional"
 LICENSE = "GPLv2"
-PR = "r13"
+PR = "r14"
 COMPATIBLE_MACHINE = "chumby-falconwing"
 PACKAGE_ARCH = "${MACHINE}"
-PROVIDES = "virtual/bootloader"
+PROVIDES = "virtual/bootloader chumby-bootshell"
 
 
 SRC_URI = "file://chumby-bootshell-1.0.tar.gz"
