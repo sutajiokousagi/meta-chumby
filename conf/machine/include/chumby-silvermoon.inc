@@ -56,6 +56,8 @@ chumby_make_rom () {
         --blockdef=${DEPLOY_DIR_IMAGE}/zImage-${MACHINE}.bin,3932160,krnB,1,0,0,0 \
         --blockdef=/dev/null,16384,cpid,1,0,0,0 \
         --blockdef=/dev/null,1024,dcid,1,0,0,0 \
+        --blockdef=/dev/null,340604,720p,1,0,0,0 \
+        --blockdef=/dev/null,1843200,logo,1,0,0,0 \
         > ${DEPLOY_DIR_IMAGE}/config_block.bin
 
 
