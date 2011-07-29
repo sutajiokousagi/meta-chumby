@@ -3,7 +3,7 @@ SECTION = "base"
 PRIORITY = "optional"
 DEPENDS = "tzcode-native"
 
-INC_PR = "r9"
+INC_PR = "r10"
 
 DEFAULT_TIMEZONE ?= "Europe/London"
 
@@ -21,7 +21,7 @@ TZONES= "africa antarctica asia australasia europe northamerica southamerica  \
 #        pacificnew \
         "
 
-CONFFILES_${PN} = "${sysconfdir}/localtime"
+CONFFILES_${PN} = "${sysconfdir}/timezone ${sysconfdir}/localtime"
 
 do_compile () {
         mkdir -p build
@@ -39,25 +39,22 @@ do_install () {
         install -d ${D}${prefix} ${D}${datadir}/zoneinfo
         cp -pPR ${WORKDIR}/build${prefix}/* ${D}${prefix}
         # Only eglibc is removing zoneinfo files from package
-        if [ "${LIBC}"x == "eglibc"x ] ; then
+        if [ "${LIBC}"x = "eglibc"x ] ; then
           cp -pP "${WORKDIR}/zone.tab" ${D}${datadir}/zoneinfo
           cp -pP "${WORKDIR}/iso3166.tab" ${D}${datadir}/zoneinfo
         fi
 
         # Install a sane default for timezones
-        install -d ${D}/psp
-        cp -pPR ${WORKDIR}/build${datadir}/zoneinfo/${DEFAULT_TIMEZONE} ${D}/psp/localtime
+        install -d ${D}${sysconfdir}
+        echo ${DEFAULT_TIMEZONE} > ${D}${sysconfdir}/timezone
+        cp -pPR ${WORKDIR}/build${datadir}/zoneinfo/${DEFAULT_TIMEZONE} ${D}${sysconfdir}/localtime
 }
-
-
 
 pkg_postinst_${PN}() {
-        if [ ! -e ${sysconfdir}/localtime ]
-        then
-                install -d ${sysconfdir}
-                ln -sf /psp/localtime ${sysconfdir}/localtime
-        fi
+        rm -f ${sysconfdir}/localtime
+        ln -sf /psp/localtime ${sysconfdir}/localtime
 }
+
 
 PACKAGE_ARCH = "all"
 # Packages primarily organized by directory with a major city
@@ -186,3 +183,4 @@ FILES_${PN} += "${datadir}/zoneinfo/Pacific/Honolulu     \
                 ${datadir}/zoneinfo/iso3166.tab          \
                 ${datadir}/zoneinfo/zone.tab             \
                 ${sysconfdir}/localtime                  \
+                ${sysconfdir}/timezone                   "
