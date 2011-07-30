@@ -1,0 +1,65 @@
+diff -ur qt-everywhere-opensource-src-4.7.3-stock/src/gui/painting/qgrayraster.c qt-everywhere-opensource-src-4.7.3/src/gui/painting/qgrayraster.c
+--- qt-everywhere-opensource-src-4.7.3-stock/src/gui/painting/qgrayraster.c	2011-07-31 03:56:53.016804010 +0800
++++ qt-everywhere-opensource-src-4.7.3/src/gui/painting/qgrayraster.c	2011-07-31 04:08:35.552804380 +0800
+@@ -309,7 +309,7 @@
+     int  conic_level;
+     int  cubic_level;
+ 
+-    qt_ft_jmp_buf  jump_buffer;
++    int         outline_decompose_error;
+ 
+     void*       buffer;
+     long        buffer_size;
+@@ -432,7 +432,10 @@
+     }
+ 
+     if ( ras.num_cells >= ras.max_cells )
+-      qt_ft_longjmp( ras.jump_buffer, 1 );
++    {
++      ras.outline_decompose_error = ErrRaster_Memory_Overflow;
++      return NULL;
++    }
+ 
+     cell        = ras.cells + ras.num_cells++;
+     cell->x     = x;
+@@ -454,6 +457,8 @@
+     {
+       PCell  cell = gray_find_cell( RAS_VAR );
+ 
++      if ( cell == NULL )
++        return;
+ 
+       cell->area  += ras.area;
+       cell->cover += ras.cover;
+@@ -1090,6 +1095,9 @@
+     /* record current cell, if any */
+     gray_record_cell( worker );
+ 
++    if ( ras.outline_decompose_error != 0)
++        return ras.outline_decompose_error;
++
+     /* start to a new position */
+     x = UPSCALE( to->x );
+     y = UPSCALE( to->y );
+@@ -1598,14 +1606,13 @@
+   {
+     volatile int  error = 0;
+ 
+-    if ( qt_ft_setjmp( ras.jump_buffer ) == 0 )
+-    {
+-      error = QT_FT_Outline_Decompose( &ras.outline, &ras );
+-      gray_record_cell( RAS_VAR );
+-    }
+-    else
++    ras.outline_decompose_error = 0;
++    error = QT_FT_Outline_Decompose( &ras.outline, &ras );
++    gray_record_cell( RAS_VAR );
++    if ( ras.outline_decompose_error != 0)
+     {
+-      error = ErrRaster_Memory_Overflow;
++      error = ras.outline_decompose_error;
++      ras.outline_decompose_error = 0;
+     }
+ 
+     return error;
+Binary files qt-everywhere-opensource-src-4.7.3-stock/src/gui/painting/.qgrayraster.c.swp and qt-everywhere-opensource-src-4.7.3/src/gui/painting/.qgrayraster.c.swp differ
