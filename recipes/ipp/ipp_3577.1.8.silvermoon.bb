@@ -8,7 +8,7 @@ PR = "r0"
 COMPATIBLE_MACHINE = "chumby-silvermoon-*"
 
 SRC_URI = "${CHUMBYSG_GIT_HOST}/chumby-clone/https_internal.chumby.com_firmware_gst_pxa168-1.0_${RVERSION}${CHUMBYSG_GIT_EXTENSION};subpath=src;protocol=${CHUMBYSG_GIT_PROTOCOL}"
-SRCREV = "${AUTOREV}"
+SRCREV = "daeadc168687b4a797d963c5454c812a156ea32e"
 S = "${WORKDIR}/src/ipp/lib"
 
 do_compile() {
