@@ -15,7 +15,6 @@ SRC_URI = "${CHUMBYSG_GIT_HOST}/chumby-clone/https_internal.chumby.com_ironforge
            file://guidgen.sh \
            file://chumby_version \
 "
-SRCREV = "${AUTOREV}"
 S = "${WORKDIR}/src"
 
 # Use Falconwing-style daemon for silvermoon

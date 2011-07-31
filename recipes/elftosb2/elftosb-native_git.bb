@@ -9,7 +9,7 @@ PR ="r1"
 
 SRC_URI = "${CHUMBYSG_GIT_HOST}/chumby-sg/elftosb-10.12.01${CHUMBYSG_GIT_EXTENSION};protocol=${CHUMBYSG_GIT_PROTOCOL} \
 "
-SRCREV = "${AUTOREV}"
+SRCREV = "396e5c3e423609ab7d618882dbed449a012016c4"
 S = "${WORKDIR}/git"
 
 # Must do a single-threaded make

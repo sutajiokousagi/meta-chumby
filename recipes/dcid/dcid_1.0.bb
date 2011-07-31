@@ -23,7 +23,7 @@ SRC_URI = "${CHUMBYSG_GIT_HOST}/chumby-clone/dcid${CHUMBYSG_GIT_EXTENSION};subpa
            ${CHUMBYSG_GIT_HOST}/chumby-clone/dcid${CHUMBYSG_GIT_EXTENSION};subpath=include;protocol=${CHUMBYSG_GIT_PROTOCOL} \
            file://chumby_accel.h \
 "
-SRCREV = "${AUTOREV}"
+SRCREV = "cf78dd484269c7b4aad776806f4e2a66cf182082"
 S = "${WORKDIR}/src"
 
 do_compile() {

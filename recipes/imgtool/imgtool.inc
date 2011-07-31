@@ -9,7 +9,6 @@ PR = "r0"
 DEPENDS = "giflib libpng jpeg"
 
 SRC_URI = "${CHUMBYSG_GIT_HOST}/chumby-clone/https_internal.chumby.com_ironforge_chumbytools_${RVERSION}_src_imgtool${CHUMBYSG_GIT_EXTENSION};subpath=src;protocol=${CHUMBYSG_GIT_PROTOCOL}"
-SRCREV = "${AUTOREV}"
 S = "${WORKDIR}/src"
 
 do_compile() {
