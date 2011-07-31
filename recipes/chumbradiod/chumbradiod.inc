@@ -9,6 +9,5 @@ PR = "r0"
 RDEPENDS = "chumbhttpd"
 
 SRC_URI = "${CHUMBYSG_GIT_HOST}/chumby-clone/https_internal.chumby.com_thirdparty_chumbylibs_${RVERSION}_src${CHUMBYSG_GIT_EXTENSION};subpath=chumbradiod;protocol=${CHUMBYSG_GIT_PROTOCOL}"
-SRCREV = "${AUTOREV}"
 S = "${WORKDIR}/chumbradiod/src"
 

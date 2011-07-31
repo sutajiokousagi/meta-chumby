@@ -7,9 +7,9 @@ LICENSE = "BSD"
 PR = "r1"
 
 PACKAGE_ARCH = "${MACHINE}"
+SRCREV = "9d4d40e76867cdbe7ba8db5aa96fc7bf4c99b43d"
 
 SRC_URI = "${CHUMBYSG_GIT_HOST}/chumby-sg/regutil${CHUMBYSG_GIT_EXTENSION};subpath=;protocol=${CHUMBYSG_GIT_PROTOCOL}"
-SRCREV = "${AUTOREV}"
 S = "${WORKDIR}/git"
 
 do_compile() {

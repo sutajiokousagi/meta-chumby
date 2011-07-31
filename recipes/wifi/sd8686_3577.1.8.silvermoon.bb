@@ -7,7 +7,7 @@ LICENSE = "GPL"
 PR = "r0"
 
 SRC_URI = "${CHUMBYSG_GIT_HOST}/chumby-clone/https_internal.chumby.com_firmware_wifi-1.0_${RVERSION}${CHUMBYSG_GIT_EXTENSION};subpath=src;protocol=${CHUMBYSG_GIT_PROTOCOL}"
-SRCREV = "${AUTOREV}"
+SRCREV = "402d1dea56e23a23df792f24fd2a1d3e16a431d5"
 S = "${WORKDIR}/src/sd8686/wlan_src/"
 
 EXTRA_OEMAKE = "KERNDIR=${STAGING_KERNEL_DIR}"

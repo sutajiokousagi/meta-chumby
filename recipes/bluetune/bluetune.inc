@@ -10,7 +10,6 @@ DEPENDS = "python-scons-native alsa-lib"
 SRC_URI = "${CHUMBYSG_GIT_HOST}/chumby-clone/https_internal.chumby.com_thirdparty_bluetune_${RVERSION}${CHUMBYSG_GIT_EXTENSION};subpath=src;protocol=${CHUMBYSG_GIT_PROTOCOL} \
 	file://0001-fix-scons-build.patch \
 "
-SRCREV = "${AUTOREV}"
 S = "${WORKDIR}/src/BlueTune"
 
 do_compile() {
