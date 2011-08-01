@@ -1,1 +1,3 @@
-<configurations/>
+<configurations>
+ <configuration type='wlan' hwaddr='00:0C:41:F3:1B:66' ssid='ChumbyTest' allocation='dhcp' auth='OPEN'    encryption='NONE'/>
+</configurations>
