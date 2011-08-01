@@ -6,7 +6,7 @@ case "$1" in
 	      regutil -w LCD_CFG_SCLK_DIV=0x90000001
 	      echo "installing chumby xilinx driver"
 	      modprobe chumby_xilinx
-	      udevadm settle       # must give time for modprobe to make dev node
+	      sleep 1 # must give FPGA time to stabilize
 	      echo "configuring FPGA"
 	      fpga_ctl r
 	      cat /lib/firmware/hdmi_overlay.bin > /dev/fpga
