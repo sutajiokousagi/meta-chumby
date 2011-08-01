@@ -4,7 +4,7 @@ DESCRIPTION = "chumby adapters for NetworkManager"
 HOMEPAGE = "http://www.chumby.com/"
 AUTHOR = "Sean Cross"
 LICENSE = "BSD"
-PR = "r6"
+PR = "r7"
 DEPENDS = "dbus dbus-glib networkmanager glib-2.0 libxml2"
 
 SRC_URI = "${CHUMBYSG_GIT_HOST}/chumby-sg/${PN}${CHUMBYSG_GIT_EXTENSION};protocol=${CHUMBYSG_GIT_PROTOCOL} \
