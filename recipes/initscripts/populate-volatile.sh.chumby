@@ -163,39 +163,28 @@ apply_cfgfile() {
 
   }
 
-# Pre-populate our migrated /var
-if [ ! -d /media/storage/var ]
-then
-	mkdir -p /media/storage/var
-	cp -a /var/* /media/storage/var/
-fi
-
-# bind /var to a writable partition
-mkdir -p /media/storage/var
-if ! mount | grep -q "/dev/mmcblk0p3 on /var"
-then
-	mount -obind /media/storage/var /var
-	mkdir -p /var/lib/opkg
-
-	# Pre-populate our migrated /psp if needed
-	if [ ! -d /media/storage/var/psp ]
-	then
-		mkdir /media/storage/var/psp
-		cp -a /psp/* /media/storage/var/psp/
-	fi
-	mount -obind /media/storage/var/psp /psp
-fi
-
-
 # Re-create the volatile cache if necessary
 if test -e /etc/volatile.cache -a "$VOLATILE_ENABLE_CACHE" = "yes" -a "x$1" != "xupdate"
 then
 	sh /etc/volatile.cache
 else	
-	if [ ${ALREADY_RW} -ne 0 ]; then mount -oremount,rw /; fi
+
+	if [ ${ALREADY_RW} -ne 0 ]; then
+		echo "$0: / wasn't already rw.  Mounting / as rw."
+		mount -oremount,rw /
+	fi
+
 	rm -f /etc/volatile.cache
 	for file in `ls -1 "${CFGDIR}" | sort`; do
 		apply_cfgfile "${CFGDIR}/${file}"
 	done
-	if [ ${ALREADY_RW} -ne 0 ]; then mount -oremount,ro /; fi
+
+	if [ ${ALREADY_RW} -ne 0 ]; then
+		echo "$0: / wasn't rw when we started.  Remounting / as ro since we're quitting."
+		if ! mount -oremount,ro /
+		then
+			echo "$0: Failed to remount /!"
+		fi
+	fi
+
 fi

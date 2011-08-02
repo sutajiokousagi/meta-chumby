@@ -20,8 +20,6 @@ MACHINE_EXTRA_RDEPENDS += " \
     rt73-firmware \
     chumby-startup-hooks \
     chumby-blobs-falconwing \
-    chumby-bootshell \
-    chumby-falconwing-bootimage \
 "
 
 # used by sysvinit_2
