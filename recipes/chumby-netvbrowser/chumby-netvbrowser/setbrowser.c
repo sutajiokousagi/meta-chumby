@@ -112,7 +112,7 @@ int main(int argc, char **argv)
 
 	bzero(res, sizeof(res));
 	snprintf(res+4, sizeof(res)-1,
-		"NeTVBrowser|~|SetResolution|~|%d,%d,%d",
+		"NeTVBrowser|~|SetResolution|~|%d|~|%d|~|%d",
 		var.xres, var.yres, var.bits_per_pixel);
 	((long *)res)[0] = htonl(strlen(res+4)+1);
 	send_message("NeTVBr", res, strlen(res+4)+5);
