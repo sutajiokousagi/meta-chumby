@@ -1,0 +1,33 @@
+diff -ur qt-everywhere-opensource-src-4.7.3-stock/src/3rdparty/webkit/JavaScriptCore/runtime/JSTypeInfo.h qt-everywhere-opensource-src-4.7.3/src/3rdparty/webkit/JavaScriptCore/runtime/JSTypeInfo.h
+--- qt-everywhere-opensource-src-4.7.3-stock/src/3rdparty/webkit/JavaScriptCore/runtime/JSTypeInfo.h	2011-08-02 17:19:43.973789261 +0800
++++ qt-everywhere-opensource-src-4.7.3/src/3rdparty/webkit/JavaScriptCore/runtime/JSTypeInfo.h	2011-08-02 17:20:07.693789264 +0800
+@@ -71,8 +71,8 @@
+         unsigned flags() const { return m_flags; }
+ 
+     private:
+-        unsigned char m_type;
+-        unsigned char m_flags;
++        unsigned long m_type;
++        unsigned long m_flags;
+     };
+ 
+ }
+diff -ur qt-everywhere-opensource-src-4.7.3-stock/src/3rdparty/webkit/JavaScriptCore/wtf/FastMalloc.cpp qt-everywhere-opensource-src-4.7.3/src/3rdparty/webkit/JavaScriptCore/wtf/FastMalloc.cpp
+--- qt-everywhere-opensource-src-4.7.3-stock/src/3rdparty/webkit/JavaScriptCore/wtf/FastMalloc.cpp	2011-08-02 17:19:43.983789261 +0800
++++ qt-everywhere-opensource-src-4.7.3/src/3rdparty/webkit/JavaScriptCore/wtf/FastMalloc.cpp	2011-08-02 17:20:03.753789263 +0800
+@@ -2336,13 +2336,13 @@
+ 
+ // Page-level allocator
+ static SpinLock pageheap_lock = SPINLOCK_INITIALIZER;
+-static void* pageheap_memory[(sizeof(TCMalloc_PageHeap) + sizeof(void*) - 1) / sizeof(void*)];
++static uint64_t pageheap_memory[(sizeof(TCMalloc_PageHeap) + sizeof(uint64_t) - 1) / sizeof(uint64_t)];
+ static bool phinited = false;
+ 
+ // Avoid extra level of indirection by making "pageheap" be just an alias
+ // of pageheap_memory.
+ typedef union {
+-    void* m_memory;
++    uint64_t *m_memory;
+     TCMalloc_PageHeap* m_pageHeap;
+ } PageHeapUnion;
+ 
