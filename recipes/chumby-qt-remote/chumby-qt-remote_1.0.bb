@@ -10,7 +10,7 @@ RDEPENDS_${PN} = "task-qt4e-base"
 
 SRC_URI = "${CHUMBYSG_GIT_HOST}/chumby-sg/${PN}${CHUMBYSG_GIT_EXTENSION};protocol=${CHUMBYSG_GIT_PROTOCOL}"
 
-SRCREV = "${AUTOREV}"
+SRCREV = "49e2a469e0b348bb41e944fb7fec70b8124c6965"
 S = "${WORKDIR}/git"
 
 do_install() {

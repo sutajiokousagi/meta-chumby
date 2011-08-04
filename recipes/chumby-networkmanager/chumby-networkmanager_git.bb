@@ -10,7 +10,7 @@ DEPENDS = "dbus dbus-glib networkmanager glib-2.0 libxml2"
 SRC_URI = "${CHUMBYSG_GIT_HOST}/chumby-sg/${PN}${CHUMBYSG_GIT_EXTENSION};protocol=${CHUMBYSG_GIT_PROTOCOL} \
            file://network_configs \
 "
-SRCREV = "${AUTOREV}"
+SRCREV = "c12a964b7092138c1f268965e3b1aeb7f464219e"
 S = "${WORKDIR}/git"
 
 do_install() {
