@@ -210,6 +210,7 @@ struct timinginfo {
 #define FPGA_LOCKTGT_0     0x15
 #define FPGA_LOCKTGT_1     0x16
 #define FPGA_LOCKTGT_2     0x17
+#define FPGA_PLLSTAT_ADR   0x18
 #define FPGA_KM_0          0x19
 #define FPGA_KM_1          0x1A
 #define FPGA_KM_2          0x1B
@@ -329,7 +330,7 @@ int dump_hdmi_timings() {
 }
 
 //#define STATS_CORRECT_MINOR 2
-#define STATS_CORRECT_MAJOR 3
+#define STATS_CORRECT_MAJOR 4
 int dump_registers(int stats) {
     unsigned char buffer[32];
     int i;
@@ -475,9 +476,12 @@ void print_help(char code) {
     printf( "l [val] set lock target\n" );
     printf( "L [val] set lock tolerance\n" );
     printf( "w [adr] [dat] write data [dat] to address [adr]\n" );
-    printf( "x [r,g,b] [value] set chroma key of r/g/b to [value]\n" );
+    //    printf( "x [r,g,b] [value] set chroma key of r/g/b to [value]\n" );
     printf( "x o     turn off chroma key\n" );
-    printf( "x i     turn on chroma key\n" );
+    printf( "x i     turn on chroma key (fixed to 240,0,240 rgb)\n" );
+    printf( "7       set self-timed mode to 720p (warning: resets many settings)\n" );
+    printf( "0       set to overlay mode with typical defaults\n" );
+    printf( "p       print PLL status\n" );
     printf( "n       return device serial number\n" );
 }
 
@@ -632,6 +636,7 @@ int main(int argc, char **argv)
       } else {
 	printf( "unrecognized chroma extension code\n" );
       }
+#if 0
     } else if( argc == 4 ) {
       supplement = *(argv[2]);
       data = (unsigned char) strtol(argv[3],NULL,0);
@@ -653,9 +658,68 @@ int main(int argc, char **argv)
 	printf( "unrecognized chroma channel (r,g,b are only valid options)\n" );
       }
       write_eeprom("/dev/i2c-0", DEVADDR>>1, (int) adr, &data, 1);
+#endif
     } else {
       printf( "Not enough or invalid arguments to chroma command.\n" );
     }
+    break;
+    
+  case '7':
+    read_eeprom("/dev/i2c-0", DEVADDR>>1, FPGA_COMP_CTL_ADR, &buffer, 1);
+    buffer &= 0xF0;
+    buffer |= 0x08;
+    write_eeprom("/dev/i2c-0", DEVADDR>>1, FPGA_COMP_CTL_ADR, &buffer, sizeof(buffer));
+    break;
+    
+  case '0':
+    read_eeprom("/dev/i2c-0", DEVADDR>>1, FPGA_COMP_CTL_ADR, &buffer, 1);
+    buffer &= 0xF0;
+    buffer |= 0x05;
+    write_eeprom("/dev/i2c-0", DEVADDR>>1, FPGA_COMP_CTL_ADR, &buffer, sizeof(buffer));
+    break;
+    
+  case 'p':
+    read_eeprom("/dev/i2c-0", DEVADDR>>1, FPGA_PLLSTAT_ADR, &buffer, 1);
+    if( buffer & 1 )
+      printf( "Rx PLL is locked\n" );
+    else
+      printf( "Rx PLL is not locked\n" );
+
+    if( buffer & 2 ) 
+      printf( "Tx PLL is locked\n" );
+    else
+      printf( "Tx PLL is not locked\n" );
+
+    if( buffer & 4 )
+      printf( "720p clock synthesizer is locked\n" );
+    else
+      printf( "720p clock synthesizer is not locked\n" );
+
+    if( buffer & 8 )
+      printf( "Inter-channel skew alignment error on Rx.\n" );
+    else
+      printf( "Seems like the Rx channel symbols are properly aligned.\n" );
+
+    if( buffer & 0x10 )
+      printf( "Red channel has received a valid pixel since last channel reset\n" );
+    else
+      printf( "Red channel has yet to receive a valid pixel since last channel reset\n" );
+    
+    if( buffer & 0x20 )
+      printf( "Green channel has received a valid pixel since last channel reset\n" );
+    else
+      printf( "Green channel has yet to receive a valid pixel since last channel reset\n" );
+    
+    if( buffer & 0x40 )
+      printf( "Blue channel has received a valid pixel since last channel reset\n" );
+    else
+      printf( "Blue channel has yet to receive a valid pixel since last channel reset\n" );
+    
+    if( buffer & 0x80 )
+      printf( "Rx is aligned and should be producing valid data\n" );
+    else
+      printf( "Rx channel is still initializing\n" );
+
     break;
 
   case 'n':
