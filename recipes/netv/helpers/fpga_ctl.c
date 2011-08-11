@@ -480,7 +480,7 @@ void print_help(char code) {
     printf( "x o     turn off chroma key\n" );
     printf( "x i     turn on chroma key (fixed to 240,0,240 rgb)\n" );
     printf( "7       set self-timed mode to 720p (warning: resets many settings)\n" );
-    printf( "y       set to overlay mode with typical defaults\n" );
+    printf( "Y       set to overlay mode with typical defaults\n" );
     printf( "p       print PLL status\n" );
     printf( "n       return device serial number\n" );
 }
@@ -671,7 +671,7 @@ int main(int argc, char **argv)
     write_eeprom("/dev/i2c-0", DEVADDR>>1, FPGA_COMP_CTL_ADR, &buffer, sizeof(buffer));
     break;
     
-  case 'y':
+  case 'Y':
     read_eeprom("/dev/i2c-0", DEVADDR>>1, FPGA_COMP_CTL_ADR, &buffer, 1);
     buffer &= 0xF0;
     buffer |= 0x05;
