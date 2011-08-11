@@ -6,6 +6,7 @@ RDEPENDS_${PN} = " \
     imgtool \
     chumby-wget \
     chumby-updates \
+    networkmanager chumby-networkmanager \
 "
 
 RRECOMMENDS_${PN} = " \
