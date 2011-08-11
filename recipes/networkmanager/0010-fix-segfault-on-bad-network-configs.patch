@@ -1,0 +1,21 @@
+diff -ur NetworkManager-0.8.1-stock/system-settings/plugins/chumby/plugin.c NetworkManager-0.8.1/system-settings/plugins/chumby/plugin.c
+--- NetworkManager-0.8.1-stock/system-settings/plugins/chumby/plugin.c	2011-08-01 17:50:46.848804009 +0800
++++ NetworkManager-0.8.1/system-settings/plugins/chumby/plugin.c	2011-08-11 19:04:25.851383723 +0800
+@@ -140,6 +140,8 @@
+ 	if (doc == NULL) {
+ 		PLUGIN_PRINT("chumby", "error: could not parse file %s\n", CONFIGS_FILE);
+ 		xmlCleanupParser();
++		if (!priv->iface_connections)
++			priv->iface_connections = g_hash_table_new (g_str_hash, g_str_equal);
+ 		g_mutex_unlock(priv->mutex);
+ 		return;
+ 	}
+@@ -150,6 +152,8 @@
+ 		PLUGIN_PRINT("chumby", "error: could not find root element in " CONFIGS_FILE "\n");
+ 		xmlFreeDoc(doc);
+ 		xmlCleanupParser();
++		if (!priv->iface_connections)
++			priv->iface_connections = g_hash_table_new (g_str_hash, g_str_equal);
+ 		g_mutex_unlock(priv->mutex);
+ 		return;
+ 	}

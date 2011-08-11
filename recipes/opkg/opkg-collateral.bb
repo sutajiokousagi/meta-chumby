@@ -1,7 +1,7 @@
 DESCRIPTION = "opkg configuration files"
 SECTION = "base"
 LICENSE = "MIT"
-PR = "r4"
+PR = "r5"
 
 OPKG_SIGNING = '${@base_conditional("DISTRO_TYPE", "release", "option check_signature 1", "",d)}'
 
