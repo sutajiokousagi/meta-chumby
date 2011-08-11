@@ -1,6 +1,7 @@
 inherit update-rc.d
 INITSCRIPT_NAME = "${PN}"
 INITSCRIPT_PARAMS = "defaults 3 97"
+PR = "r1"
 
 S = "${WORKDIR}"
 PACKAGE_ARCH = "${MACHINE}"
