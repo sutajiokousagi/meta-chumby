@@ -1,4 +1,5 @@
 #include <errno.h>
+#include <strings.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <linux/input.h>
@@ -10,9 +11,35 @@
 #include <sys/reboot.h>
 #include <syslog.h>
 
+static int nuke_storage() {
+	int fd;
+	char zeroes[16];
+
+	fd = open("/dev/mmcblk0", O_RDWR);
+	if (-1 == fd) {
+		perror("Unable to open /dev/mmcblk0");
+		return -1;
+	}
+
+	if (-1 == lseek(fd, 480, SEEK_SET)) {
+		perror("Unable to seek to partition 3");
+		return -1;
+	}
+
+	bzero(zeroes, sizeof(zeroes));
+	if (write(fd, zeroes, sizeof(zeroes)) != sizeof(zeroes)) {
+		perror("Unable to write zeroes");
+		return -1;
+	}
+
+	close(fd);
+	return 0;
+}
+	
+
 static int do_reset_system(void) {
-	syslog(LOG_INFO, "Button hit.  Rebooting.");
-	unlink("/psp/network_config");
+	syslog(LOG_INFO, "Button hit.  Nuking storage partition and rebooting.");
+	nuke_storage();
 	sync();
 	reboot(RB_AUTOBOOT);
 	
