@@ -38,15 +38,16 @@
 
 
 static struct timing_info self_timed_720p = {
-        .hactive = 1280,
-        .vactive = 720,
-        .h_fp = 220,
-	.h_bp = 110,
-	.v_fp_lines = 20,
-	.v_bp_lines = 5,
-	.hsync_width = 40,
-	.vsync_width_lines = 5,
-	.pixclk_in_MHz = 74,
+        .hactive 		= 1280,
+        .vactive 		= 720,
+        .h_fp 			= 220,
+	.h_bp 			= 110,
+	.v_fp_lines 		= 20,
+	.v_bp_lines 		= 5,
+	.hsync_width 		= 40,
+	.vsync_width_lines 	= 5,
+	.pixclk_in_MHz 		= 74,
+	.status			= STATUS_DISCONNECTED,
 };
 
 
@@ -76,6 +77,11 @@ normalize_timing_info(struct timing_range **ranges, struct timing_info *ti)
 	int current_range;
 	if (!ti || !ranges)
 		return;
+
+	if (ti->status == STATUS_DISCONNECTED) {
+		*ti = self_timed_720p;
+		return;
+	}
 
 	for (current_range=0; ranges[current_range]; current_range++) {
 		int matches = 0;
@@ -109,12 +115,7 @@ normalize_timing_info(struct timing_range **ranges, struct timing_info *ti)
 		}
 	}
 
-	if (ti->hactive == 0
-	 && ti->vactive == 0
-	 && ti->htotal  == -1
-	 && ti->vtotal_lines == 0)
-		ti->status = STATUS_DISCONNECTED;
-	else
+	if (ti->status == STATUS_OK)
 		ti->status = STATUS_INVALID;
 }
 
@@ -227,6 +228,9 @@ parse_timing_info(uint8_t *buffer, struct timing_info *t)
 	}
 
 	t->status = STATUS_OK;
+	if (!(buffer[32]&1))
+		t->status = STATUS_DISCONNECTED;
+	fprintf(stderr, "Status: %d (0x%02x)\n", t->status, buffer[32]);
 
 	return 0;
 }
@@ -317,9 +321,12 @@ read_eeprom(char *i2c_device, int addr, int start_reg,
 static int
 read_timing_info(struct timing_info *ti)
 {
-	uint8_t 			buffer[32];
+	uint8_t 			buffer[33];
 
-	if(read_eeprom("/dev/i2c-0", DEVADDR>>1, 32, buffer, sizeof(buffer)))
+	if(read_eeprom("/dev/i2c-0", DEVADDR>>1, 32, buffer, sizeof(buffer)-1))
+		return 1;
+
+	if(read_eeprom("/dev/i2c-0", DEVADDR>>1, 0x18, buffer+32, 1))
 		return 1;
 
 	parse_timing_info(buffer, ti);
@@ -452,9 +459,41 @@ load_fpga_firmware(int fpga, char *filename)
 	return 0;
 }
 
+static void switch_to_720p()
+{
+	unsigned char buffer;
+
+	/* Reset the PLL */
+	read_eeprom("/dev/i2c-0", DEVADDR>>1, 3, &buffer, sizeof(buffer));
+	buffer = buffer | 0x10;
+	write_eeprom("/dev/i2c-0", DEVADDR>>1, 3, &buffer, sizeof(buffer));
+	buffer = buffer & ~0x10;
+	write_eeprom("/dev/i2c-0", DEVADDR>>1, 3, &buffer, sizeof(buffer));
+
+	read_eeprom("/dev/i2c-0", DEVADDR>>1, 3, &buffer, sizeof(buffer));
+	buffer = (buffer & ~0x4) | 0x8;
+	write_eeprom("/dev/i2c-0", DEVADDR>>1, 3, &buffer, sizeof(buffer));
+}
+
+static void switch_to_overlay()
+{
+	unsigned char buffer;
+
+	/* Reset the PLL */
+	read_eeprom("/dev/i2c-0", DEVADDR>>1, 3, &buffer, sizeof(buffer));
+	buffer = buffer | 0x10;
+	write_eeprom("/dev/i2c-0", DEVADDR>>1, 3, &buffer, sizeof(buffer));
+	buffer = buffer & ~0x10;
+	write_eeprom("/dev/i2c-0", DEVADDR>>1, 3, &buffer, sizeof(buffer));
+
+	read_eeprom("/dev/i2c-0", DEVADDR>>1, 3, &buffer, sizeof(buffer));
+	buffer = (buffer & ~0x8) | 0x4;
+	write_eeprom("/dev/i2c-0", DEVADDR>>1, 3, &buffer, sizeof(buffer));
+}
 
 static void handle_winch(int num)
 {
+
 	fprintf(stderr, "Window size changed\n");
 }
 
@@ -540,8 +579,9 @@ main(int argc, char **argv)
 
 		/* Do nothing if nothing has changed */
 		if (!timingcmp(&last_ti, &new_ti)) {
-			fprintf(stderr, "Timing mode didn't change (%dx%d vs %dx%d)\n",
-				last_ti.hactive, last_ti.vactive, new_ti.hactive, new_ti.vactive);
+			fprintf(stderr, "Timing mode didn't change (%dx%d - %d vs %dx%d - %d)\n",
+				last_ti.hactive, last_ti.vactive, last_ti.status,
+				new_ti.hactive, new_ti.vactive, new_ti.status);
 			continue;
 		}
 
@@ -579,21 +619,21 @@ main(int argc, char **argv)
 		/* If the mode is INVALID, switch to self-timed mode */
 		if (new_ti.status == STATUS_INVALID) {
 			if (last_ti.status == STATUS_OK)
-				load_fpga_firmware(fpga, "hdmi_720p.bin");
+				switch_to_720p();
 			set_timing(fb0, &self_timed_720p);
 			send_message("invalid", self_timed_720p.hactive, self_timed_720p.vactive, 16);
 			fprintf(stderr, "Switched to invalid mode\n");
 		}
 		else if(new_ti.status == STATUS_DISCONNECTED) {
 			if (last_ti.status == STATUS_OK)
-				load_fpga_firmware(fpga, "hdmi_720p.bin");
+				switch_to_720p();
 			set_timing(fb0, &self_timed_720p);
 			send_message("disconnected", self_timed_720p.hactive, self_timed_720p.vactive, 16);
 			fprintf(stderr, "Switched to disconnected mode\n");
 		}
 		else if(new_ti.status == STATUS_OK) {
 			if (last_ti.status != STATUS_OK)
-				load_fpga_firmware(fpga, "hdmi_overlay.bin");
+				switch_to_overlay();
 			set_timing(fb0, &new_ti);
 			send_message("connected", new_ti.hactive, new_ti.vactive, 16);
 			fprintf(stderr, "Switched to connected, %dx%d mode\n", new_ti.hactive, new_ti.vactive);

@@ -70,8 +70,8 @@ static struct timing_range mode_2 = {
 		.h_bp = 16,
 		.hsync_width = 76,
 
-		.v_fp_lines = 29,
-		.v_bp_lines = 10,
+		.v_fp_lines = 30,
+		.v_bp_lines = 9,
 		.vsync_width_lines = 6,
 
 		.pixclk_in_MHz = 27,
