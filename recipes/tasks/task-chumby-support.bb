@@ -1,3 +1,5 @@
+inherit task
+
 RDEPENDS_${PN} = " \
     regutil config-util \
     cpi dcid keygen \
