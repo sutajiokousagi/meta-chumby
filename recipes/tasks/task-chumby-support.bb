@@ -1,4 +1,5 @@
 inherit task
+PR = "r1"
 
 RDEPENDS_${PN} = " \
     regutil config-util \
