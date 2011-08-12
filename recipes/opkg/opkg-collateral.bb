@@ -1,9 +1,10 @@
 DESCRIPTION = "opkg configuration files"
 SECTION = "base"
 LICENSE = "MIT"
-PR = "r5"
+PR = "r6"
 
-OPKG_SIGNING = '${@base_conditional("DISTRO_TYPE", "release", "option check_signature 1", "",d)}'
+OPKG_SIGNING1 = '${@base_conditional("DISTRO_TYPE", "release", "option check_signature 1", "",d)}'
+OPKG_SIGNING2 = '${@base_conditional("DISTRO_TYPE", "release", "option offline_root /", "",d)}'
 
 SRC_URI = "file://opkg.conf.comments \
 	   file://lists \
@@ -16,7 +17,8 @@ do_compile () {
 	cat ${WORKDIR}/src	>>${WORKDIR}/opkg.conf
 	cat ${WORKDIR}/dest	>>${WORKDIR}/opkg.conf
 	cat ${WORKDIR}/lists	>>${WORKDIR}/opkg.conf
-	echo "${OPKG_SIGNING}" >> ${WORKDIR}/opkg.conf
+	echo "${OPKG_SIGNING1}" >>${WORKDIR}/opkg.conf
+	echo "${OPKG_SIGNING2}" >>${WORKDIR}/opkg.conf
 }
 
 do_compile_append_shr () {
