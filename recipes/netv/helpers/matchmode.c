@@ -164,6 +164,23 @@ read_eeprom(char *i2c_device, int addr, int start_reg,
 	return 0;
 }
 
+/*
+  temporary cleanup function until matchmoded is in production
+ */
+static int
+clean_up_timing(struct timing_info *timing_info) {
+  if( (timing_info->hactive > 1100 && timing_info->hactive < 1400) &&
+      (timing_info->pixclk_in_MHz > 70.0 && timing_info->pixclk_in_MHz < 76.0) ) {
+    // 720p mode, force the porches to default CEA timing values
+    printf( "Cleaning timing to CEA standard 720p\n" );
+    timing_info->h_fp = 220;
+    timing_info->h_bp = 110;
+    timing_info->v_fp_lines = 20;
+    timing_info->v_bp_lines = 5;
+    timing_info->hsync_width = 40;
+    timing_info->vsync_width_lines = 5;
+  }
+}
 
 static int
 match_mode(int fd, struct fb_var_screeninfo *var)
@@ -175,6 +192,8 @@ match_mode(int fd, struct fb_var_screeninfo *var)
 		return 1;
 
 	parse_timing_info(buffer, &timing_info);
+
+	clean_up_timing(&timing_info);
 
         var->xres = timing_info.hactive;
         var->yres = timing_info.vactive;

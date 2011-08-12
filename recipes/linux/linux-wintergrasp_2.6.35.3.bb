@@ -2,7 +2,7 @@ inherit chumbysg-git chumby-info
 
 require recipes/linux/linux.inc
 
-PR = "r8"
+PR = "r9"
 
 COMPATIBLE_MACHINE = "chumby-wintergrasp"
 
@@ -22,6 +22,7 @@ SRC_URI = "${CHUMBYSG_GIT_HOST}/chumby-sg/linux-2.6.35.3-wintergrasp${CHUMBYSG_G
            file://010-memory_debug_tool.patch \
            file://011-fb_stable_during_boot.patch \
            file://012-allow_setup_mtd_parts_from_uboot.patch \
+           file://013-hack_allow_host_as_device.patch \
            file://defconfig \
 "
 SRCREV = "${AUTOREV}"
