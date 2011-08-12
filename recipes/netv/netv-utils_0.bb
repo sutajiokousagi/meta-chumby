@@ -3,7 +3,7 @@ LICENSE = "BSD"
 
 inherit update-rc.d
 
-PR = "r39"
+PR = "r40"
 
 PACKAGE_ARCH = "${MACHINE}"
 
