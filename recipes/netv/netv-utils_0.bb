@@ -87,6 +87,6 @@ FILES_${PN} += "${base_libdir}/firmware/"
 FILES_${PN} += "${base_libdir}/udev/rules.d/"
 FILES_${PN} += "${sysconfdir}/init.d/"
 
-pkg_postinst_${PN}() {
+pkg_postinst_${PN}_append() {
 	config_util --cmd=putblock --dev=/dev/mmcblk0p1 --block=720p < ${base_libdir}/firmware/hdmi_720p.bin
 }
