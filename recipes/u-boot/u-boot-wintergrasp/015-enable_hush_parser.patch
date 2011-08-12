@@ -1,0 +1,25 @@
+diff -Nur u-boot-2009.08.lastpatch/board/freescale/wintergrasp/wintergrasp.c u-boot-2009.08/board/freescale/wintergrasp/wintergrasp.c
+--- u-boot-2009.08.lastpatch/board/freescale/wintergrasp/wintergrasp.c	2011-07-26 14:56:53.840450762 +0800
++++ u-boot-2009.08/board/freescale/wintergrasp/wintergrasp.c	2011-07-26 16:59:35.176674503 +0800
+@@ -30,6 +30,10 @@
+ #include <mmc.h>
+ #include <imx_ssp_mmc.h>
+ 
++#ifdef CONFIG_SYS_HUSH_PARSER
++#include <hush.h>
++#endif
++
+ #ifdef CONFIG_NAND_GPMI
+ void setup_gpmi_nand();
+ #endif
+diff -Nur u-boot-2009.08.lastpatch/include/configs/wintergrasp.h u-boot-2009.08/include/configs/wintergrasp.h
+--- u-boot-2009.08.lastpatch/include/configs/wintergrasp.h	2011-07-26 14:56:53.913820760 +0800
++++ u-boot-2009.08/include/configs/wintergrasp.h	2011-07-26 16:55:10.057477079 +0800
+@@ -293,4 +293,7 @@
+ 
+ #define CONFIG_PREBOOT "loadimg ${pict0_addr}"
+ 
++#define CONFIG_SYS_HUSH_PARSER
++#define CONFIG_SYS_PROMPT_HUSH_PS2 "> "
++
+ #endif /* __MX28_EVK_H */

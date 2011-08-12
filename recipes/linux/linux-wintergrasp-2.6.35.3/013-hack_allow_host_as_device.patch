@@ -1,0 +1,398 @@
+diff -Nur linux-2.6.35.3.lastpatch/arch/arm/mach-mx28/usb_dr.c linux-2.6.35.3/arch/arm/mach-mx28/usb_dr.c
+--- linux-2.6.35.3.lastpatch/arch/arm/mach-mx28/usb_dr.c	2011-08-03 15:49:12.267483252 +0800
++++ linux-2.6.35.3/arch/arm/mach-mx28/usb_dr.c	2011-08-10 18:00:13.656034701 +0800
+@@ -31,6 +31,8 @@
+ #include "mx28_pins.h"
+ #define USB_POWER_ENABLE MXS_PIN_TO_GPIO(PINID_AUART2_TX)
+ 
++#include <linux/fsl_devices.h>
++
+ extern int clk_get_usecount(struct clk *clk);
+ static struct clk *usb_clk;
+ static struct clk *usb_phy_clk;
+@@ -310,7 +312,24 @@
+ 		__raw_writel(otgsc & (~OTGSC_IS_USB_ID), usb_reg + UOG_OTGSC);
+ 		return true;
+ 	}
+-	if (wakeup_req /*&& (!((otgsc & OTGSC_IS_B_SESSION_VALID)))*/ && (!((otgsc & OTGSC_STS_USB_ID)))) {
++	if (wakeup_req /*&& (!((otgsc & OTGSC_IS_B_SESSION_VALID)))*/ && 
++    ((!((otgsc & OTGSC_STS_USB_ID)) &&
++    
++#ifdef FSL_OTG_SET_MODE
++    (otg_mode == 0)
++#else
++      1
++#endif
++
++    ) ||
++
++#ifdef FSL_OTG_SET_MODE
++    (otg_mode == 1)
++#else
++    0
++#endif
++
++    )) {
+ 		__raw_writel(wakeup_irq_bits, phy_reg + HW_USBPHY_CTRL_CLR);
+ 		pr_debug("otg host Remote wakeup\n");
+ 		return true;
+diff -Nur linux-2.6.35.3.lastpatch/drivers/usb/gadget/arcotg_udc.c linux-2.6.35.3/drivers/usb/gadget/arcotg_udc.c
+--- linux-2.6.35.3.lastpatch/drivers/usb/gadget/arcotg_udc.c	2011-08-03 15:49:17.330765824 +0800
++++ linux-2.6.35.3/drivers/usb/gadget/arcotg_udc.c	2011-08-11 11:54:28.470386680 +0800
+@@ -346,7 +346,23 @@
+ 	u32 temp;
+ 	u32 wait = 5000/jiffies_to_msecs(1); /* max wait time is 5000 ms */
+ 	/* if we are in host mode, don't need to care the B session */
+-	if ((fsl_readl(&dr_regs->otgsc) & OTGSC_STS_USB_ID) == 0)
++	if ((((fsl_readl(&dr_regs->otgsc) & OTGSC_STS_USB_ID) == 0) &&
++
++#ifdef FSL_OTG_SET_MODE
++    (otg_mode == 0)
++#else
++    1
++#endif
++
++    ) ||
++
++#ifdef FSL_OTG_SET_MODE
++      (otg_mode == 1)
++#else
++      0
++#endif
++     )
++
+ 		return;
+ 	/* if the udc is dettached , there will be a suspend irq */
+ 	if (udc_controller->usb_state != USB_STATE_SUSPENDED)
+@@ -537,7 +553,23 @@
+ 	 * ehci driver
+ 	 */
+ 	if (udc->gadget.is_otg) {
+-		if (!(fsl_readl(&dr_regs->otgsc) & OTGSC_STS_USB_ID)) {
++		if ((!(fsl_readl(&dr_regs->otgsc) & OTGSC_STS_USB_ID) &&
++      
++#ifdef FSL_OTG_SET_MODE
++        (otg_mode == 0)
++#else
++        1
++#endif
++
++      ) ||
++      
++#ifdef FSL_OTG_SET_MODE
++        (otg_mode == 1)
++#else
++        0
++#endif
++
++       ) {
+ 			pr_debug("udc: Leaving early\n");
+ 			return;
+ 		}
+@@ -2135,7 +2167,23 @@
+ 		u32 tmp;
+ 		fsl_writel(irq_src, &dr_regs->otgsc);
+ 		/* only handle device interrupt event */
+-		if (!(fsl_readl(&dr_regs->otgsc) & OTGSC_STS_USB_ID)) {
++		if ((!(fsl_readl(&dr_regs->otgsc) & OTGSC_STS_USB_ID) && 
++      
++#ifdef FSL_OTG_SET_MODE
++        (otg_mode == 0)
++#else
++        1
++#endif
++
++      ) ||
++      
++#ifdef FSL_OTG_SET_MODE
++        (otg_mode == 1)
++#else
++        0
++#endif
++
++       ) {
+ 			return false;
+ 		}
+ 		tmp = fsl_readl(&dr_regs->usbcmd);
+@@ -2188,7 +2236,23 @@
+ 		goto irq_end;
+ 	}
+ 	/* only handle device interrupt event */
+-	if (!(fsl_readl(&dr_regs->otgsc) & OTGSC_STS_USB_ID)) {
++	if ((!(fsl_readl(&dr_regs->otgsc) & OTGSC_STS_USB_ID) &&
++    
++#ifdef FSL_OTG_SET_MODE
++      (otg_mode == 0)
++#else
++      1
++#endif
++
++    ) ||
++    
++#ifdef FSL_OTG_SET_MODE
++      (otg_mode == 1)
++#else
++      0
++#endif
++
++     ) {
+ 		goto irq_end;
+ 	}
+ #endif
+@@ -3142,7 +3206,21 @@
+ 	if (udc_controller->stopped)
+ 		dr_clk_gate(true);
+ 	if (((!(udc_controller->gadget.is_otg)) ||
+-		(fsl_readl(&dr_regs->otgsc) & OTGSC_STS_USB_ID)) &&
++		((fsl_readl(&dr_regs->otgsc) & OTGSC_STS_USB_ID) &&
++
++#ifdef FSL_OTG_SET_MODE
++      (otg_mode == 0)
++#else
++      1
++#endif
++
++    )
++
++#ifdef FSL_OTG_SET_MODE
++    || (otg_mode == 2)
++#endif
++
++      ) &&
+ 			(udc_controller->usb_state > USB_STATE_POWERED) &&
+ 			(udc_controller->usb_state < USB_STATE_SUSPENDED)) {
+ 		return -EBUSY;/* keep the clk on */
+@@ -3205,7 +3283,24 @@
+ 		dr_phy_low_power_mode(udc_controller, false);
+ 		mdelay(3);/* IC have the debounce for ID\vbus status in otgsc */
+ 		/* if in host mode, we need to do nothing */
+-		if ((fsl_readl(&dr_regs->otgsc) & OTGSC_STS_USB_ID) == 0) {
++		if ((((fsl_readl(&dr_regs->otgsc) & OTGSC_STS_USB_ID) == 0) &&
++      
++#ifdef FSL_OTG_SET_MODE
++        (otg_mode == 0)
++#else
++        1
++#endif
++
++      ) || 
++    
++#ifdef FSL_OTG_SET_MODE
++        (otg_mode == 1)
++#else
++        0
++#endif
++
++       )
++    {
+ 			dr_phy_low_power_mode(udc_controller, true);
+ 			dr_wake_up_enable(udc_controller, true);
+ 			goto end;
+diff -Nur linux-2.6.35.3.lastpatch/drivers/usb/otg/fsl_otg.c linux-2.6.35.3/drivers/usb/otg/fsl_otg.c
+--- linux-2.6.35.3.lastpatch/drivers/usb/otg/fsl_otg.c	2011-08-03 15:49:17.344099024 +0800
++++ linux-2.6.35.3/drivers/usb/otg/fsl_otg.c	2011-08-10 16:11:09.922866542 +0800
+@@ -101,6 +101,13 @@
+ static struct timer_list monitor_timer;
+ static struct workqueue_struct *otg_queue;
+ 
++#ifdef FSL_OTG_SET_MODE
++static void set_otg(int mode);
++
++int otg_mode;
++static struct fsl_otg *otg_pdata;
++#endif
++
+ static void schedule_otg_work(struct delayed_work *dwork, unsigned long delay)
+ {
+ 	queue_delayed_work(otg_queue, dwork, delay);
+@@ -810,19 +817,39 @@
+ 	usb_dr_regs->otgsc = ((usb_dr_regs->otgsc | cpu_to_le32(otg_sc & OTGSC_INTSTS_MASK))&
+ 				(~OTGSC_INTSTS_B_SESSION_VALID));
+ 
++#ifdef FSL_OTG_SET_MODE
++  if ((otg_mode != 1) && (otg_mode != 2))
++  {
++#endif
++
+ 	/*FIXME: ID change not generate when init to 0 */
+ 	fotg->fsm.id = (otg_sc & OTGSC_STS_USB_ID) ? 1 : 0;
+ 	otg->default_a = (fotg->fsm.id == 0);
+ 
++#ifdef FSL_OTG_SET_MODE
++  }
++#endif
++
+ 	/* process OTG interrupts */
+ 	if (otg_int_src) {
+ 		if (otg_int_src & OTGSC_INTSTS_USB_ID) {
++
++#ifdef FSL_OTG_SET_MODE
++      if ((otg_mode != 1) && (otg_mode != 2))
++      {
++#endif
++
+ 			fotg->fsm.id = (otg_sc & OTGSC_STS_USB_ID) ? 1 : 0;
+ 
+ 			printk(KERN_DEBUG "ID int (ID is %d)\n", fotg->fsm.id);
+ 
+ 			cancel_delayed_work(&fotg->otg_event);
+ 			schedule_otg_work(&fotg->otg_event, msecs_to_jiffies(10));
++
++#ifdef FSL_OTG_SET_MODE
++      }
++#endif
++
+ 			ret = IRQ_HANDLED;
+ 		}
+ 	}
+@@ -1060,6 +1087,11 @@
+ 
+ 	writel(temp, &p_otg->dr_mem_map->otgsc);
+ 
++#ifdef FSL_OTG_SET_MODE
++  otg_mode = 0;
++  otg_pdata = p_otg;
++#endif
++
+ 	return 0;
+ }
+ 
+@@ -1272,6 +1304,94 @@
+ 	.release = fsl_otg_release,
+ };
+ 
++#ifdef FSL_OTG_SET_MODE
++static void set_otg(int mode)
++{
++	struct fsl_otg *fotg = otg_pdata;
++	struct otg_transceiver *otg = &fotg->otg;
++
++  preempt_disable();
++  local_irq_disable();
++
++  if ((mode == 1) || (mode == 2))
++    fotg->fsm.id = mode - 1; 
++  else
++    fotg->fsm.id = (le32_to_cpu(usb_dr_regs->otgsc) & OTGSC_STS_USB_ID) ? 1 : 0;
++
++	otg->default_a = (fotg->fsm.id == 0);
++
++	printk(KERN_DEBUG "ID int (ID is %d)\n", fotg->fsm.id);
++
++  cancel_delayed_work(&fotg->otg_event);
++  schedule_otg_work(&fotg->otg_event, msecs_to_jiffies(10));
++
++  local_irq_enable();
++  preempt_enable();
++}
++
++static int proc_mode_rd(
++             char *buf,
++             char **start,
++             off_t offset,
++             int count,
++             int *eof,
++             void *data)
++{
++  int len;
++
++  switch (otg_mode)
++  {
++    case 1 : len = sprintf(buf, "host\n");
++      break;
++
++    case 2 : len = sprintf(buf, "device\n");
++      break;
++
++    default : len = sprintf(buf, "auto\n");
++      break;
++  }
++
++  *eof = 1;
++
++  return len;
++}
++
++static int proc_mode_wr(
++             struct file *file,
++             const char *buf,
++             unsigned long count,
++             void *data)
++{
++  int mode;
++
++  mode = simple_strtoul(buf, NULL, 0);
++
++  switch (mode)
++  {
++    case 1 : if (otg_mode == 1) return count;
++      break;
++
++    case 2 : if (otg_mode == 2) return count;
++      break;
++
++    default :
++      if ((otg_mode != 1) && (otg_mode != 2))
++      {
++        otg_mode = mode;
++
++        return count;
++      }
++      break;
++  }
++
++  set_otg(mode);
++
++  otg_mode = mode;
++
++  return count;
++}
++#endif
++
+ static int __init fsl_otg_probe(struct platform_device *pdev)
+ {
+ 	int status;
+@@ -1305,6 +1425,17 @@
+ 
+ 	last_busy  = jiffies;
+ 	create_proc_file();
++
++#ifdef FSL_OTG_SET_MODE
++  {
++    struct proc_dir_entry *pde;
++
++    proc_mkdir("otg", 0);
++    pde = create_proc_read_entry("otg/mode", 0, NULL, proc_mode_rd, NULL);
++    pde->write_proc = proc_mode_wr;
++  }
++#endif
++
+ 	fsl_otg_clk_gate(false);
+ 	return status;
+ }
+@@ -1322,6 +1453,11 @@
+ 
+ 	remove_proc_file();
+ 
++#ifdef FSL_OTG_SET_MODE
++  remove_proc_entry("otg/mode", NULL);
++  remove_proc_entry("otg", NULL);
++#endif
++
+ 	unregister_chrdev(FSL_OTG_MAJOR, FSL_OTG_NAME);
+ 
+ 	if (pdata->platform_uninit)
+diff -Nur linux-2.6.35.3.lastpatch/include/linux/fsl_devices.h linux-2.6.35.3/include/linux/fsl_devices.h
+--- linux-2.6.35.3.lastpatch/include/linux/fsl_devices.h	2011-08-03 15:49:07.320866177 +0800
++++ linux-2.6.35.3/include/linux/fsl_devices.h	2011-08-05 16:34:18.899683980 +0800
+@@ -625,4 +625,10 @@
+ static inline int fsl_deep_sleep(void) { return 0; }
+ #endif
+ 
++#define FSL_OTG_SET_MODE
++
++#ifdef FSL_OTG_SET_MODE
++extern int otg_mode;
++#endif
++
+ #endif /* _FSL_DEVICE_H_ */
