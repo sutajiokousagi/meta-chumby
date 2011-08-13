@@ -3,7 +3,10 @@ LICENSE = "BSD"
 
 inherit update-rc.d
 
-PR = "r40"
+INITSCRIPT_NAME = "netv_service"
+INITSCRIPT_PARAMS = "defaults 50 50"
+
+PR = "r42"
 
 PACKAGE_ARCH = "${MACHINE}"
 
@@ -83,9 +86,6 @@ FILES_${PN} = "${bindir}"
 FILES_${PN} += "${base_libdir}/firmware/"
 FILES_${PN} += "${base_libdir}/udev/rules.d/"
 FILES_${PN} += "${sysconfdir}/init.d/"
-
-INITSCRIPT_NAME = "netv_service"
-INITSCRIPT_PARAMS = "defaults 50 50"
 
 pkg_postinst_${PN}() {
 	config_util --cmd=putblock --dev=/dev/mmcblk0p1 --block=720p < ${base_libdir}/firmware/hdmi_720p.bin
