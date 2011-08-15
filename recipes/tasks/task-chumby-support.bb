@@ -10,7 +10,7 @@ RDEPENDS_${PN} = " \
     chumby-wget \
     chumby-updates \
     networkmanager chumby-networkmanager \
-
+    \
     # Pulled in because we like this version of ps
     procps strace \
 "
