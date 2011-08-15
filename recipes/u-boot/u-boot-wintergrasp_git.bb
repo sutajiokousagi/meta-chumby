@@ -10,7 +10,7 @@ PROVIDES = "virtual/bootloader virtual/chumby-bootimage"
 RPROVIDES = "virtual/bootloader virtual/chumby-bootimage"
 COMPATIBLE_MACHINE = "chumby-wintergrasp"
 
-PR ="r13"
+PR ="r14"
 
 SRC_URI = "${CHUMBYSG_GIT_HOST}/chumby-sg/u-boot-2009.08-wintergrasp${CHUMBYSG_GIT_EXTENSION};protocol=${CHUMBYSG_GIT_PROTOCOL} \
            file://000-board_setup.patch \

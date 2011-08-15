@@ -7,13 +7,15 @@ DEPENDS_${PN} = "config-util-native"
 
 PROVIDES = "chumby-blobs"
 COMPATIBLE_MACHINE = "chumby-wintergrasp"
-PR = "r3"
+PR = "r4"
 
 SRC_URI = "file://boot_prep \
            file://power_prep \
            file://4_1.bin \
            file://4_2.bin \
+           file://updater.glob \
            file://uboot_ivt.bd \
+           file://updater_ivt.bd \
            file://mk_hdr.sh \
            file://usr.fat \
 "
@@ -39,7 +41,9 @@ do_deploy() {
     install ${WORKDIR}/power_prep ${DEPLOY_DIR_IMAGE}
     install ${WORKDIR}/4_1.bin ${DEPLOY_DIR_IMAGE}
     install ${WORKDIR}/4_2.bin ${DEPLOY_DIR_IMAGE}
+    install ${WORKDIR}/updater.glob ${DEPLOY_DIR_IMAGE}
     install ${WORKDIR}/uboot_ivt.bd ${DEPLOY_DIR_IMAGE}
+    install ${WORKDIR}/updater_ivt.bd ${DEPLOY_DIR_IMAGE}
     install ${WORKDIR}/mk_hdr.sh ${DEPLOY_DIR_IMAGE}
     install ${WORKDIR}/usr.fat ${DEPLOY_DIR_IMAGE}
 
@@ -61,7 +65,9 @@ do_deploy() {
     package_stagefile_shell ${DEPLOY_DIR_IMAGE}/power_prep
     package_stagefile_shell ${DEPLOY_DIR_IMAGE}/4_1.bin
     package_stagefile_shell ${DEPLOY_DIR_IMAGE}/4_2.bin
+    package_stagefile_shell ${DEPLOY_DIR_IMAGE}/updater.glob
     package_stagefile_shell ${DEPLOY_DIR_IMAGE}/uboot_ivt.bd
+    package_stagefile_shell ${DEPLOY_DIR_IMAGE}/updater_ivt.bd
     package_stagefile_shell ${DEPLOY_DIR_IMAGE}/mk_hdr.sh
     package_stagefile_shell ${DEPLOY_DIR_IMAGE}/usr.fat
     package_stagefile_shell ${DEPLOY_DIR_IMAGE}/config_block-${MACHINE}.part
