@@ -2,6 +2,7 @@
 #define _MATCHMODE_TIMING_RANGES_H_
 
 enum timing_status {
+	STATUS_UNKNOWN,		/* Daemon just started up */
 	STATUS_OK,		/* Running in a supported mode */
 	STATUS_DISCONNECTED,	/* No source connected */
 	STATUS_INVALID,		/* Source is running in an unsupported mode */

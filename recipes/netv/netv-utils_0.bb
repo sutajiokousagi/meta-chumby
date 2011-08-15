@@ -6,7 +6,7 @@ inherit update-rc.d
 INITSCRIPT_NAME = "netv_service"
 INITSCRIPT_PARAMS = "defaults 50 50"
 
-PR = "r44"
+PR = "r45"
 
 PACKAGE_ARCH = "${MACHINE}"
 
@@ -29,7 +29,8 @@ SRC_URI = "file://helpers/dumpreg.c \
 	file://fpga/41-chumby-netv.rules \
 	file://helpers/dumptiming.c \
 	file://helpers/netv_service \
-	file://helpers/matchmode.c \
+	file://helpers/matchmoded.c \
+	file://helpers/matchmoded_timings.h \
 "
 
 S = "${WORKDIR}"
@@ -43,7 +44,7 @@ do_compile() {
     ${CC} ${CFLAGS} ${LDFLAGS} -o snoop helpers/snoop.c parse-edid.o
     ${CC} ${CFLAGS} ${LDFLAGS} -o setbox helpers/setbox.c
     ${CC} ${CFLAGS} ${LDFLAGS} -o modeline helpers/modeline.c
-    ${CC} ${CFLAGS} ${LDFLAGS} -o matchmode helpers/matchmode.c
+    ${CC} ${CFLAGS} ${LDFLAGS} -o matchmoded helpers/matchmoded.c
 
     ${CC} ${CFLAGS} ${LDFLAGS} -c helpers/compute_ksv.c
     ${CC} ${CFLAGS} ${LDFLAGS} -o derive_km helpers/derive_km.c compute_ksv.o
@@ -66,7 +67,9 @@ do_install() {
 	install -m 0755 derive_km ${D}${bindir}
 	install -m 0755 writecached_Km ${D}${bindir}
 	install -m 0755 fpga_ctl ${D}${bindir}
-	install -m 0755 matchmode ${D}${bindir}
+
+	install -d ${D}${sbindir}
+	install -m 0755 matchmoded ${D}${sbindir}
 
 	install -d ${D}/${base_libdir}/firmware
 	install -m 0644 fpga/hdmi_overlay.bin ${D}${base_libdir}/firmware/
@@ -82,7 +85,7 @@ do_install() {
 	install -m 0644 fpga/hdmi_720p.bin ${DEPLOY_DIR_IMAGE}
 }
 
-FILES_${PN} = "${bindir}"
+FILES_${PN} = "${bindir} ${sbindir}"
 FILES_${PN} += "${base_libdir}/firmware/"
 FILES_${PN} += "${base_libdir}/udev/rules.d/"
 FILES_${PN} += "${sysconfdir}/init.d/"

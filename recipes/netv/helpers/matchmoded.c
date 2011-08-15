@@ -569,10 +569,11 @@ main(int argc, char **argv)
 	 */
 	if (read_timing_info(&last_ti))
 		return 3;
+	last_ti.status = STATUS_UNKNOWN;
 
 
-//	if (daemon(0, 0)==-1)
-//		perror("Unable to daemonize");
+	if (daemon(0, 0)==-1)
+		perror("Unable to daemonize");
 
 
 	/* There are two goals of this while() loop.
@@ -690,14 +691,14 @@ main(int argc, char **argv)
 
 		/* If the mode is INVALID, switch to self-timed mode */
 		if (new_ti.status == STATUS_INVALID) {
-			if (last_ti.status == STATUS_OK)
+			if (last_ti.status == STATUS_OK || last_ti.status == STATUS_UNKNOWN)
 				switch_to_720p();
 			set_timing(fb0, &self_timed_720p);
 			send_message("invalid", self_timed_720p.hactive, self_timed_720p.vactive, 16);
 			fprintf(stderr, "Switched to invalid mode\n");
 		}
 		else if(new_ti.status == STATUS_DISCONNECTED) {
-			if (last_ti.status == STATUS_OK)
+			if (last_ti.status == STATUS_OK || last_ti.status == STATUS_UNKNOWN)
 				switch_to_720p();
 			set_timing(fb0, &self_timed_720p);
 			send_message("disconnected", self_timed_720p.hactive, self_timed_720p.vactive, 16);
@@ -717,6 +718,11 @@ main(int argc, char **argv)
 			  trigger_hpd();
 			}
 		}
+
+		/* Tell both NeTVBrowser and the flash player that the resolution changed */
+		system("setbrowser r");
+		system("setplayer r");
+
 		last_ti = new_ti;
 	}
 
