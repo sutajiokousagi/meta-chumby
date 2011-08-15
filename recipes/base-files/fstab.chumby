@@ -1,6 +1,6 @@
 # stock fstab - you probably want to override this with a machine specific one
 
-rootfs               /                    auto       defaults,noatime,errors=panic,barrier=1   1  1
+rootfs               /                    auto       ro,noatime,barrier=1   1  1
 proc                 /proc                proc       defaults              0  0
 devpts               /dev/pts             devpts     mode=0620,gid=5       0  0
 usbfs                /proc/bus/usb        usbfs      defaults              0  0
