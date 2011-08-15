@@ -1,7 +1,7 @@
 DESCRIPTION = "opkg configuration files"
 SECTION = "base"
 LICENSE = "MIT"
-PR = "r6"
+PR = "r7"
 
 OPKG_SIGNING1 = '${@base_conditional("DISTRO_TYPE", "release", "option check_signature 1", "",d)}'
 OPKG_SIGNING2 = '${@base_conditional("DISTRO_TYPE", "release", "option offline_root /", "",d)}'
@@ -17,8 +17,6 @@ do_compile () {
 	cat ${WORKDIR}/src	>>${WORKDIR}/opkg.conf
 	cat ${WORKDIR}/dest	>>${WORKDIR}/opkg.conf
 	cat ${WORKDIR}/lists	>>${WORKDIR}/opkg.conf
-	echo "${OPKG_SIGNING1}" >>${WORKDIR}/opkg.conf
-	echo "${OPKG_SIGNING2}" >>${WORKDIR}/opkg.conf
 }
 
 do_compile_append_shr () {
@@ -48,6 +46,12 @@ do_install_append_angstrom () {
 
 do_install_append_slugos () {
 	install -d ${D}/var/lib/opkg/tmp
+}
+
+pkg_postinst_${PN}() {
+	if test "x$D" != "x"; then exit 1; fi  # Don't do postinst on build system
+	echo "${OPKG_SIGNING1}" >>${WORKDIR}/opkg.conf
+	echo "${OPKG_SIGNING2}" >>${WORKDIR}/opkg.conf
 }
 
 PACKAGE_ARCH = "all"

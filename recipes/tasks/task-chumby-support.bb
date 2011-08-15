@@ -10,6 +10,8 @@ RDEPENDS_${PN} = " \
     chumby-wget \
     chumby-updates \
     networkmanager chumby-networkmanager \
+    \
+    procps strace \
 "
 
 RRECOMMENDS_${PN} = " \
