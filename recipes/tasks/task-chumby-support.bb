@@ -11,7 +11,6 @@ RDEPENDS_${PN} = " \
     chumby-updates \
     networkmanager chumby-networkmanager \
     \
-    # Pulled in because we like this version of ps
     procps strace \
 "
 
