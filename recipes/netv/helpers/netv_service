@@ -2,11 +2,6 @@
 
 case "$1" in
 	start)
-	      # TEMPORARY HACK REMOVE ONCE RECOVERY SWITCH ISSUE IS FIXED
-	      echo "12 * * * * /usr/bin/poll-update-server.sh" > /var/cron/tabs/root
-	      /etc/init.d/cron restart
-	      # end hack
-
 	      # very important: make sure clock is input before doing this!
 	      regutil -w LCD_CFG_SCLK_DIV=0x90000001
 	      echo "installing chumby xilinx driver"
