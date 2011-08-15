@@ -49,7 +49,7 @@ then
 
 	# Re-run postinst scripts that generate files in /var/
 	mount -obind /mnt/var /var
-	for i in $(grep var /usr/lib/opkg/info/*.postinst | cut -d: -f1)
+	for i in $(grep var /usr/lib/opkg/info/*.postinst | cut -d: -f1 | uniq)
 	do
 		$i
 	done
