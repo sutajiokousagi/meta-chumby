@@ -5,7 +5,7 @@ DESCRIPTION = "Chromeless web browser for NeTV with some added sugar"
 HOMEPAGE = "http://www.chumby.com/"
 AUTHOR = "Torin"
 LICENSE = "GPLv3"
-PR = "r34"
+PR = "r35"
 DEPENDS = "qt4-embedded"
 RDEPENDS_${PN} = "task-qt4e-base"
 
@@ -24,8 +24,9 @@ do_compile_append() {
 
 do_install() {
     install -d ${D}${bindir}
-    install -m 0755 ${S}/bin/NeTVBrowser ${D}${bindir}
-    install -m 0755 ${WORKDIR}/setbrowser                    ${D}${bindir}
+    install -m 0755 ${S}/bin/NeTVBrowser 			${D}${bindir}
+    install -m 0755 ${WORKDIR}/setbrowser			${D}${bindir}
+    install -m 0755 ${S}/chumby-netvbrowser-upgrade.sh 		${D}${bindir}
 
     install -d ${D}${sysconfdir}/init.d/
     install -m 0755 ${S}/chumby-netvbrowser.sh ${D}${sysconfdir}/init.d/${INITSCRIPT_NAME}
