@@ -1,5 +1,5 @@
 inherit task
-PR = "r5"
+PR = "r6"
 
 RDEPENDS_${PN} = " \
 #      NeTVServer & Webkit browser (Control Panel)
