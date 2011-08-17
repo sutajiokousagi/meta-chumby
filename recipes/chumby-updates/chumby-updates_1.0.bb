@@ -4,7 +4,7 @@ SRC_URI = "file://poll-update-server.sh \
            file://trusted.gpg \
 "
 S = "${WORKDIR}"
-PR = "r4"
+PR = "r5"
 
 do_compile() {
 	sed -e 's/_MACHINE_/${MACHINE}/g' -i poll-update-server.sh
