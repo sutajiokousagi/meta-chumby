@@ -1,0 +1,47 @@
+diff -ur compat-wireless-2011-04-17-stock/drivers/net/wireless/ath/ath9k/htc_drv_gpio.c compat-wireless-2011-04-17/drivers/net/wireless/ath/ath9k/htc_drv_gpio.c
+--- compat-wireless-2011-04-17-stock/drivers/net/wireless/ath/ath9k/htc_drv_gpio.c	2011-08-16 07:40:02.928528982 +0800
++++ compat-wireless-2011-04-17/drivers/net/wireless/ath/ath9k/htc_drv_gpio.c	2011-08-16 07:43:58.120528430 +0800
+@@ -252,6 +252,7 @@
+ 	led->led_cdev.name = led->name;
+ 	led->led_cdev.default_trigger = trigger;
+ 	led->led_cdev.brightness_set = ath9k_led_brightness;
++	led->led_cdev.brightness = LED_OFF;
+ 
+ 	ret = led_classdev_register(wiphy_dev(priv->hw->wiphy), &led->led_cdev);
+ 	if (ret)
+@@ -308,7 +309,7 @@
+ 	trigger = ieee80211_get_radio_led_name(priv->hw);
+ 	snprintf(priv->radio_led.name, sizeof(priv->radio_led.name),
+ 		"ath9k-%s::radio", wiphy_name(priv->hw->wiphy));
+-	ret = ath9k_register_led(priv, &priv->radio_led, trigger);
++	ret = ath9k_register_led(priv, &priv->radio_led, NULL);
+ 	priv->radio_led.led_type = ATH_LED_RADIO;
+ 	if (ret)
+ 		goto fail;
+@@ -316,7 +317,7 @@
+ 	trigger = ieee80211_get_assoc_led_name(priv->hw);
+ 	snprintf(priv->assoc_led.name, sizeof(priv->assoc_led.name),
+ 		"ath9k-%s::assoc", wiphy_name(priv->hw->wiphy));
+-	ret = ath9k_register_led(priv, &priv->assoc_led, trigger);
++	ret = ath9k_register_led(priv, &priv->assoc_led, NULL);
+ 	priv->assoc_led.led_type = ATH_LED_ASSOC;
+ 	if (ret)
+ 		goto fail;
+@@ -324,7 +325,7 @@
+ 	trigger = ieee80211_get_tx_led_name(priv->hw);
+ 	snprintf(priv->tx_led.name, sizeof(priv->tx_led.name),
+ 		"ath9k-%s::tx", wiphy_name(priv->hw->wiphy));
+-	ret = ath9k_register_led(priv, &priv->tx_led, trigger);
++	ret = ath9k_register_led(priv, &priv->tx_led, NULL);
+ 	priv->tx_led.led_type = ATH_LED_TX;
+ 	if (ret)
+ 		goto fail;
+@@ -332,7 +333,7 @@
+ 	trigger = ieee80211_get_rx_led_name(priv->hw);
+ 	snprintf(priv->rx_led.name, sizeof(priv->rx_led.name),
+ 		"ath9k-%s::rx", wiphy_name(priv->hw->wiphy));
+-	ret = ath9k_register_led(priv, &priv->rx_led, trigger);
++	ret = ath9k_register_led(priv, &priv->rx_led, NULL);
+ 	priv->rx_led.led_type = ATH_LED_RX;
+ 	if (ret)
+ 		goto fail;

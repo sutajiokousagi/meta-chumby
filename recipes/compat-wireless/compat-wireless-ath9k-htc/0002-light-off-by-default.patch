@@ -1,0 +1,22 @@
+diff -ur compat-wireless-2011-04-17-stock/drivers/net/wireless/ath/ath9k/htc_drv_gpio.c compat-wireless-2011-04-17/drivers/net/wireless/ath/ath9k/htc_drv_gpio.c
+--- compat-wireless-2011-04-17-stock/drivers/net/wireless/ath/ath9k/htc_drv_gpio.c	2011-08-17 15:59:45.024529034 +0800
++++ compat-wireless-2011-04-17/drivers/net/wireless/ath/ath9k/htc_drv_gpio.c	2011-08-17 16:15:47.008530108 +0800
+@@ -340,6 +340,9 @@
+ 
+ 	priv->op_flags &= ~OP_LED_DEINIT;
+ 
++	/* Initialize the LEDs to be off */
++	ath9k_led_brightness(&priv->radio_led.led_cdev, LED_OFF);
++
+ 	return;
+ 
+ fail:
+@@ -409,7 +412,7 @@
+ 	/* Enable LED */
+ 	ath9k_hw_cfg_output(ah, ah->led_pin,
+ 			    AR_GPIO_OUTPUT_MUX_AS_OUTPUT);
+-	ath9k_hw_set_gpio(ah, ah->led_pin, 0);
++	ath9k_hw_set_gpio(ah, ah->led_pin, 1);
+ }
+ 
+ void ath9k_htc_radio_disable(struct ieee80211_hw *hw)
