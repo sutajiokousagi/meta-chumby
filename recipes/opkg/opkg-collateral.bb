@@ -1,7 +1,7 @@
 DESCRIPTION = "opkg configuration files"
 SECTION = "base"
 LICENSE = "MIT"
-PR = "r7"
+PR = "r8"
 
 OPKG_SIGNING1 = '${@base_conditional("DISTRO_TYPE", "release", "option check_signature 1", "",d)}'
 OPKG_SIGNING2 = '${@base_conditional("DISTRO_TYPE", "release", "option offline_root /", "",d)}'
@@ -50,8 +50,8 @@ do_install_append_slugos () {
 
 pkg_postinst_${PN}() {
 	if test "x$D" != "x"; then exit 1; fi  # Don't do postinst on build system
-	echo "${OPKG_SIGNING1}" >>${WORKDIR}/opkg.conf
-	echo "${OPKG_SIGNING2}" >>${WORKDIR}/opkg.conf
+	echo "${OPKG_SIGNING1}" >>${sysconfdir}/opkg/opkg.conf
+	echo "${OPKG_SIGNING2}" >>${sysconfdir}/opkg/opkg.conf
 }
 
 PACKAGE_ARCH = "all"

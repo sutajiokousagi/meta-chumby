@@ -1,5 +1,5 @@
 SRC_URI += "file://fstab.chumby"
-PR .= "-amend-r5"
+PR .= "-amend-r7"
 do_install_append() {
     install -m 0644 ${WORKDIR}/fstab.chumby ${D}${sysconfdir}/fstab
 }

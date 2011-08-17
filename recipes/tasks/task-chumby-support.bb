@@ -1,5 +1,5 @@
 inherit task
-PR = "r1"
+PR = "r4"
 
 RDEPENDS_${PN} = " \
     regutil config-util \
@@ -9,9 +9,9 @@ RDEPENDS_${PN} = " \
     imgtool \
     chumby-wget \
     chumby-updates \
+    strace procps \
     networkmanager chumby-networkmanager \
     \
-    procps strace \
 "
 
 RRECOMMENDS_${PN} = " \
