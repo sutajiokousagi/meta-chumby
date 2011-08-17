@@ -36,6 +36,8 @@
 #define FPGA_IOCDONE     _IOR(FPGA_IOC_MAGIC,  6, int)
 #define FPGA_IOCINIT     _IOR(FPGA_IOC_MAGIC,  7, int)
 
+// whether or not we should use sync info to determine modes
+#define USE_SYNC 0 
 
 static struct timing_info self_timed_720p = {
         .hactive 		= 1280,
@@ -84,35 +86,54 @@ normalize_timing_info(struct timing_range **ranges, struct timing_info *ti)
 	}
 
 	for (current_range=0; ranges[current_range]; current_range++) {
-		int matches = 0;
+		int mismatches = 0;
 		tr = ranges[current_range];
-		if (ti->hactive >= tr->lower.hactive && ti->hactive <= tr->upper.hactive)
-			matches+=4;
-		if (ti->vactive >= tr->lower.vactive && ti->vactive <= tr->upper.vactive)
-			matches+=4;
-		if (ti->htotal >= tr->lower.htotal && ti->htotal <= tr->upper.htotal)
-			matches+=2;
-		if (ti->vtotal_lines >= tr->lower.vtotal_lines && ti->vtotal_lines <= tr->upper.vtotal_lines)
-			matches+=2;
-		if (ti->h_fp >= tr->lower.h_fp && ti->h_fp <= tr->upper.h_fp)
-			matches++;
-		if (ti->h_bp >= tr->lower.h_bp && ti->h_bp <= tr->upper.h_bp)
-			matches++;
-		if (ti->hsync_width >= tr->lower.hsync_width && ti->hsync_width <= tr->upper.hsync_width)
-			matches++;
-		if (ti->v_fp_lines >= tr->lower.v_fp_lines && ti->v_fp_lines <= tr->upper.v_fp_lines)
-			matches++;
-		if (ti->v_bp_lines >= tr->lower.v_bp_lines && ti->v_bp_lines <= tr->upper.v_bp_lines)
-			matches++;
-		if (ti->vsync_width_lines >= tr->lower.vsync_width_lines && ti->vsync_width_lines <= tr->upper.vsync_width_lines)
-			matches++;
-		if (ti->pixclk_in_MHz >= tr->lower.pixclk_in_MHz && ti->pixclk_in_MHz <= tr->upper.pixclk_in_MHz)
-			matches+=3;
 
-		if (matches > 14) {
+		// less reliable measures, such as active lines and pixels, are weighted lighter
+		if (!(ti->hactive >= tr->lower.hactive && ti->hactive <= tr->upper.hactive))
+			mismatches+=1;
+		if (!(ti->vactive >= tr->lower.vactive && ti->vactive <= tr->upper.vactive))
+			mismatches+=1;
+
+		// total pixel counts are more reliable, as they only rely upon the gross detection
+		// of syncs and are less influenced by "bouncing" on sync edges
+		if (!(ti->htotal >= tr->lower.htotal && ti->htotal <= tr->upper.htotal))
+			mismatches+=2;
+		if (!(ti->vtotal_lines >= tr->lower.vtotal_lines && ti->vtotal_lines <= tr->upper.vtotal_lines))
+			mismatches+=2;
+
+#if USE_SYNC
+		if (!(ti->h_fp >= tr->lower.h_fp && ti->h_fp <= tr->upper.h_fp))
+			mismatches++;
+		if (!(ti->h_bp >= tr->lower.h_bp && ti->h_bp <= tr->upper.h_bp))
+			mismatches++;
+		if (!(ti->hsync_width >= tr->lower.hsync_width && ti->hsync_width <= tr->upper.hsync_width))
+			mismatches++;
+		if (!(ti->v_fp_lines >= tr->lower.v_fp_lines && ti->v_fp_lines <= tr->upper.v_fp_lines))
+			mismatches++;
+		if (!(ti->v_bp_lines >= tr->lower.v_bp_lines && ti->v_bp_lines <= tr->upper.v_bp_lines))
+			mismatches++;
+		if (!(ti->vsync_width_lines >= tr->lower.vsync_width_lines && ti->vsync_width_lines <= tr->upper.vsync_width_lines))
+			mismatches++;
+#endif
+		
+		// pixclock is a very robust measure, if this is off, then weight it heavily:
+		// it's more than a correct htotal and vtotal combined
+		if (!(ti->pixclk_in_MHz >= tr->lower.pixclk_in_MHz && ti->pixclk_in_MHz <= tr->upper.pixclk_in_MHz))
+			mismatches+=5;
+
+#if USE_SYNC
+		if (mismatches <= 7) {
 			*ti = tr->actual;
 			return;
 		}
+#else
+		// basically, pixclock is off plus one other thing should trigger a mismatch
+		if (mismatches <= 5) {
+			*ti = tr->actual;
+			return;
+		}
+#endif
 	}
 
 	if (ti->status == STATUS_OK)
@@ -153,8 +174,9 @@ calculate_timing_margin(struct timing_range *tr, int margin) {
 	tr->lower.vsync_width_lines = tr->actual.vsync_width_lines * 100/margin;
 	tr->upper.vsync_width_lines = tr->actual.vsync_width_lines * margin/100;
 
-	tr->lower.pixclk_in_MHz = tr->actual.pixclk_in_MHz * 100/margin;
-	tr->upper.pixclk_in_MHz = tr->actual.pixclk_in_MHz * margin/100;
+	// pixclocks should be very tightly constrained as this is a reliable measurement
+	tr->lower.pixclk_in_MHz = tr->actual.pixclk_in_MHz * 100.0/2.0;
+	tr->upper.pixclk_in_MHz = tr->actual.pixclk_in_MHz * 2.0/100;
 }
 
 /*
@@ -491,6 +513,21 @@ static void switch_to_overlay()
 	write_eeprom("/dev/i2c-0", DEVADDR>>1, 3, &buffer, sizeof(buffer));
 }
 
+static void trigger_hpd()
+{
+	unsigned char buffer;
+
+	/* read comptl, 
+	read_eeprom("/dev/i2c-0", DEVADDR>>1, 0, &buffer, sizeof(buffer));
+	buffer = buffer | 0x8;
+	write_eeprom("/dev/i2c-0", DEVADDR>>1, 0, &buffer, sizeof(buffer));
+
+	sleep(1); /* pull it for 1s */
+
+	buffer = buffer & ~0x8;
+	write_eeprom("/dev/i2c-0", DEVADDR>>1, 0, &buffer, sizeof(buffer));
+}
+
 static void handle_winch(int num)
 {
 
@@ -506,6 +543,7 @@ main(int argc, char **argv)
 
 	struct timing_range **ranges = timings;
 	int current_range;
+	unsigned short xsubi[3]; // we use this unitialized on purpose
 
 	signal(SIGWINCH, handle_winch);
 
@@ -550,7 +588,12 @@ main(int argc, char **argv)
 	while (1) {
 
 		waittime.tv_sec = 1;
-		waittime.tv_nsec = 0;
+		// pick a random interval between 1.0 and ~1.5 seconds
+		// why? because a perfect 1 second interval should actually
+		// "beat" against an integer sync rate slowly, which means
+		// you'll get series of timing samples aligned with blanking
+		// periods. Randomness breaks the repetition.
+		waittime.tv_nsec = (nrand48(xsubi) & 0x1FFFFFFF);
 		if (nanosleep(&waittime, NULL) == -1) {
 			/*
 			 * Nanosleep returned non-zero.  See if we got hit
@@ -586,8 +629,37 @@ main(int argc, char **argv)
 		}
 
 
-		/* By this point, we know the resolution has changed. */
+		/* By this point, we suspect the resolution has changed. */
+		/* but, before we take action, it doesn't hurt to double-check */
+		// wait a random interval to avoid sampling in a sync region
+		waittime.tv_nsec = (nrand48(xsubi) & 0x7ffffff); // ~ 8 ms
+		while (nanosleep(&waittime, NULL) == -1 && errno == EINTR);
 
+		////////////
+		// repeat the above timing info check code, as if it were ground hog day
+		// there is some debate if this is the right thing to do: maybe it's better
+		// to check if the re-sampled timing mode matches the new timing mode precisely,
+		// instead of checking a simple delta against the original timing mode
+		
+		/* We're now ready to determine if the mode has changed */
+		if (read_timing_info(&new_ti))
+			continue;
+
+		/* Timing info can be off slightly sometimes.  Pick a sane mode. */
+		raw_ti = new_ti;
+		normalize_timing_info(ranges, &new_ti);
+
+
+		/* Do nothing if nothing has changed */
+		if (!timingcmp(&last_ti, &new_ti)) {
+			fprintf(stderr, "Timing mode didn't change (%dx%d - %d vs %dx%d - %d)\n",
+				last_ti.hactive, last_ti.vactive, last_ti.status,
+				new_ti.hactive, new_ti.vactive, new_ti.status);
+			continue;
+		}
+
+		/////////////
+		/* By this point, we're pretty sure the resolution has changed */
 
 		/*
 		 * If we're changing from one invalid mode to another,
@@ -637,6 +709,13 @@ main(int argc, char **argv)
 			set_timing(fb0, &new_ti);
 			send_message("connected", new_ti.hactive, new_ti.vactive, 16);
 			fprintf(stderr, "Switched to connected, %dx%d mode\n", new_ti.hactive, new_ti.vactive);
+			// trigger an HPD if the last mode was invalid, because it means
+			// we'll have lost sync on the cipher
+			if ( (last_ti.status == STATUS_INVALID) ) {
+			  sleep(2); // let res settle before we pull this
+			  fprintf(stderr, "triggering HPD to resync ciphers\n" );
+			  trigger_hpd();
+			}
 		}
 		last_ti = new_ti;
 	}
