@@ -105,7 +105,7 @@ chumby_make_rom_chumby-silvermoon-netv () {
     dd conv=notrunc of=${DEPLOY_DIR_IMAGE}/boot-${MACHINE}.bin seek=128 count=2944 if=${DEPLOY_DIR_IMAGE}/u-boot-${MACHINE}.bin
     dd conv=notrunc of=${DEPLOY_DIR_IMAGE}/boot-${MACHINE}.bin seek=3072 count=7680 if=${DEPLOY_DIR_IMAGE}/zImage-${MACHINE}.bin
     dd conv=notrunc of=${DEPLOY_DIR_IMAGE}/boot-${MACHINE}.bin seek=18466  count=666 if=${DEPLOY_DIR_IMAGE}/hdmi_720p.bin
-    dd conv=notrunc of=${DEPLOY_DIR_IMAGE}/boot-${MACHINE}.bin seek=19132 count=3600 if=${DEPLOY_DIR_IMAGE}/logo.raw.gz
+    dd conv=notrunc of=${DEPLOY_DIR_IMAGE}/boot-${MACHINE}.bin seek=19132 count=3600 if=${DEPLOY_DIR_IMAGE}/logo-preparing.raw.gz
 
     package_stagefile_shell ${DEPLOY_DIR_IMAGE}/boot-${MACHINE}.bin
 
