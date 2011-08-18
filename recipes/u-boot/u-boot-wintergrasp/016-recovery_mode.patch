@@ -1,6 +1,6 @@
 diff -Nur u-boot-2009.08.lastpatch/board/freescale/wintergrasp/wintergrasp.c u-boot-2009.08/board/freescale/wintergrasp/wintergrasp.c
 --- u-boot-2009.08.lastpatch/board/freescale/wintergrasp/wintergrasp.c	2011-07-26 16:59:35.176674503 +0800
-+++ u-boot-2009.08/board/freescale/wintergrasp/wintergrasp.c	2011-08-11 15:31:39.254895005 +0800
++++ u-boot-2009.08/board/freescale/wintergrasp/wintergrasp.c	2011-08-18 15:55:16.034960958 +0800
 @@ -38,6 +38,10 @@
  void setup_gpmi_nand();
  #endif
@@ -12,17 +12,20 @@ diff -Nur u-boot-2009.08.lastpatch/board/freescale/wintergrasp/wintergrasp.c u-b
  DECLARE_GLOBAL_DATA_PTR;
  
  #ifdef CONFIG_IMX_SSP_MMC
-@@ -313,7 +317,8 @@
-   int m = REG_RD_ADDR(GLOBAL_BOOT_MODE_ADDR);
+@@ -314,8 +318,11 @@
  
  #ifdef CONFIG_UPDATER
--  if (UPDATER_MAGIC_SIGN(*((int *) UPDATER_GLOB_ADDR)) == UPDATER_MAGIC)
-+  if ((m == BOOT_MODE_BOOTLOADER) &&
-+      (UPDATER_MAGIC_SIGN(*((int *) UPDATER_GLOB_ADDR)) == UPDATER_MAGIC))
+   if (UPDATER_MAGIC_SIGN(*((int *) UPDATER_GLOB_ADDR)) == UPDATER_MAGIC)
++  {
++    *((int *) UPDATER_GLOB_ADDR) = 0; //Reset signature for next boot
++
      bootmode = BOOTMODE_UPDATER;
-   else
+-  else
++  } else
  #endif
-@@ -414,48 +419,6 @@
+ 
+   if (m == BOOT_MODE_SD0)
+@@ -414,48 +421,6 @@
    if (is_bootmode_nand())
      setenv("bootmode", "nand");
  }
@@ -71,7 +74,7 @@ diff -Nur u-boot-2009.08.lastpatch/board/freescale/wintergrasp/wintergrasp.c u-b
  #endif
  
  #ifdef CONFIG_LOADIMG
-@@ -732,3 +695,32 @@
+@@ -732,3 +697,32 @@
    "<fb addr>"
  );
  #endif
@@ -816,7 +819,7 @@ diff -Nur u-boot-2009.08.lastpatch/include/asm-arm/arch-mx28/regs-power.h u-boot
 +#endif /* __ARCH_ARM___POWER_H */
 diff -Nur u-boot-2009.08.lastpatch/include/configs/wintergrasp.h u-boot-2009.08/include/configs/wintergrasp.h
 --- u-boot-2009.08.lastpatch/include/configs/wintergrasp.h	2011-07-26 16:55:10.057477079 +0800
-+++ u-boot-2009.08/include/configs/wintergrasp.h	2011-08-11 15:28:13.331990200 +0800
++++ u-boot-2009.08/include/configs/wintergrasp.h	2011-08-18 15:52:49.244939664 +0800
 @@ -68,7 +68,24 @@
  #define CONFIG_BOOTDELAY	1
  #define CONFIG_BOOTFILE		uImage
@@ -891,14 +894,14 @@ diff -Nur u-boot-2009.08.lastpatch/include/configs/wintergrasp.h u-boot-2009.08/
  
  /*
   * U-Boot Commands
-@@ -264,6 +305,7 @@
+@@ -261,6 +302,7 @@
+ #else
+  #define GLOBAL_BOOT_MODE_ADDR 0x0001a7f0
+ #endif
++
  #define BOOT_MODE_NAND 0x4
  #define BOOT_MODE_SD0 0x9
  #define BOOT_MODE_SD1 0xa
-+#define BOOT_MODE_BOOTLOADER 0xd
- 
- #define TWIST(x) \
-           ((((x) >> 24) & 0xff) | \
 @@ -296,4 +338,6 @@
  #define CONFIG_SYS_HUSH_PARSER
  #define CONFIG_SYS_PROMPT_HUSH_PS2 "> "
