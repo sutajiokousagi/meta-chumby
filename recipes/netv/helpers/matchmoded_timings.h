@@ -52,7 +52,7 @@ static struct timing_range mode_1 = {
 		.v_bp_lines = 33,
 		.vsync_width_lines = 2,
 
-		.pixclk_in_MHz = 25,
+		.pixclk_in_MHz = 25.175,
 
 		.status = STATUS_OK,
 	},
@@ -74,7 +74,7 @@ static struct timing_range mode_2 = {
 		.v_bp_lines = 9,
 		.vsync_width_lines = 6,
 
-		.pixclk_in_MHz = 27,
+		.pixclk_in_MHz = 27.0,
 
 		.status = STATUS_OK,
 	},
@@ -96,7 +96,7 @@ static struct timing_range mode_4 = {
 		.v_bp_lines = 5,
 		.vsync_width_lines = 5,
 
-		.pixclk_in_MHz = 74,
+		.pixclk_in_MHz = 74.176,
 
 		.status = STATUS_OK,
 	},
@@ -118,7 +118,7 @@ static struct timing_range mode_32 = {
 		.v_bp_lines = 35,
 		.vsync_width_lines = 5,
 
-		.pixclk_in_MHz = 74,
+		.pixclk_in_MHz = 74.176,
 
 		.status = STATUS_OK,
 	},

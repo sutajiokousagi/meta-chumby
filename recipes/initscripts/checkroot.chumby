@@ -44,8 +44,17 @@ then
 	mount /dev/mmcblk0p3 /mnt
 	mkdir -p /mnt/var/psp
 	cp -a /var/* /mnt/var/
-	mkdir /mnt/var/psp
+	mkdir -p /mnt/var/psp
 	cp -a /psp/* /mnt/var/psp/
+
+	# Re-run postinst scripts that generate files in /var/
+	mount -obind /mnt/var /var
+	for i in $(grep var /usr/lib/opkg/info/*.postinst | cut -d: -f1 | uniq)
+	do
+		$i
+	done
+	umount /var
+
 	umount /mnt
 
 	killall -CONT udevd
