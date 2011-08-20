@@ -39,6 +39,19 @@
 // whether or not we should use sync info to determine modes
 #define USE_SYNC 0 
 
+#define SINK_DISCONNECTED 0
+#define SINK_CONNECTED 1
+
+static int fd = 0;
+static int   *mem_32 = 0;
+static short *mem_16 = 0;
+static char  *mem_8  = 0;
+static int *prev_mem_range = 0;
+static int read_kernel_memory(long offset, int virtualized, int size);
+
+static int saw_trigger = 0;
+static int sink_state = 0;
+
 static struct timing_info self_timed_720p = {
         .hactive 		= 1280,
         .vactive 		= 720,
@@ -72,11 +85,24 @@ timingcmp(struct timing_info *ti1, struct timing_info *ti2)
 	return 1;
 }
 
+// returns 1 if there is a TV present
+// returns 0 if there isn't one
+static int sink_status() {
+  unsigned int gplr2;
+  unsigned int hpd_state;
+  // gpio_gplr2, bits 95:64
+  gplr2 = read_kernel_memory(0xd4019008, 0, 4);
+  hpd_state = gplr2 & 0x08000000 ? SINK_CONNECTED : SINK_DISCONNECTED;
+  
+  return hpd_state;
+}
+
 static void
 normalize_timing_info(struct timing_range **ranges, struct timing_info *ti)
 {
 	struct timing_range *tr;
 	int current_range;
+	int oldstatus;
 	if (!ti || !ranges)
 		return;
 
@@ -124,14 +150,21 @@ normalize_timing_info(struct timing_range **ranges, struct timing_info *ti)
 
 #if USE_SYNC
 		if (mismatches <= 7) {
-			*ti = tr->actual;
-			return;
+		  // preserve the status state because in self-timed mode
+		  // the timing looks good, but the PLL status or disconnect status
+		  // should not be bashed
+		  oldstatus = ti->status;
+		  *ti = tr->actual;
+		  ti->status = oldstatus;
+		  return;
 		}
 #else
 		// basically, pixclock is off plus one other thing should trigger a mismatch
 		if (mismatches <= 5) {
-			*ti = tr->actual;
-			return;
+		  oldstatus = ti->status;
+		  *ti = tr->actual;
+		  ti->status = oldstatus;
+		  return;
 		}
 #endif
 	}
@@ -250,8 +283,19 @@ parse_timing_info(uint8_t *buffer, struct timing_info *t)
 	}
 
 	t->status = STATUS_OK;
-	if (!(buffer[32]&1))
-		t->status = STATUS_DISCONNECTED;
+	if( sink_status() == SINK_DISCONNECTED ) {
+	  fprintf( stderr, "HPD says sink disconnected\n" );
+	  t->status = STATUS_DISCONNECTED;
+	} else {
+	  fprintf( stderr, "HPD says sink connected\n" );
+	  // we're connected, but check if the PLL is unlocked; if it is, then there's no source
+	  if ( !(buffer[32]&1) ) { // this is register 0x18 through some magic done earlier
+	    fprintf( stderr, "Rx PLL unlocked.\n" );
+	    t->status = STATUS_NOSOURCE;
+	  } else {
+	    fprintf( stderr, "Rx PLL locked.\n" );
+	  }
+	}
 	fprintf(stderr, "Status: %d (0x%02x)\n", t->status, buffer[32]);
 
 	return 0;
@@ -485,6 +529,7 @@ static void switch_to_720p()
 {
 	unsigned char buffer;
 
+	fprintf( stderr, "*********switching to self-timed mode.\n" );
 	/* Reset the PLL */
 	read_eeprom("/dev/i2c-0", DEVADDR>>1, 3, &buffer, sizeof(buffer));
 	buffer = buffer | 0x10;
@@ -501,12 +546,18 @@ static void switch_to_overlay()
 {
 	unsigned char buffer;
 
+	fprintf( stderr, "**********switching to overlay mode.\n" );
+
+#if 0	// pll reset is actually handled already by plugging in the cable
+	// or else is later caught when we go into a valid mode from an invalid
+	// mode, by a call to pulling HPD
 	/* Reset the PLL */
 	read_eeprom("/dev/i2c-0", DEVADDR>>1, 3, &buffer, sizeof(buffer));
 	buffer = buffer | 0x10;
 	write_eeprom("/dev/i2c-0", DEVADDR>>1, 3, &buffer, sizeof(buffer));
 	buffer = buffer & ~0x10;
 	write_eeprom("/dev/i2c-0", DEVADDR>>1, 3, &buffer, sizeof(buffer));
+#endif
 
 	read_eeprom("/dev/i2c-0", DEVADDR>>1, 3, &buffer, sizeof(buffer));
 	buffer = (buffer & ~0x8) | 0x4;
@@ -517,7 +568,18 @@ static void trigger_hpd()
 {
 	unsigned char buffer;
 
-	/* read comptl, 
+	fprintf( stderr, "**********pulling HPD.\n" );
+	/* if semaphore is active, abort this, because someone already initiated the HPD pull */
+	read_eeprom("/dev/i2c-0", DEVADDR>>1, 3, &buffer, sizeof(buffer));
+	if( buffer & 0x80 ) {
+	  fprintf( stderr, "**********but someone beat me to it!!! I give up...\n" );
+	  return;
+	}
+	// set semaphore
+	buffer |= 0x80;
+	write_eeprom("/dev/i2c-0", DEVADDR>>1, 3, &buffer, sizeof(buffer));
+	
+	/* read snoopctl */
 	read_eeprom("/dev/i2c-0", DEVADDR>>1, 0, &buffer, sizeof(buffer));
 	buffer = buffer | 0x8;
 	write_eeprom("/dev/i2c-0", DEVADDR>>1, 0, &buffer, sizeof(buffer));
@@ -526,12 +588,33 @@ static void trigger_hpd()
 
 	buffer = buffer & ~0x8;
 	write_eeprom("/dev/i2c-0", DEVADDR>>1, 0, &buffer, sizeof(buffer));
+
+	// clear semaphore
+	read_eeprom("/dev/i2c-0", DEVADDR>>1, 3, &buffer, sizeof(buffer));
+	buffer &= 0x7F;
+	write_eeprom("/dev/i2c-0", DEVADDR>>1, 3, &buffer, sizeof(buffer));
+
 }
 
 static void handle_winch(int num)
 {
+  sink_state = 1;
+  fprintf(stderr, "--------cable attached and/or PLL locked, switch immediately to overlay mode to capture key exchange\n");
+  switch_to_overlay();
+  saw_trigger = 0; // clear the trigger event, because by definition we haven't seen it at this point
+}
 
-	fprintf(stderr, "Window size changed\n");
+static void handle_urg(int num)
+{
+  saw_trigger = 1;
+  fprintf(stderr, "--------Got km trigger event\n" );
+}
+
+static void handle_usr2(int num)
+{ 
+  sink_state = 0;
+  fprintf(stderr, "--------cable detached, event noted.\n" );
+  saw_trigger = 0;
 }
 
 int
@@ -544,8 +627,12 @@ main(int argc, char **argv)
 	struct timing_range **ranges = timings;
 	int current_range;
 	unsigned short xsubi[3]; // we use this unitialized on purpose
+	char code;
+	unsigned int invalid_count = 0;
 
 	signal(SIGWINCH, handle_winch);
+	signal(SIGURG, handle_urg);
+	signal(SIGUSR2, handle_usr2);
 
 	/* Calculate a 10% timing margin */
 	for (current_range = 0; ranges[current_range]; current_range++)
@@ -563,6 +650,10 @@ main(int argc, char **argv)
 		return 2;
 	}
 
+	// start in overlay mode. always. helps to have a known entry state to the daemon.
+	switch_to_overlay();
+	sleep(4); // give the system 4 seconds to stabilize. This ia generous margin.
+
 	/*
 	 * Attempt to read current timing information.  An error here
 	 * indicates i2c is broken.
@@ -571,9 +662,22 @@ main(int argc, char **argv)
 		return 3;
 	last_ti.status = STATUS_UNKNOWN;
 
-
-	if (daemon(0, 0)==-1)
-		perror("Unable to daemonize");
+	if( argc == 1 ) {
+	  printf( "Daemonizing...\n" );
+	  if (daemon(0, 0)==-1)
+	    perror("Unable to daemonize"); 
+	} else {
+	  code = *(argv[1]);
+	  if( code == 'c' ) { // c for console mode
+	    printf( "Not daemonizing, going console mode.\n" );
+	    // don't do anything
+	  } else if( code == 'v' ) {
+	    printf( "matchmoded version 0.1\n" );
+	    return 0;
+	  } else {
+	    printf( "Unrecognized argument, ignoring, daemonizing and moving on...\n" );
+	  }
+	}
 
 
 	/* There are two goals of this while() loop.
@@ -586,6 +690,7 @@ main(int argc, char **argv)
 	 * resolution.  Otherwise, switch to self-timed mode and tell the UI
 	 * to display an error.
 	 */
+	invalid_count = 0;
 	while (1) {
 
 		waittime.tv_sec = 1;
@@ -661,17 +766,30 @@ main(int argc, char **argv)
 
 		/////////////
 		/* By this point, we're pretty sure the resolution has changed */
-
 		/*
 		 * If we're changing from one invalid mode to another,
 		 * don't take any action at all.
 		 */
-		if ((last_ti.status == STATUS_INVALID && last_ti.status == new_ti.status)
-		 || (last_ti.status == STATUS_DISCONNECTED && last_ti.status == new_ti.status)) {
-			last_ti = new_ti;
-			fprintf(stderr, "Still an invalid mode\n");
-			continue;
+		if ( ((new_ti.status == STATUS_INVALID) || (new_ti.status == STATUS_DISCONNECTED) ) &&
+		     ((last_ti.status == STATUS_INVALID) || (last_ti.status == STATUS_DISCONNECTED) ) ) {
+		  if( new_ti.status == STATUS_INVALID )
+		    invalid_count++;
+
+		  last_ti = new_ti;
+		  fprintf(stderr, "Still an invalid mode\n");
+
+		  // this is a weird hack. This fixes the case where if the source is plugged in, the PLL can
+		  // lock, but the timing mode is still unsupported. In this case, the PLL can lock unpredictably,
+		  // forcing the mode into overlay mode (to try and capture a Km event that doesn't matter, but
+		  // we can't bypass this because we *must* capture all Kms when they happen). So basically if
+		  // we hang out in an invalid state for 3 cycles, but the PLL is locked, fall-through here to
+		  // trigger us back into a self-timed mode so we can put a message on the screen informing the
+		  // user that the mode ain't supported!
+		  if( invalid_count < 3 )
+		    continue;
 		}
+
+		invalid_count = 0;
 
 		fprintf(stderr, "                     Old    New    Raw\n");
 		fprintf(stderr, "----------------------------------------\n");
@@ -689,34 +807,80 @@ main(int argc, char **argv)
 		fprintf(stderr, "status              %4d  %4d  %4d\n", last_ti.status, new_ti.status, raw_ti.status);
 
 
+		// if we got no source for the first time, switch to 720p self-timed mode
+		if( (new_ti.status == STATUS_NOSOURCE) && (last_ti.status != STATUS_NOSOURCE) ) {
+		  saw_trigger = 0;
+		  switch_to_720p();
+		  set_timing(fb0, &self_timed_720p);
+		  send_message("disconnected", self_timed_720p.hactive, self_timed_720p.vactive, 16);
+		  fprintf(stderr, "Switched to disconnected mode\n");
+		} else if (new_ti.status == STATUS_INVALID) {
 		/* If the mode is INVALID, switch to self-timed mode */
-		if (new_ti.status == STATUS_INVALID) {
-			if (last_ti.status == STATUS_OK || last_ti.status == STATUS_UNKNOWN)
-				switch_to_720p();
-			set_timing(fb0, &self_timed_720p);
-			send_message("invalid", self_timed_720p.hactive, self_timed_720p.vactive, 16);
-			fprintf(stderr, "Switched to invalid mode\n");
+		  // switch to self-timed mode, but wait! check in 3 seconds if really
+		  // we're still invalid. Because some TVs transition through invalid states
+		  // for a while between modes...we don't want to thrash the TV by
+		  // forcing into self-timed mode while it makes up its mind.
+		  saw_trigger = 0; // presuming this means we lost cipher sync too...
+		  sleep(3);
+		  read_timing_info(&new_ti);
+		  raw_ti = new_ti;
+		  normalize_timing_info(ranges, &new_ti);
+		  if( (new_ti.status == STATUS_INVALID) || (new_ti.status == STATUS_NOSOURCE) ) {
+		    // we are most definitely invalid, go self-timed
+		    switch_to_720p();
+		    set_timing(fb0, &self_timed_720p);
+		    send_message("invalid", self_timed_720p.hactive, self_timed_720p.vactive, 16);
+		    fprintf(stderr, "Switched to invalid mode, forcing self-timed\n");
+		  } else { 
+		    // we went back to a valid mode, pull HPD to regain cipher sync if we haven't seen it yet...
+		    switch_to_overlay(); // this is an idempotent call
+		    if( saw_trigger == 0 ) {
+		      fprintf(stderr, "triggering HPD to resync ciphers\n" );
+		      trigger_hpd();
+		    }
+		  }
+		  // either way, update the last_ti to be what we just checked in at
+		  last_ti = new_ti;
 		}
 		else if(new_ti.status == STATUS_DISCONNECTED) {
-			if (last_ti.status == STATUS_OK || last_ti.status == STATUS_UNKNOWN)
-				switch_to_720p();
-			set_timing(fb0, &self_timed_720p);
-			send_message("disconnected", self_timed_720p.hactive, self_timed_720p.vactive, 16);
-			fprintf(stderr, "Switched to disconnected mode\n");
+#if 0
+		  // switch to 720p mode only iff previously we were in an OK mode
+		  // don't do the switch if we were invalid because presumably we were already
+		  // in 720p
+		  if (last_ti.status == STATUS_OK || last_ti.status == STATUS_UNKNOWN) {
+		    switch_to_720p();
+		    set_timing(fb0, &self_timed_720p);
+		    send_message("disconnected", self_timed_720p.hactive, self_timed_720p.vactive, 16);
+		    fprintf(stderr, "Switched to disconnected mode\n");
+		  }
+#else
+		  // actually, go back to overlay mode ("reset" the state machine) if nobody's plugged in
+		  switch_to_overlay();
+		  // but don't really report anything or call anything coz it's not relevant
+#endif
 		}
 		else if(new_ti.status == STATUS_OK) {
-			if (last_ti.status != STATUS_OK)
-				switch_to_overlay();
-			set_timing(fb0, &new_ti);
-			send_message("connected", new_ti.hactive, new_ti.vactive, 16);
-			fprintf(stderr, "Switched to connected, %dx%d mode\n", new_ti.hactive, new_ti.vactive);
-			// trigger an HPD if the last mode was invalid, because it means
-			// we'll have lost sync on the cipher
-			if ( (last_ti.status == STATUS_INVALID) ) {
-			  sleep(2); // let res settle before we pull this
-			  fprintf(stderr, "triggering HPD to resync ciphers\n" );
-			  trigger_hpd();
-			}
+		  //		  if ( !((last_ti.status == STATUS_OK) || (last_ti.status == STATUS_UNKNOWN)) ) {
+		  switch_to_overlay(); // this call is idempotent on a device already in overlay mode
+		  //		  }
+		  
+		  set_timing(fb0, &new_ti);
+		  send_message("connected", new_ti.hactive, new_ti.vactive, 16);
+		  fprintf(stderr, "Switched to connected, %dx%d mode\n", new_ti.hactive, new_ti.vactive);
+
+		  // trigger an HPD if the last mode was invalid, because it means
+		  // we'll have lost sync on the cipher. Invalid->OK state transition
+		  // does not include an HPD event.
+		    
+		  // importantly, DON'T trigger HPD in last mode was disconnected or invalid, because
+		  // HPD is already triggered for us
+		  if ( (last_ti.status == STATUS_INVALID) ) {
+		    sleep(2); // let res settle before we pull this, and double check if hpd trigger hasn't been hit
+		    if( saw_trigger == 0 ) {
+		      fprintf(stderr, "triggering HPD to resync ciphers\n" );
+		      trigger_hpd();
+		    }
+		  }
 		}
 
 		/* Tell both NeTVBrowser and the flash player that the resolution changed */
@@ -730,4 +894,63 @@ main(int argc, char **argv)
 	close(fpga);
 
 	return 0;
+}
+
+
+///////////////// kernel memory read/write convenience functions
+
+static int read_kernel_memory(long offset, int virtualized, int size) {
+    int result;
+
+    int *mem_range = (int *)(offset & ~0xFFFF);
+    if( mem_range != prev_mem_range ) {
+//        fprintf(stderr, "New range detected.  Reopening at memory range %p\n", mem_range);
+        prev_mem_range = mem_range;
+
+        if(mem_32)
+            munmap(mem_32, 0xFFFF);
+        if(fd)
+            close(fd);
+
+        if(virtualized) {
+            fd = open("/dev/kmem", O_RDWR);
+            if( fd < 0 ) {
+                perror("Unable to open /dev/kmem");
+                fd = 0;
+                return -1;
+            }
+        }
+        else {
+            fd = open("/dev/mem", O_RDWR);
+            if( fd < 0 ) {
+                perror("Unable to open /dev/mem");
+                fd = 0;
+                return -1;
+            }
+        }
+
+        mem_32 = mmap(0, 0xffff, PROT_READ | PROT_WRITE, MAP_SHARED, fd, offset&~0xFFFF);
+        if( -1 == (int)mem_32 ) {
+            perror("Unable to mmap file");
+
+            if( -1 == close(fd) )
+                perror("Also couldn't close file");
+
+            fd=0;
+            return -1;
+        }
+        mem_16 = (short *)mem_32;
+        mem_8  = (char  *)mem_32;
+    }
+
+    int scaled_offset = (offset-(offset&~0xFFFF));
+//    fprintf(stderr, "Returning offset 0x%08x\n", scaled_offset);
+    if(size==1)
+        result = mem_8[scaled_offset/sizeof(char)];
+    else if(size==2)
+        result = mem_16[scaled_offset/sizeof(short)];
+    else
+        result = mem_32[scaled_offset/sizeof(long)];
+
+    return result;
 }

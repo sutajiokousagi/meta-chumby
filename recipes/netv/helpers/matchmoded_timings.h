@@ -4,8 +4,9 @@
 enum timing_status {
 	STATUS_UNKNOWN,		/* Daemon just started up */
 	STATUS_OK,		/* Running in a supported mode */
-	STATUS_DISCONNECTED,	/* No source connected */
-	STATUS_INVALID,		/* Source is running in an unsupported mode */
+	STATUS_DISCONNECTED,	/* No sink connected */
+	STATUS_INVALID,		/* Source is running in an unsupported mode, or disconnected */
+	STATUS_NOSOURCE,        /* No source connected */
 };
 
 struct timing_info {

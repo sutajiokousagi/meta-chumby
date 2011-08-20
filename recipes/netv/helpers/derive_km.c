@@ -335,7 +335,7 @@ int main(int argc, char **argv) {
       printf( "Km has changed since last value, initiating HPD reset of stream and updating cache. This will take 3 seconds.");
       fflush(stdout);
       // wait
-      sleep(1);
+      sleep(2);
       printf( "." );
       fflush(stdout);
       snoopctl &= 0xF7;
