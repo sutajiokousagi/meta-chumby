@@ -51,6 +51,7 @@ static int read_kernel_memory(long offset, int virtualized, int size);
 
 static int saw_trigger = 0;
 static int sink_state = 0;
+static int lockout_attach = 0;
 
 static struct timing_info self_timed_720p = {
         .hactive 		= 1280,
@@ -529,17 +530,24 @@ static void switch_to_720p()
 {
 	unsigned char buffer;
 
-	fprintf( stderr, "*********switching to self-timed mode.\n" );
-	/* Reset the PLL */
 	read_eeprom("/dev/i2c-0", DEVADDR>>1, 3, &buffer, sizeof(buffer));
-	buffer = buffer | 0x10;
-	write_eeprom("/dev/i2c-0", DEVADDR>>1, 3, &buffer, sizeof(buffer));
-	buffer = buffer & ~0x10;
-	write_eeprom("/dev/i2c-0", DEVADDR>>1, 3, &buffer, sizeof(buffer));
+	if( !(buffer & 0x8) ) {
+	  lockout_attach = 1;
+	  fprintf( stderr, "*********switching to self-timed mode.\n" );
+	  buffer = (buffer & ~0x4) | 0x8;
+	  write_eeprom("/dev/i2c-0", DEVADDR>>1, 3, &buffer, sizeof(buffer));
 
-	read_eeprom("/dev/i2c-0", DEVADDR>>1, 3, &buffer, sizeof(buffer));
-	buffer = (buffer & ~0x4) | 0x8;
-	write_eeprom("/dev/i2c-0", DEVADDR>>1, 3, &buffer, sizeof(buffer));
+	  /* Reset the PLL */
+	  read_eeprom("/dev/i2c-0", DEVADDR>>1, 3, &buffer, sizeof(buffer));
+	  buffer = buffer | 0x10;
+	  write_eeprom("/dev/i2c-0", DEVADDR>>1, 3, &buffer, sizeof(buffer));
+	  buffer = buffer & ~0x10;
+	  write_eeprom("/dev/i2c-0", DEVADDR>>1, 3, &buffer, sizeof(buffer));
+	  sleep(1);
+	  lockout_attach = 0;
+	} else {
+	  fprintf( stderr, "already in self-timed mode, doing nothing.\n" );
+	}
 }
 
 static void switch_to_overlay()
@@ -558,10 +566,14 @@ static void switch_to_overlay()
 	buffer = buffer & ~0x10;
 	write_eeprom("/dev/i2c-0", DEVADDR>>1, 3, &buffer, sizeof(buffer));
 #endif
-
-	read_eeprom("/dev/i2c-0", DEVADDR>>1, 3, &buffer, sizeof(buffer));
-	buffer = (buffer & ~0x8) | 0x4;
-	write_eeprom("/dev/i2c-0", DEVADDR>>1, 3, &buffer, sizeof(buffer));
+	
+	if( !lockout_attach ) {
+	  read_eeprom("/dev/i2c-0", DEVADDR>>1, 3, &buffer, sizeof(buffer));
+	  buffer = (buffer & ~0x8) | 0x4;
+	  write_eeprom("/dev/i2c-0", DEVADDR>>1, 3, &buffer, sizeof(buffer));
+	} else {
+	  fprintf( stderr, "switch to overlay mode ABORTED\n" );
+	}
 }
 
 static void trigger_hpd()
@@ -629,6 +641,8 @@ main(int argc, char **argv)
 	unsigned short xsubi[3]; // we use this unitialized on purpose
 	char code;
 	unsigned int invalid_count = 0;
+
+	lockout_attach = 0;
 
 	signal(SIGWINCH, handle_winch);
 	signal(SIGURG, handle_urg);
