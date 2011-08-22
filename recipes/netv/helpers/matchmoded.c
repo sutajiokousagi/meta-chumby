@@ -41,6 +41,8 @@
 
 #define SINK_DISCONNECTED 0
 #define SINK_CONNECTED 1
+#define PLL_UNLOCKED   0
+#define PLL_LOCKED     1
 
 static int fd = 0;
 static int   *mem_32 = 0;
@@ -50,8 +52,12 @@ static int *prev_mem_range = 0;
 static int read_kernel_memory(long offset, int virtualized, int size);
 
 static int saw_trigger = 0;
-static int sink_state = 0;
+static int sink_state = SINK_DISCONNECTED;
 static int lockout_attach = 0;
+static int attach_lockedout = 0;
+static int rxpll_state = PLL_UNLOCKED;
+static int event_counter = 0;
+static int overlay_semaphore = 0;
 
 static struct timing_info self_timed_720p = {
         .hactive 		= 1280,
@@ -66,6 +72,21 @@ static struct timing_info self_timed_720p = {
 	.status			= STATUS_DISCONNECTED,
 };
 
+
+static void
+deepsleep( int seconds, int milliseconds ) {
+  struct timespec waittime;
+  struct timespec remtime;
+
+  waittime.tv_sec = seconds;
+  waittime.tv_nsec = milliseconds * 1000 * 1000;
+
+  while(nanosleep(&waittime, &remtime) == -1) {
+    // this makes us sleep even if we get a signal for the specified time
+    waittime.tv_sec = remtime.tv_sec;
+    waittime.tv_nsec = remtime.tv_nsec;
+  }
+}
 
 static int
 timingcmp(struct timing_info *ti1, struct timing_info *ti2)
@@ -98,18 +119,18 @@ static int sink_status() {
   return hpd_state;
 }
 
-static void
+static char *
 normalize_timing_info(struct timing_range **ranges, struct timing_info *ti)
 {
 	struct timing_range *tr;
 	int current_range;
 	int oldstatus;
 	if (!ti || !ranges)
-		return;
+		return NULL;
 
 	if (ti->status == STATUS_DISCONNECTED) {
 		*ti = self_timed_720p;
-		return;
+		return NULL;
 	}
 
 	for (current_range=0; ranges[current_range]; current_range++) {
@@ -157,7 +178,7 @@ normalize_timing_info(struct timing_range **ranges, struct timing_info *ti)
 		  oldstatus = ti->status;
 		  *ti = tr->actual;
 		  ti->status = oldstatus;
-		  return;
+		  return tr->name;
 		}
 #else
 		// basically, pixclock is off plus one other thing should trigger a mismatch
@@ -165,13 +186,15 @@ normalize_timing_info(struct timing_range **ranges, struct timing_info *ti)
 		  oldstatus = ti->status;
 		  *ti = tr->actual;
 		  ti->status = oldstatus;
-		  return;
+		  return tr->name;
 		}
 #endif
 	}
 
 	if (ti->status == STATUS_OK)
 		ti->status = STATUS_INVALID;
+
+	return NULL;
 }
 
 
@@ -283,18 +306,23 @@ parse_timing_info(uint8_t *buffer, struct timing_info *t)
 		t->pixclk_in_MHz = -1.0;
 	}
 
+	// internal debate: do we use re-derived values here
+	// or should we rely on the values derived by the handlers?
+	// re-derived values are used for now but this may lead to inconsistency.
+	// however, not re-deriving can lead to staleness and errors due to missed
+	// interrupt events.
 	t->status = STATUS_OK;
 	if( sink_status() == SINK_DISCONNECTED ) {
-	  fprintf( stderr, "HPD says sink disconnected\n" );
+	  fprintf( stderr, "  HPD says sink disconnected\n" );
 	  t->status = STATUS_DISCONNECTED;
 	} else {
-	  fprintf( stderr, "HPD says sink connected\n" );
+	  fprintf( stderr, "  HPD says sink connected, and " );
 	  // we're connected, but check if the PLL is unlocked; if it is, then there's no source
 	  if ( !(buffer[32]&1) ) { // this is register 0x18 through some magic done earlier
-	    fprintf( stderr, "Rx PLL unlocked.\n" );
+	    fprintf( stderr, "Rx PLL is unlocked.\n" );
 	    t->status = STATUS_NOSOURCE;
 	  } else {
-	    fprintf( stderr, "Rx PLL locked.\n" );
+	    fprintf( stderr, "Rx PLL is locked.\n" );
 	  }
 	}
 	fprintf(stderr, "Status: %d (0x%02x)\n", t->status, buffer[32]);
@@ -526,53 +554,55 @@ load_fpga_firmware(int fpga, char *filename)
 	return 0;
 }
 
+static void switch_to_overlay()
+{
+	unsigned char buffer;
+	
+	fprintf( stderr, "<action> ***** switching to overlay mode.\n" );
+
+	if( !lockout_attach ) {
+	  read_eeprom("/dev/i2c-0", DEVADDR>>1, 3, &buffer, sizeof(buffer));
+	  buffer = (buffer & ~0x8) | 0x4;
+	  write_eeprom("/dev/i2c-0", DEVADDR>>1, 3, &buffer, sizeof(buffer));
+	} else {
+	  fprintf( stderr, "<action> switch to overlay mode ABORTED\n" );
+	  attach_lockedout = 1;
+	}
+}
+
 static void switch_to_720p()
 {
 	unsigned char buffer;
+	struct timespec waittime;
+	struct timespec remtime;
 
 	read_eeprom("/dev/i2c-0", DEVADDR>>1, 3, &buffer, sizeof(buffer));
+	// trigger this only if we're coming from pass-through mode
+	// i.e., don't double-switch to self-timed mode
 	if( !(buffer & 0x8) ) {
+	  attach_lockedout = 0;
 	  lockout_attach = 1;
-	  fprintf( stderr, "*********switching to self-timed mode.\n" );
+	  fprintf( stderr, "<action> ***** switching pixel pipe to 720pST.\n" );
 	  buffer = (buffer & ~0x4) | 0x8;
 	  write_eeprom("/dev/i2c-0", DEVADDR>>1, 3, &buffer, sizeof(buffer));
 
+#if 0  // let's see if we really need this...
 	  /* Reset the PLL */
 	  read_eeprom("/dev/i2c-0", DEVADDR>>1, 3, &buffer, sizeof(buffer));
 	  buffer = buffer | 0x10;
 	  write_eeprom("/dev/i2c-0", DEVADDR>>1, 3, &buffer, sizeof(buffer));
 	  buffer = buffer & ~0x10;
 	  write_eeprom("/dev/i2c-0", DEVADDR>>1, 3, &buffer, sizeof(buffer));
-	  sleep(1);
-	  lockout_attach = 0;
-	} else {
-	  fprintf( stderr, "already in self-timed mode, doing nothing.\n" );
-	}
-}
-
-static void switch_to_overlay()
-{
-	unsigned char buffer;
-
-	fprintf( stderr, "**********switching to overlay mode.\n" );
-
-#if 0	// pll reset is actually handled already by plugging in the cable
-	// or else is later caught when we go into a valid mode from an invalid
-	// mode, by a call to pulling HPD
-	/* Reset the PLL */
-	read_eeprom("/dev/i2c-0", DEVADDR>>1, 3, &buffer, sizeof(buffer));
-	buffer = buffer | 0x10;
-	write_eeprom("/dev/i2c-0", DEVADDR>>1, 3, &buffer, sizeof(buffer));
-	buffer = buffer & ~0x10;
-	write_eeprom("/dev/i2c-0", DEVADDR>>1, 3, &buffer, sizeof(buffer));
 #endif
-	
-	if( !lockout_attach ) {
-	  read_eeprom("/dev/i2c-0", DEVADDR>>1, 3, &buffer, sizeof(buffer));
-	  buffer = (buffer & ~0x8) | 0x4;
-	  write_eeprom("/dev/i2c-0", DEVADDR>>1, 3, &buffer, sizeof(buffer));
+	  lockout_attach = 0;
+	  
+	  if( attach_lockedout ) {
+	    attach_lockedout = 0;
+	    fprintf( stderr, "<error> RACE CONDITION detected in 720pST switch. Things may get ugly.\n" );
+	    switch_to_overlay();
+	  }
 	} else {
-	  fprintf( stderr, "switch to overlay mode ABORTED\n" );
+	  fprintf( stderr, "<action> Already in 720pST, ignoring call to set 720pST.\n" );
 	}
 }
 
@@ -580,23 +610,26 @@ static void trigger_hpd()
 {
 	unsigned char buffer;
 
-	fprintf( stderr, "**********pulling HPD.\n" );
 	/* if semaphore is active, abort this, because someone already initiated the HPD pull */
 	read_eeprom("/dev/i2c-0", DEVADDR>>1, 3, &buffer, sizeof(buffer));
 	if( buffer & 0x80 ) {
-	  fprintf( stderr, "**********but someone beat me to it!!! I give up...\n" );
+	  fprintf( stderr, "<action> HPD trigger requested, but blocked by semaphore. I give up...\n" );
 	  return;
 	}
-	// set semaphore
+
 	buffer |= 0x80;
+	// set semaphore
 	write_eeprom("/dev/i2c-0", DEVADDR>>1, 3, &buffer, sizeof(buffer));
+	fprintf( stderr, "<action> ***** Drastic: pulling HPD.\n" );
+	event_counter++; // abort any thoughts about changing resolution if they were happening...
 	
 	/* read snoopctl */
 	read_eeprom("/dev/i2c-0", DEVADDR>>1, 0, &buffer, sizeof(buffer));
 	buffer = buffer | 0x8;
 	write_eeprom("/dev/i2c-0", DEVADDR>>1, 0, &buffer, sizeof(buffer));
 
-	sleep(1); /* pull it for 1s */
+	deepsleep(0,150); // minimum required by spec is 100ms, 150ms should be plenty.
+	event_counter++; // abort any thoughts about changing resolution if they were happening...
 
 	buffer = buffer & ~0x8;
 	write_eeprom("/dev/i2c-0", DEVADDR>>1, 0, &buffer, sizeof(buffer));
@@ -605,28 +638,52 @@ static void trigger_hpd()
 	read_eeprom("/dev/i2c-0", DEVADDR>>1, 3, &buffer, sizeof(buffer));
 	buffer &= 0x7F;
 	write_eeprom("/dev/i2c-0", DEVADDR>>1, 3, &buffer, sizeof(buffer));
-
 }
 
-static void handle_winch(int num)
+static void handle_dummy(int num)
 {
-  sink_state = 1;
-  fprintf(stderr, "--------cable attached and/or PLL locked, switch immediately to overlay mode to capture key exchange\n");
-  switch_to_overlay();
-  saw_trigger = 0; // clear the trigger event, because by definition we haven't seen it at this point
+  return;
 }
 
-static void handle_urg(int num)
+static void handle_rxlock(int num)
 {
+  unsigned char buffer;
+
+  event_counter++;
+  fprintf(stderr, "++++ <handler> Rx PLL event: ");
+
+  read_eeprom("/dev/i2c-0", DEVADDR>>1, 0x18, &buffer, sizeof(buffer));
+
+  if(buffer & 0x1) {
+    rxpll_state = PLL_LOCKED;
+    fprintf(stderr, " locked.\n" );
+    switch_to_overlay();
+  } else {
+    saw_trigger = 0; // clear the trigger event on disconnect
+    rxpll_state = PLL_UNLOCKED;
+    fprintf(stderr, " unlocked.\n" );
+  }
+}
+
+static void handle_km(int num)
+{
+  event_counter++;
   saw_trigger = 1;
-  fprintf(stderr, "--------Got km trigger event\n" );
+  fprintf(stderr, "++++ <handler> Km trigger event\n" );
 }
 
-static void handle_usr2(int num)
+static void handle_hpd(int num)
 { 
-  sink_state = 0;
-  fprintf(stderr, "--------cable detached, event noted.\n" );
-  saw_trigger = 0;
+  event_counter++;
+  fprintf(stderr, "++++ <handler> HPD event: " );
+  sink_state = sink_status();
+  
+  if( sink_state == SINK_CONNECTED ) { // clear bookkeeping on a new connection
+    fprintf( stderr, " connected.\n" );
+  } else {
+    saw_trigger = 0; // clear the trigger event on disconnect
+    fprintf( stderr, " disconnected.\n" );
+  }
 }
 
 int
@@ -634,48 +691,16 @@ main(int argc, char **argv)
 {
 	int fb0, fpga;
 	struct timing_info last_ti, new_ti, raw_ti;
-	struct timespec waittime;
 
 	struct timing_range **ranges = timings;
 	int current_range;
 	unsigned short xsubi[3]; // we use this unitialized on purpose
 	char code;
-	unsigned int invalid_count = 0;
+	char *modename = NULL;
+	int invalid_count = 0;
+	unsigned char buffer;
 
-	lockout_attach = 0;
-
-	signal(SIGWINCH, handle_winch);
-	signal(SIGURG, handle_urg);
-	signal(SIGUSR2, handle_usr2);
-
-	/* Calculate a 10% timing margin */
-	for (current_range = 0; ranges[current_range]; current_range++)
-		calculate_timing_margin(ranges[current_range], 10);
-
-	fb0 = open("/dev/fb0", O_RDWR);
-        if (-1 == fb0) {
-                perror("Unable to open framebuffer /dev/fb0");
-                return 1;
-        }
-
-	fpga = open("/dev/fpga", O_RDWR);
-	if (-1 == fpga) {
-		perror("Unable to open fpga interface /dev/fpga");
-		return 2;
-	}
-
-	// start in overlay mode. always. helps to have a known entry state to the daemon.
-	switch_to_overlay();
-	sleep(4); // give the system 4 seconds to stabilize. This ia generous margin.
-
-	/*
-	 * Attempt to read current timing information.  An error here
-	 * indicates i2c is broken.
-	 */
-	if (read_timing_info(&last_ti))
-		return 3;
-	last_ti.status = STATUS_UNKNOWN;
-
+	// parse args
 	if( argc == 1 ) {
 	  printf( "Daemonizing...\n" );
 	  if (daemon(0, 0)==-1)
@@ -694,214 +719,188 @@ main(int argc, char **argv)
 	}
 
 
-	/* There are two goals of this while() loop.
-	 * 	First, we want to detect when the source has been unplugged.
-	 * Since there's no signal for that, we have to poll, currently once
-	 * per second, to see if the resolution is valid.  If it isn't, we'll
-	 * have to switch to self-timed mode.
-	 * 	Second, se want to detect when the resolution has changed.
-	 * If the new resolution is valid, switch the display to the new
-	 * resolution.  Otherwise, switch to self-timed mode and tell the UI
-	 * to display an error.
+	// install dummy handlers so we don't get killed while settling the system
+	signal(SIGWINCH, handle_dummy);
+	signal(SIGURG, handle_dummy);
+	signal(SIGUSR2, handle_dummy);
+
+	// start in overlay mode. always. helps to have a known entry state to the daemon.
+	printf( "Resetting to a known mode, and waiting a few seconds for it to settle in...\n" );
+	lockout_attach = 0;
+	switch_to_overlay();
+	lockout_attach = 1;
+	deepsleep(4,0); // give the system 4 seconds to stabilize. This ia generous margin.
+	lockout_attach = 0;
+
+	// now that system is settled, install our handlers
+	signal(SIGWINCH, handle_rxlock);
+	signal(SIGURG, handle_km);
+	signal(SIGUSR2, handle_hpd);
+
+
+
+	/* Calculate a 10% timing margin */
+	for (current_range = 0; ranges[current_range]; current_range++)
+		calculate_timing_margin(ranges[current_range], 10);
+
+	fb0 = open("/dev/fb0", O_RDWR);
+        if (-1 == fb0) {
+                perror("Unable to open framebuffer /dev/fb0");
+                return 1;
+        }
+
+	fpga = open("/dev/fpga", O_RDWR);
+	if (-1 == fpga) {
+		perror("Unable to open fpga interface /dev/fpga");
+		return 2;
+	}
+
+
+
+	/*
+	 * Attempt to read current timing information.  An error here
+	 * indicates i2c is broken.
 	 */
-	invalid_count = 0;
+	if (read_timing_info(&last_ti))
+		return 3;
+	last_ti.status = STATUS_UNKNOWN;
+
+
+	invalid_count = 0; // count how long we've stayed in an invalid mode
+	saw_trigger = 1; // safe assumption is we missed the trigger before starting up
+
+	/* 
+	 * This while(1) loop's purpose is to clean up after the mode switches
+	 * done by the handlers and relay the stabilized state to the higher layers.
+	 * 
+	 * It also will intervene conservatively to force a self-timed mode in
+	 * case no known mode is found.
+	 */
 	while (1) {
 
-		waittime.tv_sec = 1;
-		// pick a random interval between 1.0 and ~1.5 seconds
-		// why? because a perfect 1 second interval should actually
-		// "beat" against an integer sync rate slowly, which means
-		// you'll get series of timing samples aligned with blanking
-		// periods. Randomness breaks the repetition.
-		waittime.tv_nsec = (nrand48(xsubi) & 0x1FFFFFFF);
-		if (nanosleep(&waittime, NULL) == -1) {
-			/*
-			 * Nanosleep returned non-zero.  See if we got hit
-			 * by a signal, which indicates some sort of HPD.
-			 */
-			if (errno != EINTR) {
-				perror("Unable to sleep");
-				return 1;
-			}
+	  event_counter = 0; // detects events that happen while we're sleeping.
 
-			/* We got a state change.  Wait for things to settle. */
-			waittime.tv_sec = 0;
-			waittime.tv_nsec = 100000000; /* 100 msec */
-			while (nanosleep(&waittime, NULL) == -1 && errno == EINTR);
-		}
+	  // pick a random interval between 1.0 and ~1.5 seconds
+	  // why? because a perfect 1 second interval should actually
+	  // "beat" against an integer sync rate slowly, which means
+	  // you'll get series of timing samples aligned with blanking
+	  // periods. Randomness breaks the repetition.
+	  deepsleep(1, nrand48(xsubi) & 0x1FF);
+
+	  /* We're now ready to determine if the mode has changed */
+	  if (read_timing_info(&new_ti))
+	    continue;
+
+	  /* Timing info can be off slightly sometimes.  Pick a sane mode. */
+	  raw_ti = new_ti;
+	  modename = normalize_timing_info(ranges, &new_ti);
 
 
-		/* We're now ready to determine if the mode has changed */
-		if (read_timing_info(&new_ti))
-			continue;
+	  /* Do nothing if nothing has changed */
+	  if( modename != NULL ) {
+	    fprintf(stderr, "<*> Current mode: %s\n", modename );
+	  } else {
+	    fprintf(stderr, "<*> Current mode not supported or invalid.\n" );
+	  }
 
-		/* Timing info can be off slightly sometimes.  Pick a sane mode. */
-		raw_ti = new_ti;
-		normalize_timing_info(ranges, &new_ti);
-
-
-		/* Do nothing if nothing has changed */
-		if (!timingcmp(&last_ti, &new_ti)) {
-			fprintf(stderr, "Timing mode didn't change (%dx%d - %d vs %dx%d - %d)\n",
-				last_ti.hactive, last_ti.vactive, last_ti.status,
-				new_ti.hactive, new_ti.vactive, new_ti.status);
-			continue;
-		}
+	  /* Do nothing if nothing has changed */
+	  if (!timingcmp(&last_ti, &new_ti) && (new_ti.status != STATUS_INVALID)) {
+	    fprintf(stderr, "  No change (%dx%d - %d vs %dx%d - %d)\n",
+		    last_ti.hactive, last_ti.vactive, last_ti.status,
+		    new_ti.hactive, new_ti.vactive, new_ti.status);
+	    continue;
+	  }
 
 
-		/* By this point, we suspect the resolution has changed. */
-		/* but, before we take action, it doesn't hurt to double-check */
-		// wait a random interval to avoid sampling in a sync region
-		waittime.tv_nsec = (nrand48(xsubi) & 0x7ffffff); // ~ 8 ms
-		while (nanosleep(&waittime, NULL) == -1 && errno == EINTR);
+	  /* By this point, we suspect the resolution has changed. */
+	  /* but, before we take action, it doesn't hurt to double-check */
+	  // wait a random interval to avoid sampling in a sync region
+	  deepsleep(0, 8);
 
-		////////////
-		// repeat the above timing info check code, as if it were ground hog day
-		// there is some debate if this is the right thing to do: maybe it's better
-		// to check if the re-sampled timing mode matches the new timing mode precisely,
-		// instead of checking a simple delta against the original timing mode
-		
-		/* We're now ready to determine if the mode has changed */
-		if (read_timing_info(&new_ti))
-			continue;
+	  ////////////
+	  // repeat the above timing info check code, as if it were ground hog day
+	  // there is some debate if this is the right thing to do: maybe it's better
+	  // to check if the re-sampled timing mode matches the new timing mode precisely,
+	  // instead of checking a simple delta against the original timing mode
+	  
+	  /* We're now ready to determine if the mode has changed */
+	  if (read_timing_info(&new_ti))
+	    continue;
 
-		/* Timing info can be off slightly sometimes.  Pick a sane mode. */
-		raw_ti = new_ti;
-		normalize_timing_info(ranges, &new_ti);
+	  /* Timing info can be off slightly sometimes.  Pick a sane mode. */
+	  raw_ti = new_ti;
+	  modename = normalize_timing_info(ranges, &new_ti);
 
+	  if (!timingcmp(&last_ti, &new_ti) && (new_ti.status != STATUS_INVALID)) {
+	    // (*) indicates that no change, but only on a double-check of no change
+	    fprintf(stderr, "  No change (*) (%dx%d - %d vs %dx%d - %d)\n",
+		    last_ti.hactive, last_ti.vactive, last_ti.status,
+		    new_ti.hactive, new_ti.vactive, new_ti.status);
+	    continue;
+	  }
+	  
+	  if( event_counter != 0 ) {
+	    invalid_count = 0; // reset my invalid count because we may have transitioned through valid while
+	    // waiting for stuff to settle down
+	    fprintf(stderr, "  Race condition detected, cowardly waiting another quanta.\n" );
+	    continue;
+	  }
+	  
+	  fprintf(stderr, "                     Old    New    Raw\n");
+	  fprintf(stderr, "----------------------------------------\n");
+	  fprintf(stderr, "hactive             %4d  %4d  %4d\n", last_ti.hactive, new_ti.hactive, raw_ti.hactive);
+	  fprintf(stderr, "vactive             %4d  %4d  %4d\n", last_ti.vactive, new_ti.vactive, raw_ti.vactive);
+	  fprintf(stderr, "htotal              %4d  %4d  %4d\n", last_ti.htotal, new_ti.htotal, raw_ti.htotal);
+	  fprintf(stderr, "vtotal_lines        %4d  %4d  %4d\n", last_ti.vtotal_lines, new_ti.vtotal_lines, raw_ti.vtotal_lines);
+	  fprintf(stderr, "h_fp                %4d  %4d  %4d\n", last_ti.h_fp, new_ti.h_fp, raw_ti.h_fp);
+	  fprintf(stderr, "h_fp                %4d  %4d  %4d\n", last_ti.h_bp, new_ti.h_bp, raw_ti.h_bp);
+	  fprintf(stderr, "hsync_width         %4d  %4d  %4d\n", last_ti.hsync_width, new_ti.hsync_width, raw_ti.hsync_width);
+	  fprintf(stderr, "v_fp_lines          %4d  %4d  %4d\n", last_ti.v_fp_lines, new_ti.v_fp_lines, raw_ti.v_fp_lines);
+	  fprintf(stderr, "v_bp_lines          %4d  %4d  %4d\n", last_ti.v_bp_lines, new_ti.v_bp_lines, raw_ti.v_bp_lines);
+	  fprintf(stderr, "vsync_width_lines   %4d  %4d  %4d\n", last_ti.vsync_width_lines, new_ti.vsync_width_lines, raw_ti.vsync_width_lines);
+	  fprintf(stderr, "pixclk_in_MHz       %4.2f  %4.2f  %4.2f\n", last_ti.pixclk_in_MHz, new_ti.pixclk_in_MHz, raw_ti.pixclk_in_MHz);
+	  fprintf(stderr, "status              %4d  %4d  %4d\n", last_ti.status, new_ti.status, raw_ti.status);
+	  
+	  if(new_ti.status == STATUS_OK) {
+	    invalid_count = 0;
+	    set_timing(fb0, &new_ti);
+	    send_message("connected", new_ti.hactive, new_ti.vactive, 16);
+	    fprintf(stderr, "  Switched LCD to %dx%d\n", new_ti.hactive, new_ti.vactive);
 
-		/* Do nothing if nothing has changed */
-		if (!timingcmp(&last_ti, &new_ti)) {
-			fprintf(stderr, "Timing mode didn't change (%dx%d - %d vs %dx%d - %d)\n",
-				last_ti.hactive, last_ti.vactive, last_ti.status,
-				new_ti.hactive, new_ti.vactive, new_ti.status);
-			continue;
-		}
-
-		/////////////
-		/* By this point, we're pretty sure the resolution has changed */
-		/*
-		 * If we're changing from one invalid mode to another,
-		 * don't take any action at all.
-		 */
-		if ( ((new_ti.status == STATUS_INVALID) || (new_ti.status == STATUS_DISCONNECTED) ) &&
-		     ((last_ti.status == STATUS_INVALID) || (last_ti.status == STATUS_DISCONNECTED) ) ) {
-		  if( new_ti.status == STATUS_INVALID )
-		    invalid_count++;
-
-		  last_ti = new_ti;
-		  fprintf(stderr, "Still an invalid mode\n");
-
-		  // this is a weird hack. This fixes the case where if the source is plugged in, the PLL can
-		  // lock, but the timing mode is still unsupported. In this case, the PLL can lock unpredictably,
-		  // forcing the mode into overlay mode (to try and capture a Km event that doesn't matter, but
-		  // we can't bypass this because we *must* capture all Kms when they happen). So basically if
-		  // we hang out in an invalid state for 3 cycles, but the PLL is locked, fall-through here to
-		  // trigger us back into a self-timed mode so we can put a message on the screen informing the
-		  // user that the mode ain't supported!
-		  if( invalid_count < 3 )
-		    continue;
-		}
-
-		invalid_count = 0;
-
-		fprintf(stderr, "                     Old    New    Raw\n");
-		fprintf(stderr, "----------------------------------------\n");
-		fprintf(stderr, "hactive             %4d  %4d  %4d\n", last_ti.hactive, new_ti.hactive, raw_ti.hactive);
-		fprintf(stderr, "vactive             %4d  %4d  %4d\n", last_ti.vactive, new_ti.vactive, raw_ti.vactive);
-		fprintf(stderr, "htotal              %4d  %4d  %4d\n", last_ti.htotal, new_ti.htotal, raw_ti.htotal);
-		fprintf(stderr, "vtotal_lines        %4d  %4d  %4d\n", last_ti.vtotal_lines, new_ti.vtotal_lines, raw_ti.vtotal_lines);
-		fprintf(stderr, "h_fp                %4d  %4d  %4d\n", last_ti.h_fp, new_ti.h_fp, raw_ti.h_fp);
-		fprintf(stderr, "h_fp                %4d  %4d  %4d\n", last_ti.h_bp, new_ti.h_bp, raw_ti.h_bp);
-		fprintf(stderr, "hsync_width         %4d  %4d  %4d\n", last_ti.hsync_width, new_ti.hsync_width, raw_ti.hsync_width);
-		fprintf(stderr, "v_fp_lines          %4d  %4d  %4d\n", last_ti.v_fp_lines, new_ti.v_fp_lines, raw_ti.v_fp_lines);
-		fprintf(stderr, "v_bp_lines          %4d  %4d  %4d\n", last_ti.v_bp_lines, new_ti.v_bp_lines, raw_ti.v_bp_lines);
-		fprintf(stderr, "vsync_width_lines   %4d  %4d  %4d\n", last_ti.vsync_width_lines, new_ti.vsync_width_lines, raw_ti.vsync_width_lines);
-		fprintf(stderr, "pixclk_in_MHz       %4f  %4f  %4f\n", last_ti.pixclk_in_MHz, new_ti.pixclk_in_MHz, raw_ti.pixclk_in_MHz);
-		fprintf(stderr, "status              %4d  %4d  %4d\n", last_ti.status, new_ti.status, raw_ti.status);
-
-
-		// if we got no source for the first time, switch to 720p self-timed mode
-		if( (new_ti.status == STATUS_NOSOURCE) && (last_ti.status != STATUS_NOSOURCE) ) {
-		  saw_trigger = 0;
-		  switch_to_720p();
-		  set_timing(fb0, &self_timed_720p);
-		  send_message("disconnected", self_timed_720p.hactive, self_timed_720p.vactive, 16);
-		  fprintf(stderr, "Switched to disconnected mode\n");
-		} else if (new_ti.status == STATUS_INVALID) {
-		/* If the mode is INVALID, switch to self-timed mode */
-		  // switch to self-timed mode, but wait! check in 3 seconds if really
-		  // we're still invalid. Because some TVs transition through invalid states
-		  // for a while between modes...we don't want to thrash the TV by
-		  // forcing into self-timed mode while it makes up its mind.
-		  saw_trigger = 0; // presuming this means we lost cipher sync too...
-		  sleep(3);
-		  read_timing_info(&new_ti);
-		  raw_ti = new_ti;
-		  normalize_timing_info(ranges, &new_ti);
-		  if( (new_ti.status == STATUS_INVALID) || (new_ti.status == STATUS_NOSOURCE) ) {
-		    // we are most definitely invalid, go self-timed
-		    switch_to_720p();
-		    set_timing(fb0, &self_timed_720p);
-		    send_message("invalid", self_timed_720p.hactive, self_timed_720p.vactive, 16);
-		    fprintf(stderr, "Switched to invalid mode, forcing self-timed\n");
-		  } else { 
-		    // we went back to a valid mode, pull HPD to regain cipher sync if we haven't seen it yet...
-		    switch_to_overlay(); // this is an idempotent call
-		    if( saw_trigger == 0 ) {
-		      fprintf(stderr, "triggering HPD to resync ciphers\n" );
-		      trigger_hpd();
-		    }
-		  }
-		  // either way, update the last_ti to be what we just checked in at
-		  last_ti = new_ti;
-		}
-		else if(new_ti.status == STATUS_DISCONNECTED) {
-#if 0
-		  // switch to 720p mode only iff previously we were in an OK mode
-		  // don't do the switch if we were invalid because presumably we were already
-		  // in 720p
-		  if (last_ti.status == STATUS_OK || last_ti.status == STATUS_UNKNOWN) {
-		    switch_to_720p();
-		    set_timing(fb0, &self_timed_720p);
-		    send_message("disconnected", self_timed_720p.hactive, self_timed_720p.vactive, 16);
-		    fprintf(stderr, "Switched to disconnected mode\n");
-		  }
-#else
-		  // actually, go back to overlay mode ("reset" the state machine) if nobody's plugged in
-		  switch_to_overlay();
-		  // but don't really report anything or call anything coz it's not relevant
+#if 0 // this is too paranoid, causing spurious HPD triggers...
+	    // the handlers already put us into overlay mode, so we don't need to do it now
+	    // we only need to check that in fact, we saw a Km trigger
+	    if( saw_trigger == 0 ) {
+	      fprintf(stderr, "  !!!!!!! Triggering HPD to resync ciphers. Not ideal.\n" );
+	      trigger_hpd();
+	    }
 #endif
-		}
-		else if(new_ti.status == STATUS_OK) {
-		  //		  if ( !((last_ti.status == STATUS_OK) || (last_ti.status == STATUS_UNKNOWN)) ) {
-		  switch_to_overlay(); // this call is idempotent on a device already in overlay mode
-		  //		  }
-		  
-		  set_timing(fb0, &new_ti);
-		  send_message("connected", new_ti.hactive, new_ti.vactive, 16);
-		  fprintf(stderr, "Switched to connected, %dx%d mode\n", new_ti.hactive, new_ti.vactive);
+	  } else if(new_ti.status == STATUS_INVALID || (new_ti.status == STATUS_DISCONNECTED || new_ti.status == STATUS_NOSOURCE) ) {
+	    if( invalid_count > 4 ) {  // approx 4-6 seconds in an invalid state
+	      read_eeprom("/dev/i2c-0", DEVADDR>>1, 3, &buffer, sizeof(buffer));
+	      if( !(buffer & 0x8) ) { // switch if we're not already in the mode
+		switch_to_720p();	   
+		
+		set_timing(fb0, &self_timed_720p);
+		send_message("invalid", self_timed_720p.hactive, self_timed_720p.vactive, 16);
+		fprintf(stderr, "  Switched LCD to 720p self-timed\n");
 
-		  // trigger an HPD if the last mode was invalid, because it means
-		  // we'll have lost sync on the cipher. Invalid->OK state transition
-		  // does not include an HPD event.
-		    
-		  // importantly, DON'T trigger HPD in last mode was disconnected or invalid, because
-		  // HPD is already triggered for us
-		  if ( (last_ti.status == STATUS_INVALID) ) {
-		    sleep(2); // let res settle before we pull this, and double check if hpd trigger hasn't been hit
-		    if( saw_trigger == 0 ) {
-		      fprintf(stderr, "triggering HPD to resync ciphers\n" );
-		      trigger_hpd();
-		    }
-		  }
-		}
+		deepsleep(4,0); // don't allow any new decisions on self-timed mode for a couple seconds
+		// to avoid thrashing
+	      }
+	    } else {
+	      invalid_count++;
+	      continue;
+	    }
+	  } else {
+	    fprintf(stderr, "<error> Reached an unknown status.\n");
+	  }
 
-		/* Tell both NeTVBrowser and the flash player that the resolution changed */
-		system("setbrowser r");
-		system("setplayer r");
-
-		last_ti = new_ti;
+	  /* Tell both NeTVBrowser and the flash player that the resolution changed */
+	  system("setbrowser r");
+	  system("setplayer r");
+	  
+	  last_ti = new_ti;
 	}
 
 	close(fb0);
