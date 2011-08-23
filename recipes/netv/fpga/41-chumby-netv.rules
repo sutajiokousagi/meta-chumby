@@ -2,5 +2,6 @@ ACTION=="add", KERNEL=="chumby_xilinx", ENV{ID_CLASS}="fpga", ENV{ID_BUS}="soc",
 DRIVER=="pxa168fb_ovly", ENV{TYPE}=="trigger", RUN+="/usr/bin/derive_km"
 DRIVER=="pxa168fb_ovly", ENV{TYPE}=="trigger", RUN+="/usr/bin/killall -URG matchmoded"
 DRIVER=="pxa168fb_ovly", ENV{TYPE}=="detach", RUN+="/usr/bin/killall -USR2 matchmoded"
-DRIVER=="pxa168fb_ovly", ENV{TYPE}=="attach", RUN+="/usr/bin/killall -WINCH matchmoded"
+DRIVER=="pxa168fb_ovly", ENV{TYPE}=="attach", RUN+="/usr/bin/killall -USR2 matchmoded"
 DRIVER=="pxa168fb_ovly", ENV{TYPE}=="src_attach", RUN+="/usr/bin/killall -WINCH matchmoded"
+DRIVER=="pxa168fb_ovly", ENV{TYPE}=="src_detach", RUN+="/usr/bin/killall -WINCH matchmoded"

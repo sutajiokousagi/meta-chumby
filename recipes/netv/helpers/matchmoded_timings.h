@@ -36,6 +36,7 @@ struct timing_range {
 	struct timing_info lower;
 	struct timing_info upper;
 	struct timing_info actual;
+  char *name;
 };
 
 static struct timing_range mode_1 = {
@@ -58,6 +59,7 @@ static struct timing_range mode_1 = {
 
 		.status = STATUS_OK,
 	},
+	.name = "mode 1 480p 4:3",
 };
 
 static struct timing_range mode_2 = {
@@ -72,14 +74,15 @@ static struct timing_range mode_2 = {
 		.h_bp = 16,
 		.hsync_width = 76,
 
-		.v_fp_lines = 30,
-		.v_bp_lines = 9,
+		.v_fp_lines = 9,
+		.v_bp_lines = 30,
 		.vsync_width_lines = 6,
 
 		.pixclk_in_MHz = 27.0,
 
 		.status = STATUS_OK,
 	},
+	.name = "mode 2 480p anamorphic",
 };
 
 static struct timing_range mode_4 = {
@@ -102,6 +105,30 @@ static struct timing_range mode_4 = {
 
 		.status = STATUS_OK,
 	},
+	.name = "mode 4 720p60",
+};
+
+static struct timing_range mode_19 = {
+	.actual = {
+		.hactive = 1280,
+		.vactive = 720,
+
+		.htotal = 1980,
+		.vtotal_lines = 750,
+
+		.h_fp = 440,
+		.h_bp = 220,
+		.hsync_width = 40,
+
+		.v_fp_lines = 20,
+		.v_bp_lines = 5,
+		.vsync_width_lines = 5,
+
+		.pixclk_in_MHz = 74.250,
+
+		.status = STATUS_OK,
+	},
+	.name = "mode 19 720p50",
 };
 
 static struct timing_range mode_32 = {
@@ -117,19 +144,21 @@ static struct timing_range mode_32 = {
 		.hsync_width = 44,
 
 		.v_fp_lines = 4,
-		.v_bp_lines = 35,
+		.v_bp_lines = 36,
 		.vsync_width_lines = 5,
 
 		.pixclk_in_MHz = 74.176,
 
 		.status = STATUS_OK,
 	},
+	.name = "mode 32 1080p24",
 };
 
 static struct timing_range *timings[] = {
 	&mode_1,
 	&mode_2,
 	&mode_4,
+	&mode_19,
 	&mode_32,
 	NULL,
 };

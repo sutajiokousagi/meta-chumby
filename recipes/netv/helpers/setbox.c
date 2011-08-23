@@ -136,6 +136,9 @@ int main(int argc, char **argv) {
     unsigned char val;
     unsigned int x, y, w, h;
 
+    fprintf( stderr, "WARNING: Setbox is deprecated as of FPGA version 9 and later. Running this command has no effect on FPGA version 9.\n" );
+    fprintf( stderr, "You should consider changing your script so that it does not use this program, as we may reclaim and re-use the registers in the future.\n" );
+
     if(argc < 5) {
         fprintf(stderr, "Usage: %s <x> <y> <width> <height>\n", argv[0]);
         return 1;
