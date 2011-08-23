@@ -1,4 +1,4 @@
-PR .= "-amend-r7"
+PR .= "-amend-r8"
 SRC_URI += "file://0001-add-chumby-plugin.patch \
             file://0002-fix-username-attribute.patch \
             file://0003-add-config-file.patch \
@@ -9,6 +9,7 @@ SRC_URI += "file://0001-add-chumby-plugin.patch \
             file://0008-make-xml-parser-more-robust.patch \
             file://0009-make-security-tokens-persistent.patch \
             file://0010-fix-segfault-on-bad-network-configs.patch \
+            file://0011-add-destructor-to-nm-chumby-connection.patch \
             file://nm-system-settings-chumby.conf \
 "
 

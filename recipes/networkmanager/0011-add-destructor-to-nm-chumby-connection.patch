@@ -1,0 +1,74 @@
+diff -ur NetworkManager-0.8.1-stock/system-settings/plugins/chumby/config.c NetworkManager-0.8.1/system-settings/plugins/chumby/config.c
+--- NetworkManager-0.8.1-stock/system-settings/plugins/chumby/config.c	2011-08-23 21:28:49.723849841 +0800
++++ NetworkManager-0.8.1/system-settings/plugins/chumby/config.c	2011-08-23 23:35:05.883849976 +0800
+@@ -31,6 +31,10 @@
+ 	int input_i, output_i;
+ 	bzero(output, output_size);
+ 
++	/* Standard UUIDs are 37 characters long */
++	if (output_size > 37)
++		output_size = 37;
++
+ 	for(input_i = output_i = 0; output_i < output_size-1; output_i++, input_i++)
+ 	{
+ 		output[output_i] = input[input_i];
+diff -ur NetworkManager-0.8.1-stock/system-settings/plugins/chumby/nm-chumby-connection.c NetworkManager-0.8.1/system-settings/plugins/chumby/nm-chumby-connection.c
+--- NetworkManager-0.8.1-stock/system-settings/plugins/chumby/nm-chumby-connection.c	2011-08-23 21:28:49.531849841 +0800
++++ NetworkManager-0.8.1/system-settings/plugins/chumby/nm-chumby-connection.c	2011-08-24 00:03:22.467849845 +0800
+@@ -131,6 +131,18 @@
+ }
+ 
+ static void
++dispose (GObject *object)
++{
++	NMChumbyConnectionPrivate *priv = NM_CHUMBY_CONNECTION_GET_PRIVATE (object);
++	g_return_if_fail (priv);
++
++	if (priv->cconnection)
++		g_free(priv->cconnection);
++	G_OBJECT_CLASS (nm_chumby_connection_parent_class)->dispose (object);
++}
++
++
++static void
+ set_property (GObject *object, guint prop_id,
+ 		    const GValue *value, GParamSpec *pspec)
+ {
+@@ -188,6 +200,7 @@
+ 
+ 	/* Virtual methods */
+ 	object_class->constructor  = constructor;
++	object_class->dispose      = dispose;
+ 	object_class->set_property = set_property;
+ 	object_class->get_property = get_property;
+ 
+diff -ur NetworkManager-0.8.1-stock/system-settings/plugins/chumby/plugin.c NetworkManager-0.8.1/system-settings/plugins/chumby/plugin.c
+--- NetworkManager-0.8.1-stock/system-settings/plugins/chumby/plugin.c	2011-08-23 21:28:49.363849841 +0800
++++ NetworkManager-0.8.1/system-settings/plugins/chumby/plugin.c	2011-08-24 00:12:23.659849855 +0800
+@@ -124,7 +124,7 @@
+ 	char previous_uuid[66];
+ 	gboolean previous = FALSE;
+ 
+-	//PLUGIN_PRINT("chumby", "Reloading configs...\n");
++	PLUGIN_PRINT("chumby", "Reloading configs...\n");
+ 
+ 	g_mutex_lock(priv->mutex);
+ 
+@@ -252,7 +252,7 @@
+ 
+ 	g_mutex_lock(priv->mutex);
+ 
+-	//PLUGIN_PRINT("chumby", "Reloading config...\n");
++	PLUGIN_PRINT("chumby", "Reloading config...\n");
+ 
+ 
+ 	/*parse the file and get the DOM */
+@@ -522,6 +522,8 @@
+ 		info->user_data = user_data;
+ 		g_object_weak_ref (G_OBJECT (monitor), (GWeakNotify) g_free, info);
+ 		g_signal_connect (monitor, "changed", G_CALLBACK (file_changed), info);
++		g_signal_connect (monitor, "created", G_CALLBACK (file_changed), info);
++		g_signal_connect (monitor, "deleted", G_CALLBACK (file_changed), info);
+ 	}
+ 
+ 	return monitor;
