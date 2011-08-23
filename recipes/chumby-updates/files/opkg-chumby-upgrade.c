@@ -18,8 +18,11 @@
 #include "libopkg/opkg_configure.h"
 #include "libopkg/opkg_conf.h"
 
+static int debug = 0;
+
 void sigpipe_happened(int sig) {
-    fprintf(stderr, "Got sigpipe\n");
+    if (debug)
+        fprintf(stderr, "Got sigpipe\n");
 }
 
 
@@ -398,6 +401,9 @@ static int send_message(char *sig, void *message, int length)
     struct sockaddr_un remote;
     struct timeval tv;
 
+    if (debug)
+        fprintf(stderr, "Sending %d-byte message: %s\n", ntohl(((int *)message)[0]), (char *)(((int *)message)+1));
+
     sock = socket(AF_UNIX, SOCK_STREAM, 0);
     if (-1 == sock) {
         perror("Unable to create socket");
@@ -529,13 +535,15 @@ chumby_upgrade_cmd()
         bytes_total += installed->pkgs[i]->size;
 
 
-    fprintf(stderr, "There are %d packages installed\n", installed->len);
+    if (debug)
+        fprintf(stderr, "There are %d packages installed\n", installed->len);
     /* Install/upgrade the packages */
     for (bytes_done = i = 0; i < installed->len; i++) {
         pkg = installed->pkgs[i];
 
 
-        fprintf(stderr, "Upgrading %s (%d/%d) - %lld%%\n", pkg->name, i, installed->len, (bytes_done*100)/bytes_total);
+        if (debug)
+            fprintf(stderr, "Upgrading %s (%d/%d) - %lld%%\n", pkg->name, i, installed->len, (bytes_done*100)/bytes_total);
 
         if (opkg_upgrade_pkg(pkg))
             err = -1;
@@ -567,7 +575,7 @@ chumby_upgrade_cmd()
 
     progress_message_length = snprintf((char *)(progress_message+1),
                                 sizeof(progress_message)-sizeof(progress_message[0]),
-                                "NeTVBrowser|~|UpgradeComplete");
+                                "NeTVBrowser|~|UpgradeComplete") + 5;
     ((long *)progress_message)[0] = htonl(progress_message_length);
     send_message("NeTVBr", progress_message, progress_message_length);
 
@@ -578,6 +586,10 @@ chumby_upgrade_cmd()
 
 int main(int argc, char **argv) {
     char *cache_str = "/var/lib/opkg/tmp";
+
+    if (argc > 1)
+        debug = 1;
+
     if (opkg_conf_init())
         goto err0;
 
