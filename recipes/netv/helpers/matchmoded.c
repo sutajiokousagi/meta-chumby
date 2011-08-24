@@ -119,85 +119,6 @@ static int sink_status() {
   return hpd_state;
 }
 
-static char *
-normalize_timing_info(struct timing_range **ranges, struct timing_info *ti)
-{
-	struct timing_range *tr;
-	int current_range;
-	int oldstatus;
-	if (!ti || !ranges)
-		return NULL;
-
-	if (ti->status == STATUS_DISCONNECTED) {
-		*ti = self_timed_720p;
-		return NULL;
-	}
-
-	for (current_range=0; ranges[current_range]; current_range++) {
-		int mismatches = 0;
-		tr = ranges[current_range];
-
-		// less reliable measures, such as active lines and pixels, are weighted lighter
-		if (!(ti->hactive >= tr->lower.hactive && ti->hactive <= tr->upper.hactive))
-			mismatches+=1;
-		if (!(ti->vactive >= tr->lower.vactive && ti->vactive <= tr->upper.vactive))
-			mismatches+=1;
-
-		// total pixel counts are more reliable, as they only rely upon the gross detection
-		// of syncs and are less influenced by "bouncing" on sync edges
-		if (!(ti->htotal >= tr->lower.htotal && ti->htotal <= tr->upper.htotal))
-			mismatches+=2;
-		if (!(ti->vtotal_lines >= tr->lower.vtotal_lines && ti->vtotal_lines <= tr->upper.vtotal_lines))
-			mismatches+=2;
-
-#if USE_SYNC
-		if (!(ti->h_fp >= tr->lower.h_fp && ti->h_fp <= tr->upper.h_fp))
-			mismatches++;
-		if (!(ti->h_bp >= tr->lower.h_bp && ti->h_bp <= tr->upper.h_bp))
-			mismatches++;
-		if (!(ti->hsync_width >= tr->lower.hsync_width && ti->hsync_width <= tr->upper.hsync_width))
-			mismatches++;
-		if (!(ti->v_fp_lines >= tr->lower.v_fp_lines && ti->v_fp_lines <= tr->upper.v_fp_lines))
-			mismatches++;
-		if (!(ti->v_bp_lines >= tr->lower.v_bp_lines && ti->v_bp_lines <= tr->upper.v_bp_lines))
-			mismatches++;
-		if (!(ti->vsync_width_lines >= tr->lower.vsync_width_lines && ti->vsync_width_lines <= tr->upper.vsync_width_lines))
-			mismatches++;
-#endif
-		
-		// pixclock is a very robust measure, if this is off, then weight it heavily:
-		// it's more than a correct htotal and vtotal combined
-		if (!(ti->pixclk_in_MHz >= tr->lower.pixclk_in_MHz && ti->pixclk_in_MHz <= tr->upper.pixclk_in_MHz))
-			mismatches+=5;
-
-#if USE_SYNC
-		if (mismatches <= 7) {
-		  // preserve the status state because in self-timed mode
-		  // the timing looks good, but the PLL status or disconnect status
-		  // should not be bashed
-		  oldstatus = ti->status;
-		  *ti = tr->actual;
-		  ti->status = oldstatus;
-		  return tr->name;
-		}
-#else
-		// basically, pixclock is off plus one other thing should trigger a mismatch
-		if (mismatches <= 5) {
-		  oldstatus = ti->status;
-		  *ti = tr->actual;
-		  ti->status = oldstatus;
-		  return tr->name;
-		}
-#endif
-	}
-
-	if (ti->status == STATUS_OK)
-		ti->status = STATUS_INVALID;
-
-	return NULL;
-}
-
-
 static void
 calculate_timing_margin(struct timing_range *tr, int margin) {
 	margin += 100;
@@ -426,6 +347,132 @@ read_timing_info(struct timing_info *ti)
 
 	parse_timing_info(buffer, ti);
 	return 0;
+}
+
+
+static char *
+normalize_timing_info(struct timing_range **ranges, struct timing_info *ti)
+{
+	struct timing_range *tr;
+	int current_range;
+	int oldstatus;
+	int old_vtotal;
+	int old_htotal;
+	
+	int do_tweak = 0;
+
+	struct timing_info check_timing;
+
+	if (!ti || !ranges)
+		return NULL;
+
+	if (ti->status == STATUS_DISCONNECTED) {
+		*ti = self_timed_720p;
+		return NULL;
+	}
+
+	for (current_range=0; ranges[current_range]; current_range++) {
+		int mismatches = 0;
+		tr = ranges[current_range];
+
+		// less reliable measures, such as active lines and pixels, are weighted lighter
+		if (!(ti->hactive >= tr->lower.hactive && ti->hactive <= tr->upper.hactive))
+			mismatches+=1;
+		if (!(ti->vactive >= tr->lower.vactive && ti->vactive <= tr->upper.vactive))
+			mismatches+=1;
+
+		// total pixel counts are more reliable, as they only rely upon the gross detection
+		// of syncs and are less influenced by "bouncing" on sync edges
+		if (!(ti->htotal >= tr->lower.htotal && ti->htotal <= tr->upper.htotal))
+			mismatches+=2;
+		if (!(ti->vtotal_lines >= tr->lower.vtotal_lines && ti->vtotal_lines <= tr->upper.vtotal_lines))
+			mismatches+=2;
+
+#if USE_SYNC
+		if (!(ti->h_fp >= tr->lower.h_fp && ti->h_fp <= tr->upper.h_fp))
+			mismatches++;
+		if (!(ti->h_bp >= tr->lower.h_bp && ti->h_bp <= tr->upper.h_bp))
+			mismatches++;
+		if (!(ti->hsync_width >= tr->lower.hsync_width && ti->hsync_width <= tr->upper.hsync_width))
+			mismatches++;
+		if (!(ti->v_fp_lines >= tr->lower.v_fp_lines && ti->v_fp_lines <= tr->upper.v_fp_lines))
+			mismatches++;
+		if (!(ti->v_bp_lines >= tr->lower.v_bp_lines && ti->v_bp_lines <= tr->upper.v_bp_lines))
+			mismatches++;
+		if (!(ti->vsync_width_lines >= tr->lower.vsync_width_lines && ti->vsync_width_lines <= tr->upper.vsync_width_lines))
+			mismatches++;
+#endif
+		
+		// pixclock is a very robust measure, if this is off, then weight it heavily:
+		// it's more than a correct htotal and vtotal combined
+		if (!(ti->pixclk_in_MHz >= tr->lower.pixclk_in_MHz && ti->pixclk_in_MHz <= tr->upper.pixclk_in_MHz))
+			mismatches+=5;
+
+		do_tweak = 0;
+
+#if USE_SYNC
+		if (mismatches <= 7) {
+#else
+		// basically, pixclock is off plus one other thing should trigger a mismatch
+		if (mismatches <= 5) {
+#endif
+		  oldstatus = ti->status;
+		  old_vtotal = ti->vtotal_lines;
+		  old_htotal = ti->htotal;
+
+		  *ti = tr->actual; // "snap" to known CEA timing
+
+		  ti->status = oldstatus;
+
+		  if( ((old_vtotal < ti->vtotal_lines) && 
+		       ((ti->vtotal_lines - old_vtotal) <= (ti->vtotal_lines / 100)))  ||
+		      ((old_htotal > ti->htotal) && 
+		       ((old_htotal - ti->htotal) <= (ti->htotal / 100)))
+		      ) {
+		    // pre-screen the case that CEA timings are off, and double-check it.
+		    fprintf( stderr, "<warning> Non-CEA mode detected, checking if it's transient.\n" );
+		    deepsleep(0, 40); // wait approx 1 frame to verify
+		    read_timing_info(&check_timing);
+		    if( (check_timing.vtotal_lines == old_vtotal) && (check_timing.htotal == old_htotal) ) {
+		      do_tweak = 1;
+		    } else {
+		      do_tweak = 0;
+		    }
+		  }
+
+		  if( do_tweak ) {
+		    if( (old_vtotal < ti->vtotal_lines) && 
+			((ti->vtotal_lines - old_vtotal) <= (ti->vtotal_lines / 100)) ) {
+		      // allow for up to ~1% deviation in vertical size
+		      fprintf( stderr, "<warning> Monitor not CEA compliant, tweaking vertical timing to accommodate.\n" );
+		      if( ti->v_fp_lines > (ti->vtotal_lines - old_vtotal + 2) ) {
+			ti->v_fp_lines -= (ti->vtotal_lines - old_vtotal);
+			ti->vtotal_lines = old_vtotal;
+		      } else if( ti->v_bp_lines > (ti->vtotal_lines - old_vtotal + 2) ) {
+			ti->v_bp_lines -= (ti->vtotal_lines - old_vtotal);
+			ti->vtotal_lines = old_vtotal;
+		      } else {
+			fprintf( stderr, "<warning> Insufficient vertical sync width to accommodate tweak, aborting.\n" );
+		      }
+		    }
+
+		    if( (old_htotal > ti->htotal) && 
+			((old_htotal - ti->htotal) <= (ti->htotal / 100)) ) {
+		      // allow for up to ~1% deviation in horizontal size
+		      fprintf( stderr, "<warning> Monitor not CEA compliant, tweaking horizontal timing to accommodate.\n" );
+		      ti->h_bp += old_htotal - ti->htotal;
+		      ti->htotal +=  old_htotal - ti->htotal;
+		    }
+		  }
+
+		  return tr->name;
+		}
+	}
+
+	if (ti->status == STATUS_OK)
+		ti->status = STATUS_INVALID;
+
+	return NULL;
 }
 
 
@@ -777,6 +824,9 @@ main(int argc, char **argv)
 	 * case no known mode is found.
 	 */
 	while (1) {
+
+	  bzero(&new_ti, sizeof(new_ti));
+	  bzero(&raw_ti, sizeof(raw_ti));
 
 	  event_counter = 0; // detects events that happen while we're sleeping.
 

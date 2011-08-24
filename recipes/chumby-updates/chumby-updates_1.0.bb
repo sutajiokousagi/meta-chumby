@@ -1,18 +1,23 @@
+RDEPENDS_${PN} = "opkg"
+DEPENDS = "opkg"
 SRC_URI = "file://poll-update-server.sh \
            file://secring.gpg \
            file://trustdb.gpg \
            file://trusted.gpg \
+           file://opkg-chumby-upgrade.c \
 "
 S = "${WORKDIR}"
-PR = "r5"
+PR = "r7"
 
 do_compile() {
 	sed -e 's/_MACHINE_/${MACHINE}/g' -i poll-update-server.sh
+	${CC} ${LDFLAGS} ${CFLAGS} -lopkg opkg-chumby-upgrade.c -o opkg-chumby-upgrade -Wall
 }
 
 do_install() {
 	install -d ${D}${bindir}
 	install -m 0755 poll-update-server.sh ${D}${bindir}
+	install -m 0755 opkg-chumby-upgrade ${D}${bindir}
 
 	install -d ${D}/etc/opkg
 	install -m 0600 secring.gpg ${D}/etc/opkg
