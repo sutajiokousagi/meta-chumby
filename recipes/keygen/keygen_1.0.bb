@@ -1,4 +1,4 @@
-inherit chumbysg-git-private
+inherit chumbysg-git
 
 DESCRIPTION = "Cryptoprocessor daemon, used in lieu of a real processor"
 LICENSE = "BSD"
