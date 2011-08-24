@@ -1,0 +1,20 @@
+#!/bin/sh
+
+case $1 in
+
+	start)
+		/usr/bin/init-example
+		;;
+
+	stop)
+		killall init-example
+		;;
+
+	restart)
+		$0 stop
+		$0 start
+		;;
+	*)
+		echo "Usage: $0 [start|stop|restart]"
+		;;
+esac
