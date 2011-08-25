@@ -14,7 +14,7 @@ CNPLATFORM_chumby-wintergrasp = "wintergrasp"
 SRC_URI = "${CHUMBYSG_GIT_HOST}/chumby-clone/${PN}${CHUMBYSG_GIT_EXTENSION};protocol=${CHUMBYSG_GIT_PROTOCOL} \
           file://chumby-cpid \
 "
-SRCREV = "9c6839e3d17446a86b62f330dff670b4f334e1c6"
+SRCREV = "84fbc563a761ddfa18f108ed13227f8414ae5b5f"
 
 S = "${WORKDIR}/git/src/cpid"
 DEPENDS = "beecrypt"
