@@ -1,6 +1,6 @@
 PR_pn-networkmanager .= "r9"
 SRC_URI_pn-networkmanager = "\
-    ${GNOME_MIRROR}/NetworkManager/${@gnome_verdir("${PV}")}/NetworkManager-${PV}.tar.bz2 \
+    http://ftp.gnome.org/pub/GNOME/sources/NetworkManager/0.8/NetworkManager-0.8.1.tar.bz2 \
     file://remove-gtk-doc-make.patch \
     file://10-dont_require_ifup_for_lo.patch \
     file://nm-system-settings.conf \
