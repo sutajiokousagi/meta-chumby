@@ -35,6 +35,7 @@ SRC_URI = "file://helpers/dumpreg.c \
 	file://helpers/validate_edid.c \
 	file://helpers/make_variable_edid.c \
 	file://helpers/customize_edid.c \
+	file://helpers/fpga_setup \
 "
 
 S = "${WORKDIR}"
