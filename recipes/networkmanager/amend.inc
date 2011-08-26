@@ -1,5 +1,13 @@
-PR .= "-amend-r8"
-SRC_URI += "file://0001-add-chumby-plugin.patch \
+PR_pn-networkmanager .= "r9"
+SRC_URI_pn-networkmanager = "\
+    ${GNOME_MIRROR}/NetworkManager/${@gnome_verdir("${PV}")}/NetworkManager-${PV}.tar.bz2 \
+    file://remove-gtk-doc-make.patch \
+    file://10-dont_require_ifup_for_lo.patch \
+    file://nm-system-settings.conf \
+    file://NetworkManager \
+    file://gtk-doc.make \
+    file://0001-respect-libnl-flags-also-in-backends-ip6-manager.patch \
+            file://0001-add-chumby-plugin.patch \
             file://0002-fix-username-attribute.patch \
             file://0003-add-config-file.patch \
             file://0004-remove-duplicate-code-from-chumby-plugin.patch \
@@ -13,10 +21,10 @@ SRC_URI += "file://0001-add-chumby-plugin.patch \
             file://nm-system-settings-chumby.conf \
 "
 
-do_compile_append () {
+do_compile_append_pn-networkmanager () {
 	cp ../nm-system-settings-chumby.conf ../nm-system-settings.conf
 }
 
-do_configure_prepend() {
+do_configure_prepend_pn-networkmanager() {
 	autoreconf
 }
