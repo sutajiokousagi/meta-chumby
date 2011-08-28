@@ -164,6 +164,66 @@ deepsleep( int seconds, int milliseconds ) {
   }
 }
 
+void write_modeline(char *modeline) {
+    unsigned int i;
+
+    unsigned char snoop_ctl = 0;
+    unsigned char checksum;
+
+    snoop_ctl = read_byte(0);
+    snoop_ctl &= ~0x40;
+    write_byte( 0, snoop_ctl );
+
+    checksum = 0;
+    printf( "writing to classic modeline rom:\n" );
+    for( i = 0; i < 127; i++ ) {
+      write_byte( 0x14, modeline[i] );
+      write_byte( 0x13, i & 0x7F );
+      write_byte( 0x13, i | 0x80 );
+      write_byte( 0x13, i & 0x7F );
+      checksum += modeline[i];
+
+      if( (i % 16) == 0 ) {
+	printf( "\n%02x: ", i );
+      }
+      printf( "%02x ", modeline[i]);
+    }
+    checksum = 0 - checksum;
+    write_byte( 0x14, checksum );
+    write_byte( 0x13, 127 & 0x7F );
+    write_byte( 0x13, 127 | 0x80 );
+    write_byte( 0x13, 127 & 0x7F );
+    printf( "%02x ", checksum);
+    
+    printf( "\n" );
+
+    snoop_ctl |= 0x40;
+    write_byte( 0, snoop_ctl );
+
+    checksum = 0;
+    printf( "writing to HDMI modeline rom:\n" );
+    for( i = 128; i < 255; i++ ) {
+      write_byte( 0x14, modeline[i] );
+      write_byte( 0x13, i & 0x7F );
+      write_byte( 0x13, i | 0x80 );
+      write_byte( 0x13, i & 0x7F );
+      checksum += modeline[i];
+
+      if( (i % 16) == 0 ) {
+	printf( "\n%02x: ", i );
+      }
+      printf( "%02x ", modeline[i]);
+    }
+    checksum = 0 - checksum;
+    write_byte( 0x14, checksum );
+    write_byte( 0x13, 255 & 0x7F );
+    write_byte( 0x13, 255 | 0x80 );
+    write_byte( 0x13, 255 & 0x7F );
+    printf( "%02x ", checksum);
+    
+    printf( "\n" );
+}
+
 char default_edidname[] = "/psp/cached.edid";
 int main(int argc, char **argv) {
     unsigned char reg;
@@ -186,10 +246,14 @@ int main(int argc, char **argv) {
     unsigned char compctl;
     unsigned char cea_list[128];
     char c;
+    int cx;
     int temp;
     int num_modes = 0;
 
-    while((c = getopt(argc, argv, "hf:T:")) != -1 ) {
+    cx = getopt(argc, argv, "hf:T:");
+    while(cx != -1 ) {
+      printf( "%02x", cx );
+      c = (char) cx;
       switch(c) {
       case 'f':
 	edid_fname = malloc(strlen(optarg) * sizeof(char));
@@ -211,6 +275,7 @@ int main(int argc, char **argv) {
 	exit(0);
 	break;
       } // switch
+      cx = getopt(argc, argv, "hf:T:");
     } // while
 
     bzero(cached_edid, sizeof(cached_edid) );
@@ -252,7 +317,6 @@ int main(int argc, char **argv) {
     if( test_fname == NULL ) {
       snoopctl = read_byte(0x0);
       snoopctl_orig = snoopctl;
-      snoopctl &= 0xFE;
 
       compctl = read_byte(0x3);
       fprintf(stderr, "Checking semaphore...\n" );
@@ -273,6 +337,7 @@ int main(int argc, char **argv) {
       
       
       snoopctl = read_byte(0x0);
+      snoopctl &= 0xFE;
       snoopctl |= 0x08;  // force HPD, leave all other bits intact
       write_byte( 0x0, snoopctl ); // hpd is now forcing
       
@@ -382,6 +447,9 @@ int main(int argc, char **argv) {
     if( test_fname == NULL ) {
       fprintf(stderr, "Pulling HPD to re-load the spoofed NeTV EDID.\n");
       // edid squashing was turned off way above
+
+      // load data into the modeline ROM
+      write_modeline(netv_edid);
 
       // initiate a quick HPD to re-load the new EDID to the source
       snoopctl = read_byte(0x0);

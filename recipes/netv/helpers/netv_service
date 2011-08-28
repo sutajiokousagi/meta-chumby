@@ -23,23 +23,32 @@ case "$1" in
 
 	      writecached_Km # write the cached Km in, if it exists
 
-	      # validate the EDID
-	      validate_edid /psp/cached.edid
-	      if [ [ $? != 0 ] ] # check return code
-	      then
-		  # generate an EDID if the cached edid is not valid
-		  customize_edid -f /psp/cached.edid
-		  if [ [ $? != 0 ] ]
-		  then # this case happens if for some reason derive_km was triggered
-		      echo "couldn't get semaphore, waiting 5 seconds and trying again"
-		      sleep 5 # sleep it off and run it again.
-		      customize_edid -f /psp/cached.edid
-		  fi
+	      # provisionary -- if we want to save some time during boot, we can try this.
+	      # but, in fact, rediscovering the EDID is quick, about 2 seconds, and
+	      # probably a good thing to do at every boot. Trying to detect if the
+	      # monitor has changed and really muck with the caches and so forth is
+	      # tricky; we'd have to rely on Ksv values and record them and compare them....
+#	      # validate the EDID
+#	      validate_edid /psp/cached.edid
+#	      if [ $? -ne 0 ] # check return code
+#	      then
+#		  # generate an EDID if the cached edid is not valid
+#		  customize_edid -f /psp/cached.edid
+#		  if [ $? -ne 0 ]
+#		  then # this case happens if for some reason derive_km was triggered
+#		      echo "couldn't get semaphore, waiting 5 seconds and trying again"
+#		      sleep 5 # sleep it off and run it again.
+#		      customize_edid -f /psp/cached.edid
+#		  fi
+#
+#		  modeline /psp/cached.edid
+#	      else 
+#		  modeline /psp/cached.edid
+#	      fi
 
-		  modeline /psp/cached.edid
-	      else 
-		  modeline /psp/cached.edid
-	      fi
+	      # this is the simple and arguably more reliable way to handle the
+	      # EDID generation dynamically. Just re-derive it every time we startup.
+	      customize_edid -f /psp/cached.edid
 
 	      fpga_ctl E  # force EDID squashing
 	      fpga_ctl h  # reconnect device
