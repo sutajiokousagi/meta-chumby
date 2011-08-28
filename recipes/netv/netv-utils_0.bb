@@ -6,7 +6,7 @@ inherit update-rc.d
 INITSCRIPT_NAME = "netv_service"
 INITSCRIPT_PARAMS = "defaults 50 50"
 
-PR = "r54"
+PR = "r55"
 
 PACKAGE_ARCH = "${MACHINE}"
 
@@ -31,6 +31,9 @@ SRC_URI = "file://helpers/dumpreg.c \
 	file://helpers/netv_service \
 	file://helpers/matchmoded.c \
 	file://helpers/matchmoded_timings.h \
+	file://helpers/validate_edid.c \
+	file://helpers/make_variable_edid.c \
+	file://helpers/customize_edid.c \
 "
 
 S = "${WORKDIR}"
@@ -51,6 +54,10 @@ do_compile() {
     ${CC} ${CFLAGS} ${LDFLAGS} -o writecached_Km helpers/writecached_Km.c
 
     ${CC} ${CFLAGS} ${LDFLAGS} -o fpga_ctl helpers/fpga_ctl.c
+
+    ${CC} ${CFLAGS} ${LDFLAGS} -o validate_edid helpers/validate_edid.c
+    ${CC} ${CFLAGS} ${LDFLAGS} -o make_variable_edid.o -c helpers/make_variable_edid.c
+    ${CC} ${CFLAGS} ${LDFLAGS} -o customize_edid helpers/customize_edid.c make_variable_edid.o parse-edid.o
 }
 
 do_install() {
@@ -70,6 +77,9 @@ do_install() {
 
 	install -d ${D}${sbindir}
 	install -m 0755 matchmoded ${D}${sbindir}
+
+	install -m 0755 validate_edid ${D}${sbindir}
+	install -m 0755 customize_edid ${D}${sbindir}
 
 	install -d ${D}/${base_libdir}/firmware
 	install -m 0644 fpga/hdmi_overlay.bin ${D}${base_libdir}/firmware/

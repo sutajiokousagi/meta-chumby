@@ -33,10 +33,12 @@ struct timing_info {
 };
 
 struct timing_range {
-	struct timing_info lower;
-	struct timing_info upper;
-	struct timing_info actual;
+  struct timing_info lower;
+  struct timing_info upper;
+  struct timing_info actual;
   char *name;
+  int number;
+  int syncCode;
 };
 
 static struct timing_range mode_1 = {
@@ -60,6 +62,8 @@ static struct timing_range mode_1 = {
 		.status = STATUS_OK,
 	},
 	.name = "mode 1 480p 4:3",
+	.number = 1,
+	.syncCode = 0x18,  // digital separate sync, vertical sync is negative; hsync is negative
 };
 
 static struct timing_range mode_2 = {
@@ -83,6 +87,8 @@ static struct timing_range mode_2 = {
 		.status = STATUS_OK,
 	},
 	.name = "mode 2 480p anamorphic",
+	.number = 2,
+	.syncCode = 0x1e,  // digital separate sync, vertical sync is positive; hsync is positive
 };
 
 static struct timing_range mode_4 = {
@@ -97,8 +103,8 @@ static struct timing_range mode_4 = {
 		.h_bp = 220,
 		.hsync_width = 40,
 
-		.v_fp_lines = 20,
-		.v_bp_lines = 5,
+		.v_fp_lines = 5,
+		.v_bp_lines = 20,
 		.vsync_width_lines = 5,
 
 		.pixclk_in_MHz = 74.176,
@@ -106,6 +112,8 @@ static struct timing_range mode_4 = {
 		.status = STATUS_OK,
 	},
 	.name = "mode 4 720p60",
+	.number = 4,
+	.syncCode = 0x1e,  // digital separate sync, vertical sync is positive; hsync is positive
 };
 
 static struct timing_range mode_19 = {
@@ -120,8 +128,8 @@ static struct timing_range mode_19 = {
 		.h_bp = 220,
 		.hsync_width = 40,
 
-		.v_fp_lines = 20,
-		.v_bp_lines = 5,
+		.v_fp_lines = 5,
+		.v_bp_lines = 20,
 		.vsync_width_lines = 5,
 
 		.pixclk_in_MHz = 74.250,
@@ -129,6 +137,8 @@ static struct timing_range mode_19 = {
 		.status = STATUS_OK,
 	},
 	.name = "mode 19 720p50",
+	.number = 19,
+	.syncCode = 0x1e,  // digital separate sync, vertical sync is positive; hsync is positive
 };
 
 static struct timing_range mode_32 = {
@@ -152,6 +162,8 @@ static struct timing_range mode_32 = {
 		.status = STATUS_OK,
 	},
 	.name = "mode 32 1080p24",
+	.number = 32,
+	.syncCode = 0x1e,  // digital separate sync, vertical sync is positive; hsync is positive
 };
 
 static struct timing_range *timings[] = {

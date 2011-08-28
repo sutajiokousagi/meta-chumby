@@ -2,8 +2,9 @@
 #include <stdlib.h>
 #include <string.h>
 
-// TODO: rewrite
-// FIXME: cleanup 'static' variables
+// meant to be run on build machine
+// to build: gcc check_edid.c -o check_edid
+// to use: ./make_edid <mode> | ./check_edid
 
 typedef unsigned char byte;
 /* byte must be 8 bits */
@@ -37,7 +38,7 @@ const byte edid_v1_descriptor_flag[] = { 0x00, 0x00 };
 
 #define HDMI_EXTENSION                          0x80
 
-#define EDID_LENGTH                             0x80
+#define EDID_LENGTH                             0x100
 
 #define EDID_HEADER                             0x00
 #define EDID_HEADER_END                         0x07
@@ -169,7 +170,7 @@ byte *base;
 
 void MSG( const char* x )
 {
-  fprintf(stderr, "%s: %s\n", myname, x ); 
+  fprintf( stderr, "%s: %s\n", myname, x ); 
 }
 
 
@@ -196,15 +197,17 @@ get_vendor_sign( byte const* block );
 int
 parse_dpms_capabilities( byte flags );
 
-#if 0
+#if 1
 int
 main( int argc, char** argv )
 {
   byte edid[ EDID_LENGTH ];
   FILE* edid_file;
+  int i;
+  int temp;
 
   myname = argv[ 0 ];
-  fprintf(stderr, "%s: parse-edid version %s\n", myname, VERSION );
+  fprintf( stderr, "%s: parse-edid version %s\n", myname, VERSION );
   
   if ( argc > 2 )
     {
@@ -214,21 +217,20 @@ main( int argc, char** argv )
     {
       if ( argc == 2 )
 	{
-	  edid_file = fopen( argv[ 1 ], "rb" );
+	  edid_file = fopen( argv[ 1 ], "r" );
 	  if ( !edid_file )
 	    DIE_MSG( "unable to open file for input" );
 	}
       
-      else
-	edid_file = stdin;
+      else {
+	DIE_MSG( "this does not accept stdin as input" );
+      }
     }
 
-  if ( fread( edid, sizeof( byte ), EDID_LENGTH, edid_file )
-       != EDID_LENGTH )
-
-    {
-      DIE_MSG( "IO error reading EDID" );
-    }
+  for( i = 0; i < EDID_LENGTH; i ++ ) {
+    fscanf(edid_file, "%x%*[ \n\t]", &temp );
+    edid[i] = temp & 0xFF;
+  }
 
   fclose( edid_file );
   
@@ -281,27 +283,13 @@ unsigned char modes[39][128] = {
 
 void decode_hdmi_videomode(int mode) {
   if( (mode & 0x7f) < NUM_VIDMODES ) {
-    fprintf(stderr, "    code %02d: %s", (mode & 0x7f), modes[(mode & 0x7f) - 1] );
+    printf( "    code %02d: %s", (mode & 0x7f), modes[(mode & 0x7f) - 1] );
     if( mode & 0x80 ){
-      fprintf (stderr, " ** NATIVE" );
+      printf (" ** NATIVE" );
     }
-    fprintf(stderr, "\n" );
+    printf( "\n" );
   } else {
-    fprintf(stderr, "video mode number not recognized: %d\n", mode & 0x7f );
-  }
-}
-
-void decode_hdmi_videomode_return(int mode, unsigned char *list) {
-  if( (mode & 0x7f) < NUM_VIDMODES ) {
-    list[mode] = 1;
-    fprintf(stderr, "    code %02d: %s", (mode & 0x7f), modes[(mode & 0x7f) - 1] );
-    if( mode & 0x80 ){
-      fprintf (stderr, " ** NATIVE" );
-      list[mode] = 0xFF;
-    }
-    fprintf(stderr, "\n" );
-  } else {
-    fprintf(stderr, "video mode number not recognized: %d\n", mode & 0x7f );
+    printf( "video mode number not recognized: %d\n", mode & 0x7f );
   }
 }
 
@@ -313,204 +301,107 @@ unsigned int parse_hdmi_datablocks(byte *block) {
 
   int offset = 0;
 
-  fprintf(stderr, " " );
+  printf( " " );
   num_descrips = block[0] & 0x1F;
   tag_code = block[0] >> 5;
   offset++;
 
 #ifdef DETAILS
-  fprintf(stderr, "Offset: %02x\n", (unsigned int) (block - base) );
+  printf( "Offset: %02x\n", (unsigned int) (block - base) );
 #endif
 
   switch(tag_code) {
   case 0: 
-    fprintf(stderr, "reserved tag code\n" );
+    printf( "reserved tag code\n" );
     break;
   case 1:
-    fprintf(stderr, "audio data block\n    " );
+    printf( "audio data block\n    " );
     for( i = 0; i < num_descrips; i++ ) {
-      fprintf(stderr, "%02x ", block[offset++] );
+      printf( "%02x ", block[offset++] );
     }
-    fprintf(stderr, "\n" );
+    printf( "\n" );
     break;
   case 2:
-    fprintf(stderr, "video data block at %02x\n", offset + 0x80 );
+    printf( "video data block at %02x\n", offset + 0x80 );
     for( i = 0; i < num_descrips; i++ ) {
       decode_hdmi_videomode(block[offset++]);
     }
     break;
   case 3:
     i = 0;
-    fprintf(stderr, "vendor specific data block\n" );
-    fprintf(stderr, "    IEEE registration #: 0x%02x%02x%02x\n", block[offset+2], block[offset+1], block[offset] );
+    printf( "vendor specific data block\n" );
+    printf( "    IEEE registration #: 0x%02x%02x%02x\n", block[offset+2], block[offset+1], block[offset] );
     offset += 3; i += 3;
-    fprintf(stderr, "    AB CD: %02x %02x\n", block[offset], block[offset+1] );
+    printf( "    AB CD: %02x %02x\n", block[offset], block[offset+1] );
     offset += 2; i += 2;
-    fprintf(stderr, "    undecoded extensions: " );
+    printf( "    undecoded extensions: " );
     for( ; i < num_descrips; i++ ) {
-      fprintf(stderr, "%02x ", block[offset++] );
+      printf( "%02x ", block[offset++] );
     }
-    fprintf(stderr, "\n" );
+    printf( "\n" );
     break;
   case 4: 
-    fprintf(stderr, "speaker allocation data block\n    " );
+    printf( "speaker allocation data block\n    " );
     for( i = 0; i < num_descrips; i++ ) {
-      fprintf(stderr, "%02x ", block[offset++] );
+      printf( "%02x ", block[offset++] );
     }
-    fprintf(stderr, "\n" );
+    printf( "\n" );
     break;
   case 5:
-    fprintf(stderr, "vesa DTC data block\n    " );
+    printf( "vesa DTC data block\n    " );
     for( i = 0; i < num_descrips; i++ ) {
-      fprintf(stderr, "%02x ", block[offset++] );
+      printf( "%02x ", block[offset++] );
     }
-    fprintf(stderr, "\n" );
+    printf( "\n" );
     break;
   case 6:
-    fprintf(stderr, "reserved tag code\n" );
+    printf( "reserved tag code\n" );
     break;
   case 7:
-    fprintf(stderr, "using extended tag code\n" );
+    printf( "using extended tag code\n" );
     extended_tag_code = block[offset++];
     switch(extended_tag_code) {
     case 0:
-      fprintf(stderr, "video capability data block\n" );
+      printf( "video capability data block\n" );
       break;
     case 1:
-      fprintf(stderr, "vendor-specific video data block\n" );
+      printf( "vendor-specific video data block\n" );
       break;
     case 4:
-      fprintf(stderr, "reserved for HDMI video data block\n" );
+      printf( "reserved for HDMI video data block\n" );
       break;
     case 18:
-      fprintf(stderr, "reserved for HDMI audio data block\n" );
+      printf( "reserved for HDMI audio data block\n" );
       break;
     default:
-      fprintf(stderr, "extended tag code reading not implemented\n" );
+      printf( "extended tag code reading not implemented\n" );
       break;
     }
     break;
   default:
-    fprintf(stderr, "unrecognized tag\n" );
+    printf( "unrecognized tag\n" );
     break;
   }
 
   return(num_descrips + 1);
 }
 
-// derived from parse_hdmi_datablocks, this will populate list with
-// supported CEA modes.
-// "list" is a 128-entry table, initialized to zero, and then a non-zero
-// value is entered for every index that corresponds to a valid CEA mode.
-// if the mode is native, the value will be 255.
-unsigned int parse_hdmi_datablocks_return(byte *block, unsigned char *list) {
-  int num_descrips;
-  int tag_code;
-  int extended_tag_code;
-  int i;
-
-  int offset = 0;
-
-  fprintf(stderr, " " );
-  num_descrips = block[0] & 0x1F;
-  tag_code = block[0] >> 5;
-  offset++;
-
-#ifdef DETAILS
-  fprintf(stderr, "Offset: %02x\n", (unsigned int) (block - base) );
-#endif
-
-  switch(tag_code) {
-  case 0: 
-    fprintf(stderr, "reserved tag code\n" );
-    break;
-  case 1:
-    fprintf(stderr, "audio data block\n    " );
-    for( i = 0; i < num_descrips; i++ ) {
-      fprintf(stderr, "%02x ", block[offset++] );
-    }
-    fprintf(stderr, "\n" );
-    break;
-  case 2:
-    fprintf(stderr, "video data block at %02x\n", offset + 0x80 );
-    for( i = 0; i < num_descrips; i++ ) {
-      decode_hdmi_videomode_return(block[offset++], list);
-    }
-    break;
-  case 3:
-    i = 0;
-    fprintf(stderr, "vendor specific data block\n" );
-    fprintf(stderr, "    IEEE registration #: 0x%02x%02x%02x\n", block[offset+2], block[offset+1], block[offset] );
-    offset += 3; i += 3;
-    fprintf(stderr, "    AB CD: %02x %02x\n", block[offset], block[offset+1] );
-    offset += 2; i += 2;
-    fprintf(stderr, "    undecoded extensions: " );
-    for( ; i < num_descrips; i++ ) {
-      fprintf(stderr, "%02x ", block[offset++] );
-    }
-    fprintf(stderr, "\n" );
-    break;
-  case 4: 
-    fprintf(stderr, "speaker allocation data block\n    " );
-    for( i = 0; i < num_descrips; i++ ) {
-      fprintf(stderr, "%02x ", block[offset++] );
-    }
-    fprintf(stderr, "\n" );
-    break;
-  case 5:
-    fprintf(stderr, "vesa DTC data block\n    " );
-    for( i = 0; i < num_descrips; i++ ) {
-      fprintf(stderr, "%02x ", block[offset++] );
-    }
-    fprintf(stderr, "\n" );
-    break;
-  case 6:
-    fprintf(stderr, "reserved tag code\n" );
-    break;
-  case 7:
-    fprintf(stderr, "using extended tag code\n" );
-    extended_tag_code = block[offset++];
-    switch(extended_tag_code) {
-    case 0:
-      fprintf(stderr, "video capability data block\n" );
-      break;
-    case 1:
-      fprintf(stderr, "vendor-specific video data block\n" );
-      break;
-    case 4:
-      fprintf(stderr, "reserved for HDMI video data block\n" );
-      break;
-    case 18:
-      fprintf(stderr, "reserved for HDMI audio data block\n" );
-      break;
-    default:
-      fprintf(stderr, "extended tag code reading not implemented\n" );
-      break;
-    }
-    break;
-  default:
-    fprintf(stderr, "unrecognized tag\n" );
-    break;
-  }
-
-  return(num_descrips + 1);
-}
-
-void parse_hdmi_extension(byte *block) {
+int parse_hdmi_extension(byte *block) {
   int descriptor_offset;
   int cur_offset;
   int num_descrips;
   int i;
   unsigned char checksum;
+  int ret = 0;
 
 #ifdef DETAILS
-  fprintf(stderr, "Offset: %02x\n", (unsigned int) (block - base) );
+  printf( "Offset: %02x\n", (unsigned int) (block - base) );
 #endif
   if( block[0] != 0x02 ) {
-    fprintf(stderr, "not an CEA extension block, aborting.\n" );
-    return;
+    printf( "not an CEA extension block, aborting.\n" );
+    return 1;
   }
-  fprintf(stderr, "CEA extension block revision %d\n", block[1] );
+  printf( "CEA extension block revision %d\n", block[1] );
 
   descriptor_offset = block[2];
   num_descrips = block[3] & 0xf;
@@ -518,17 +409,17 @@ void parse_hdmi_extension(byte *block) {
   cur_offset = 4; // start of data blocks
   
   while( cur_offset < descriptor_offset ) {
-    fprintf(stderr, "Parsing datablock at offset %02x\n", cur_offset );
+    printf( "Parsing datablock at offset %02x\n", cur_offset );
     cur_offset += parse_hdmi_datablocks(&(block[cur_offset]));
   }
   
-  fprintf(stderr, "Number of native descriptors: %d; flags: %01x\n", num_descrips, block[3] >> 4 );
+  printf( "Number of native descriptors: %d; flags: %01x\n", num_descrips, block[3] >> 4 );
   
   num_descrips = 5;
-  fprintf(stderr, "Trying to decode up to 5 data blocks\n" );
+  printf( "Trying to decode up to 5 data blocks\n" );
   for( i = 0; i < num_descrips; i++, cur_offset += DETAILED_TIMING_DESCRIPTION_SIZE ) {
     if ( block_type( &(block[cur_offset]) ) == DETAILED_TIMING_BLOCK ) {
-      fprintf(stderr, "Parsing descriptor at %02x\n", cur_offset );
+      printf( "Parsing descriptor at %02x\n", cur_offset );
       parse_timing_description( &(block[cur_offset]) );
     }
   }
@@ -537,73 +428,17 @@ void parse_hdmi_extension(byte *block) {
   for( i = 0; i < 0x80; i++ ) {
     checksum += block[i];
   }
-  fprintf(stderr, "Block checksum: %02x; ", block[0x7f] );
+  printf( "Block checksum: %02x; ", block[0x7f] );
   if( checksum == 0 ) {
-    fprintf(stderr, "checksum passes\n" );
+    printf( "checksum passes\n" );
+    ret = 0;
   } else {
-    fprintf(stderr, "checksum fails\n" );
+    printf( "checksum fails\n" );
+    ret = 1;
   }
+  
+  return ret;
 }
-
-// this function is derived from the above, but it will return a list of supported modes
-// the list pointer should be an array of at least 128 characters in size as there are 128 CEA modes
-// the list is zero'd out, and if the value is non-zero the mode is supported. If it's 255 the mode is native
-void parse_hdmi_extension_return(byte *block, unsigned char *list) {
-  int descriptor_offset;
-  int cur_offset;
-  int num_descrips;
-  int i;
-  unsigned char checksum;
-
-  if(list == NULL) {
-    return;
-  }
-  bzero(list, 128 * sizeof(char));
-
-#ifdef DETAILS
-  fprintf(stderr, "Offset: %02x\n", (unsigned int) (block - base) );
-#endif
-  if( block[0] != 0x02 ) {
-    fprintf(stderr, "not an CEA extension block, aborting.\n" );
-    return;
-  }
-  fprintf(stderr, "CEA extension block revision %d\n", block[1] );
-
-  descriptor_offset = block[2];
-  num_descrips = block[3] & 0xf;
-  
-  cur_offset = 4; // start of data blocks
-  
-  while( cur_offset < descriptor_offset ) {
-    fprintf(stderr, "Parsing datablock at offset %02x\n", cur_offset );
-    // even though this is a while loop, only one iteration will ever
-    // affect "list" so we pass the same structure to every call
-    cur_offset += parse_hdmi_datablocks_return(&(block[cur_offset]), list);
-  }
-  
-  fprintf(stderr, "Number of native descriptors: %d; flags: %01x\n", num_descrips, block[3] >> 4 );
-  
-  num_descrips = 5;
-  fprintf(stderr, "Trying to decode up to 5 data blocks\n" );
-  for( i = 0; i < num_descrips; i++, cur_offset += DETAILED_TIMING_DESCRIPTION_SIZE ) {
-    if ( block_type( &(block[cur_offset]) ) == DETAILED_TIMING_BLOCK ) {
-      fprintf(stderr, "Parsing descriptor at %02x\n", cur_offset );
-      parse_timing_description( &(block[cur_offset]) );
-    }
-  }
-
-  checksum = 0;
-  for( i = 0; i < 0x80; i++ ) {
-    checksum += block[i];
-  }
-  fprintf(stderr, "Block checksum: %02x; ", block[0x7f] );
-  if( checksum == 0 ) {
-    fprintf(stderr, "checksum passes\n" );
-  } else {
-    fprintf(stderr, "checksum fails\n" );
-  }
-}
-
 
 int
 parse_edid( byte* edid )
@@ -624,6 +459,7 @@ parse_edid( byte* edid )
   if (  checksum != 0  ) {
       MSG( "EDID checksum failed - data is corrupt. Continuing anyway." );
       ret = 1;
+      return ret;
   } else 
       MSG( "EDID checksum passed." );
   
@@ -633,13 +469,14 @@ parse_edid( byte* edid )
       MSG( "first bytes don't match EDID version 1 header" );
       MSG( "do not trust output (if any)." );
       ret = 1;
+      return ret;
     }
 
-  fprintf(stderr, "\n\t# EDID version %d revision %d\n", (int)edid[EDID_STRUCT_VERSION],(int)edid[EDID_STRUCT_REVISION] );
+  printf( "\n\t# EDID version %d revision %d\n", (int)edid[EDID_STRUCT_VERSION],(int)edid[EDID_STRUCT_REVISION] );
 
   vendor_sign = get_vendor_sign( edid + ID_MANUFACTURER_NAME ); 
 
-  fprintf(stderr, "Section \"Monitor\"\n" );
+  printf( "Section \"Monitor\"\n" );
 
   block = edid + DETAILED_TIMING_DESCRIPTIONS_START;
 
@@ -664,9 +501,9 @@ parse_edid( byte* edid )
     monitor_name = monitor_alt_name;
   }
 
-  fprintf(stderr, "\tIdentifier \"%s\"\n", monitor_name );
-  fprintf(stderr, "\tVendorName \"%s\"\n", vendor_sign );
-  fprintf(stderr, "\tModelName \"%s\"\n", monitor_name );
+  printf( "\tIdentifier \"%s\"\n", monitor_name );
+  printf( "\tVendorName \"%s\"\n", vendor_sign );
+  printf( "\tModelName \"%s\"\n", monitor_name );
 
   block = edid + DETAILED_TIMING_DESCRIPTIONS_START;
 
@@ -687,16 +524,16 @@ parse_edid( byte* edid )
     {
 
       if ( block_type( block ) == DETAILED_TIMING_BLOCK ) {
-	//	fprintf(stderr, "parsing at %02x\n", (int)(block - edid) );
+	//	printf( "parsing at %02x\n", (int)(block - edid) );
 	parse_timing_description( block );
       }
     }
 
-  fprintf(stderr, "EndSection\n" );
+  printf( "EndSection\n" );
 
-  fprintf(stderr, "\nParsing HDMI section\n" );
+  printf( "\nParsing HDMI section\n" );
   block = edid + HDMI_EXTENSION;
-  parse_hdmi_extension(block);
+  ret = parse_hdmi_extension(block);
 
   return ret;
 }
@@ -710,33 +547,33 @@ parse_timing_description( byte* dtd )
   vtotal = V_ACTIVE + V_BLANKING;
 
 #ifdef DETAILS
-  fprintf(stderr, "Offset: %02x\n", (unsigned int) (dtd - base) );
+  printf( "Offset: %02x\n", (unsigned int) (dtd - base) );
 #endif
-  fprintf(stderr, "\tMode \t\"%dx%d\"", H_ACTIVE, V_ACTIVE );
-  fprintf(stderr, "\t# vfreq %3.3fHz, hfreq %6.3fkHz\n",
+  printf( "\tMode \t\"%dx%d\"", H_ACTIVE, V_ACTIVE );
+  printf( "\t# vfreq %3.3fHz, hfreq %6.3fkHz\n",
 	  (double)PIXEL_CLOCK/((double)vtotal*(double)htotal),
 	  (double)PIXEL_CLOCK/(double)(htotal*1000));
 
-  fprintf(stderr, "\t\tDotClock\t%f\n", (double)PIXEL_CLOCK/1000000.0 );
+  printf( "\t\tDotClock\t%f\n", (double)PIXEL_CLOCK/1000000.0 );
 
-  fprintf(stderr, "\t\tHTimings\t%u %u %u %u\n", H_ACTIVE,
+  printf( "\t\tHTimings\t%u %u %u %u\n", H_ACTIVE,
 	  H_ACTIVE+H_SYNC_OFFSET, 
 	  H_ACTIVE+H_SYNC_OFFSET+H_SYNC_WIDTH,
 	  htotal );
 
-  fprintf(stderr, "\t\tVTimings\t%u %u %u %u\n", V_ACTIVE,
+  printf( "\t\tVTimings\t%u %u %u %u\n", V_ACTIVE,
 	  V_ACTIVE+V_SYNC_OFFSET,
 	  V_ACTIVE+V_SYNC_OFFSET+V_SYNC_WIDTH,
 	  vtotal );
 
   if ( INTERLACED || (SYNC_TYPE == SYNC_SEPARATE)) {
-    fprintf(stderr, "\t\tFlags\t%s\"%sHSync\" \"%sVSync\"\n",
+    printf( "\t\tFlags\t%s\"%sHSync\" \"%sVSync\"\n",
 	INTERLACED ? "\"Interlace\" ": "",
 	HSYNC_POSITIVE ? "+": "-",
 	VSYNC_POSITIVE ? "+": "-");
   }
 
-  fprintf(stderr, "\tEndMode\n" );
+  printf( "\tEndMode\n" );
 
   return 0;
 }
@@ -747,11 +584,11 @@ block_type( byte* block )
 {
 
 #ifdef DETAILS
-  fprintf(stderr, "Offset: %02x\n", (unsigned int) (block - base) );
+  printf( "Offset: %02x\n", (unsigned int) (block - base) );
 #endif
   if ( !strncmp( edid_v1_descriptor_flag, block, 2 ) )
     {
-      fprintf(stderr,"\t# Block type: 2:%x 3:%x\n", block[2], block[3]);
+      printf("\t# Block type: 2:%x 3:%x\n", block[2], block[3]);
 
       /* descriptor */
 
@@ -816,18 +653,18 @@ int
 parse_monitor_limits( byte* block )
 {
 #ifdef DETAILS
-  fprintf(stderr, "Offset: %02x\n", (unsigned int) (block - base) );
+  printf( "Offset: %02x\n", (unsigned int) (block - base) );
 #endif
-  fprintf(stderr, "\tHorizSync %u-%u\n", H_MIN_RATE, H_MAX_RATE );
-  fprintf(stderr, "\tVertRefresh %u-%u\n", V_MIN_RATE, V_MAX_RATE );
+  printf( "\tHorizSync %u-%u\n", H_MIN_RATE, H_MAX_RATE );
+  printf( "\tVertRefresh %u-%u\n", V_MIN_RATE, V_MAX_RATE );
   if ( MAX_PIXEL_CLOCK == 10*0xff )
-    fprintf(stderr, "\t# Max dot clock not given\n" );
+    printf( "\t# Max dot clock not given\n" );
   else
-    fprintf(stderr, "\t# Max dot clock (video bandwidth) %u MHz\n", (int)MAX_PIXEL_CLOCK );
+    printf( "\t# Max dot clock (video bandwidth) %u MHz\n", (int)MAX_PIXEL_CLOCK );
 
   if ( GTF_SUPPORT )
     {
-      fprintf(stderr, "\t# EDID version 3 GTF given: contact author\n" );
+      printf( "\t# EDID version 3 GTF given: contact author\n" );
     }
   
   return 0;
@@ -836,7 +673,7 @@ parse_monitor_limits( byte* block )
 int
 parse_dpms_capabilities(byte flags)
 {
-  fprintf(stderr,"\t# DPMS capabilities: Active off:%s  Suspend:%s  Standby:%s\n\n",
+  printf("\t# DPMS capabilities: Active off:%s  Suspend:%s  Standby:%s\n\n",
     (flags & DPMS_ACTIVE_OFF) ? "yes" : "no",
     (flags & DPMS_SUSPEND)    ? "yes" : "no",
     (flags & DPMS_STANDBY)    ? "yes" : "no");
