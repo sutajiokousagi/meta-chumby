@@ -17,6 +17,7 @@
 #include <unistd.h>
 
 #include <fcntl.h>
+#include <sys/mman.h>
 
 // this list should be merged with the one in fpga_ctl.c
 // this list of I2C register addresses should be filled out when I have more time...
@@ -46,6 +47,28 @@
 
 extern unsigned char* make_hdmi(char *modelist);
 extern unsigned char *make_edid(char *modelist);
+
+static int fd = 0;
+static int   *mem_32 = 0;
+static short *mem_16 = 0;
+static char  *mem_8  = 0;
+static int *prev_mem_range = 0;
+static int read_kernel_memory(long offset, int virtualized, int size);
+
+#define SINK_DISCONNECTED 0
+#define SINK_CONNECTED 1
+
+// returns 1 if there is a TV present
+// returns 0 if there isn't one
+static int sink_status() {
+  unsigned int gplr2;
+  unsigned int hpd_state;
+  // gpio_gplr2, bits 95:64
+  gplr2 = read_kernel_memory(0xd4019008, 0, 4);
+  hpd_state = gplr2 & 0x08000000 ? SINK_CONNECTED : SINK_DISCONNECTED;
+  
+  return hpd_state;
+}
 
 static inline unsigned short swab_16(unsigned short val) {
     int t = val;
@@ -315,6 +338,46 @@ int main(int argc, char **argv) {
     }
     
     if( test_fname == NULL ) {
+      // first check and see if a TV is present
+      if( sink_status() == SINK_DISCONNECTED ) {
+	if( cache_valid ) {
+	  fprintf(stderr, "No sink detected, but cache is valid. Cowardly quitting and doing nothing. User should be instructed to plug in the TV before boot.\n" );
+	  exit(1);
+	} else { 
+	  // put in a bogus 720p-only record
+	  for( i = 0; i < 128; i++ ) {
+	    cea_list[i] = 0;
+	  }
+	  cea_list[4] = 1; // set 720p support
+
+	  // now build a new EDID based upon the supported modes from the monitor
+	  new_edid = make_edid(cea_list);
+	  memcpy( netv_edid, new_edid, sizeof(unsigned char) * 128);
+	  free(new_edid);
+
+	  hdmi = make_hdmi(cea_list);
+	  memcpy( &(netv_edid[128]), hdmi, sizeof(unsigned char) * 128);
+	  free(hdmi); // HDMI is calloc'd inside make_hdmi
+
+	  fprintf( stderr, "No sink, but EDID cache is invalid. Committing a 'safe' 720p-only EDID to disk.\n" );
+	  // if cache is invalid...
+	  // write the EDID to a file
+	  for( i = 0; i < 256; i++ ) {
+	    if( (i % 16 == 0) && (i != 0) ) {
+	      fprintf(edid_file, "\n" );
+	    }
+	    fprintf(edid_file, "%02x ", netv_edid[i] );
+	  }
+	  fprintf(edid_file, "\n" );
+	  fclose( edid_file );
+	  system("sync"); // force it to commit to flash
+
+	  write_modeline(netv_edid);
+
+	  exit(1);
+	}
+      }
+      
       snoopctl = read_byte(0x0);
       snoopctl_orig = snoopctl;
 
@@ -472,4 +535,62 @@ int main(int argc, char **argv) {
     }
 
     return 0;
+}
+
+///////////////// kernel memory read/write convenience functions
+
+static int read_kernel_memory(long offset, int virtualized, int size) {
+    int result;
+
+    int *mem_range = (int *)(offset & ~0xFFFF);
+    if( mem_range != prev_mem_range ) {
+//        fprintf(stderr, "New range detected.  Reopening at memory range %p\n", mem_range);
+        prev_mem_range = mem_range;
+
+        if(mem_32)
+            munmap(mem_32, 0xFFFF);
+        if(fd)
+            close(fd);
+
+        if(virtualized) {
+            fd = open("/dev/kmem", O_RDWR);
+            if( fd < 0 ) {
+                perror("Unable to open /dev/kmem");
+                fd = 0;
+                return -1;
+            }
+        }
+        else {
+            fd = open("/dev/mem", O_RDWR);
+            if( fd < 0 ) {
+                perror("Unable to open /dev/mem");
+                fd = 0;
+                return -1;
+            }
+        }
+
+        mem_32 = mmap(0, 0xffff, PROT_READ | PROT_WRITE, MAP_SHARED, fd, offset&~0xFFFF);
+        if( -1 == (int)mem_32 ) {
+            perror("Unable to mmap file");
+
+            if( -1 == close(fd) )
+                perror("Also couldn't close file");
+
+            fd=0;
+            return -1;
+        }
+        mem_16 = (short *)mem_32;
+        mem_8  = (char  *)mem_32;
+    }
+
+    int scaled_offset = (offset-(offset&~0xFFFF));
+//    fprintf(stderr, "Returning offset 0x%08x\n", scaled_offset);
+    if(size==1)
+        result = mem_8[scaled_offset/sizeof(char)];
+    else if(size==2)
+        result = mem_16[scaled_offset/sizeof(short)];
+    else
+        result = mem_32[scaled_offset/sizeof(long)];
+
+    return result;
 }
