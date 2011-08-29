@@ -17,9 +17,12 @@ case "$1" in
 	      regutil -w LCD_SPU_DUMB_CTRL=0x210ff003
 	      
 	      echo "forcing attached mode to a supported EDID"
-	      fpga_ctl H  # force HPD
+	      # can't force HPD before going into customize_edid because we need to determine
+	      # if a monitor IS present.
+#	      fpga_ctl H  # force HPD
+	      # but leave the sleep in because there is some lag to FPGA startup time
 	      sleep 1  # this may be removeable, but just in case FPGA takes a moment to start...
-	      fpga_ctl H  # force HPD
+	      fpga_ctl h  # turn off HPD, customize_edid will do the HPD flipping for us
 
 	      writecached_Km # write the cached Km in, if it exists
 
