@@ -342,6 +342,10 @@ int main(int argc, char **argv) {
       if( sink_status() == SINK_DISCONNECTED ) {
 	if( cache_valid ) {
 	  fprintf(stderr, "No sink detected, but cache is valid. Cowardly quitting and doing nothing. User should be instructed to plug in the TV before boot.\n" );
+	  // need to commit the cached modeline though, that's a requirement of this program...
+	  // all non-test exit paths should leave with at least a valid modeline written in
+	  write_modeline(cached_edid);
+
 	  exit(1);
 	} else { 
 	  // put in a bogus 720p-only record
