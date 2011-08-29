@@ -25,7 +25,7 @@ fi
 ETAG=$(curl --stderr /dev/null -I "$URL" | grep -i ^etag: | cut -d'"' -f2)
 if [ -f $LAST_ETAG_PATH ]
 then
-	if [ "x$(cat $LAST_ETAG_PATH)" = "x${ETAG}" ]
+	if [ "x$(cat $LAST_ETAG_PATH)" == "x${ETAG}" ]
 	then
 		if [ ${UPDATE_DEBUG} -eq 0 ]
 		then
