@@ -7,7 +7,7 @@ SRC_URI = "file://poll-update-server.sh \
            file://opkg-chumby-upgrade.c \
 "
 S = "${WORKDIR}"
-PR = "r9"
+PR = "r11"
 
 do_compile() {
 	sed -e 's/_MACHINE_/${MACHINE}/g' -i poll-update-server.sh
@@ -38,6 +38,10 @@ pkg_postinst() {
 	fi
 
 	echo "12 * * * * /usr/bin/poll-update-server.sh" >> $ROOTCRON
+# secondary cron entries to be removed post-beta
+	echo "27 * * * * /usr/bin/poll-update-server.sh" >> $ROOTCRON
+	echo "42 * * * * /usr/bin/poll-update-server.sh" >> $ROOTCRON
+	echo "57 * * * * /usr/bin/poll-update-server.sh" >> $ROOTCRON
         /etc/init.d/cron restart
 
         exit 0

@@ -3,7 +3,9 @@
 # RANDOM is a random number between 0 and 32768.  Happily, 32768 very
 # nearly divides evenly into 3600 (leaving 1/450 over).  This is used
 # to throttle connections to the server.
-DELAY=$(($RANDOM%3600))
+
+# change to 900 seconds 8/30/2011 -- temporary for beta, revert to 3600 for release
+DELAY=$(($RANDOM%900))
 URL=http://buildbot.chumby.com.sg/updates/_MACHINE_/update.sh
 SCRIPT_PATH=/tmp/update.$$.sh
 LAST_ETAG_PATH=/tmp/update.last-etag

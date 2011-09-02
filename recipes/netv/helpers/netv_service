@@ -17,15 +17,46 @@ case "$1" in
 	      regutil -w LCD_SPU_DUMB_CTRL=0x210ff003
 	      
 	      echo "forcing attached mode to a supported EDID"
-	      fpga_ctl H  # force HPD
+	      # can't force HPD before going into customize_edid because we need to determine
+	      # if a monitor IS present.
+#	      fpga_ctl H  # force HPD
+	      # but leave the sleep in because there is some lag to FPGA startup time
 	      sleep 1  # this may be removeable, but just in case FPGA takes a moment to start...
-	      fpga_ctl H  # force HPD
-	      modeline /lib/firmware/1080p24_720p_480p.edid
+	      fpga_ctl h  # turn off HPD, customize_edid will do the HPD flipping for us
+
 	      writecached_Km # write the cached Km in, if it exists
+
+	      # provisionary -- if we want to save some time during boot, we can try this.
+	      # but, in fact, rediscovering the EDID is quick, about 2 seconds, and
+	      # probably a good thing to do at every boot. Trying to detect if the
+	      # monitor has changed and really muck with the caches and so forth is
+	      # tricky; we'd have to rely on Ksv values and record them and compare them....
+#	      # validate the EDID
+#	      validate_edid /psp/cached.edid
+#	      if [ $? -ne 0 ] # check return code
+#	      then
+#		  # generate an EDID if the cached edid is not valid
+#		  customize_edid -f /psp/cached.edid
+#		  if [ $? -ne 0 ]
+#		  then # this case happens if for some reason derive_km was triggered
+#		      echo "couldn't get semaphore, waiting 5 seconds and trying again"
+#		      sleep 5 # sleep it off and run it again.
+#		      customize_edid -f /psp/cached.edid
+#		  fi
+#
+#		  modeline /psp/cached.edid
+#	      else 
+#		  modeline /psp/cached.edid
+#	      fi
+
+	      # this is the simple and arguably more reliable way to handle the
+	      # EDID generation dynamically. Just re-derive it every time we startup.
+	      customize_edid -f /psp/cached.edid
+
 	      fpga_ctl E  # force EDID squashing
 	      fpga_ctl h  # reconnect device
-	      # Km re-derivation is now called by an HPD event at this point
 
+	      # Km re-derivation is now called by an HPD event at this point
 	      echo "starting matchmode daemon"
 	      matchmoded
 
