@@ -572,6 +572,11 @@ chumby_upgrade_cmd()
 
     write_status_files_if_changed();
 
+    /* XXX HACK XXX
+     * There's a bug where sometimes the network won't reconnect.
+     * Restart NetworkManager to work around this.
+     */
+    system("/etc/init.d/NetworkManager restart");
 
     progress_message_length = snprintf((char *)(progress_message+1),
                                 sizeof(progress_message)-sizeof(progress_message[0]),

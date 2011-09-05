@@ -6,7 +6,7 @@ LICENSE = "BSD"
 PR = "r6"
 
 SRC_URI = "${CHUMBYSG_GIT_HOST}/chumby-clone/${PN}${CHUMBYSG_GIT_EXTENSION};protocol=${CHUMBYSG_GIT_PROTOCOL}"
-SRCREV = "66f7d5288355414b90bff1c8a58c55160f32e341"
+SRCREV = "c591f5c5efbf75aaa1eebb687f8830f0ddad2b14"
 
 S = "${WORKDIR}/git/src/keygen"
 DEPENDS = "beecrypt"
