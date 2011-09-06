@@ -11,6 +11,8 @@
 #include <sys/reboot.h>
 #include <syslog.h>
 
+#define RESET_SECONDS 3
+
 static int nuke_storage() {
 	int fd;
 	char zeroes[16];
@@ -69,7 +71,7 @@ int main(int argc, char **argv) {
 
 		FD_ZERO(&fds);
 		FD_SET(fd, &fds);
-		delay.tv_sec = 2;
+		delay.tv_sec = RESET_SECONDS;
 		delay.tv_usec = 0;
 
 		/* See if there's any data available */
@@ -81,6 +83,11 @@ int main(int argc, char **argv) {
 			close(fd);
 			return 1;
 		}
+
+		/*
+		 * This will trigger if the button is down, and if
+		 * zero bytes were read (likely due to ETIMEDOUT).
+		 */
 		if (!bytes) {
 			if (button_down)
 				return do_reset_system();
@@ -108,6 +115,6 @@ int main(int argc, char **argv) {
 			continue;
 
 		/* Keydown */
-		button_down = !ev.value;
+		button_down = ev.value;
 	}
 }
