@@ -520,12 +520,13 @@ int main(int argc, char **argv) {
 
       // initiate a quick HPD to re-load the new EDID to the source
       snoopctl = read_byte(0x0);
-      snoopctl |= 0x08;  // force HPD, leave all other bits intact
+      snoopctl |= (0x08 | 0x04);  // force HPD, edid squash, leave all other bits intact
       write_byte( 0x0, snoopctl ); // hpd is now forcing
       
       deepsleep(0, 150); // 150 ms sleep
       
       snoopctl &= 0xF7;
+      snoopctl |= 0x04; // make sure edid squash stays on
       write_byte( 0x0, snoopctl ); // hpd is now releasing
     }
 

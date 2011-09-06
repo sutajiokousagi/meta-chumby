@@ -672,13 +672,13 @@ static void trigger_hpd()
 	
 	/* read snoopctl */
 	read_eeprom("/dev/i2c-0", DEVADDR>>1, 0, &buffer, sizeof(buffer));
-	buffer = buffer | 0x8;
+	buffer = buffer | 0x8 | 0x4;
 	write_eeprom("/dev/i2c-0", DEVADDR>>1, 0, &buffer, sizeof(buffer));
 
 	deepsleep(0,150); // minimum required by spec is 100ms, 150ms should be plenty.
 	event_counter++; // abort any thoughts about changing resolution if they were happening...
 
-	buffer = buffer & ~0x8;
+	buffer = (buffer & ~0x8) | 0x4;
 	write_eeprom("/dev/i2c-0", DEVADDR>>1, 0, &buffer, sizeof(buffer));
 
 	// clear semaphore
