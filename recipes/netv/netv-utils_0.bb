@@ -6,7 +6,7 @@ inherit update-rc.d
 INITSCRIPT_NAME = "netv_service"
 INITSCRIPT_PARAMS = "defaults 50 50"
 
-PR = "r61"
+PR = "r62"
 
 PACKAGE_ARCH = "${MACHINE}"
 
@@ -20,6 +20,7 @@ SRC_URI = "file://helpers/dumpreg.c \
 	file://helpers/derive_km.c \
 	file://helpers/writecached_Km.c \
 	file://helpers/fpga_ctl.c \
+	file://helpers/fpga_setup \
 	file://helpers/chumby_xilinx.h \
 	file://fpga/hdmi_overlay.bin \
 	file://fpga/hdmi_720p.bin \
@@ -34,6 +35,7 @@ SRC_URI = "file://helpers/dumpreg.c \
 	file://helpers/validate_edid.c \
 	file://helpers/make_variable_edid.c \
 	file://helpers/customize_edid.c \
+	file://helpers/fpga_setup \
 "
 
 S = "${WORKDIR}"

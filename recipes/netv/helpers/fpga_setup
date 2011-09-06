@@ -7,4 +7,13 @@
 # Argument: $1 is the number of times it is pressed within 2 seconds [1-7]
 #
 
+if [ $1 -eq 1 ]
+then
+  fpga_ctl E  # just paranoid, sometimes E is turned off by some interaction 
+  fpga_ctl H
+  usleep 150000
+  fpga_ctl h
+
+  # Insert here: call to NeTVBrowser to placeholder for helpful message
+fi
 
