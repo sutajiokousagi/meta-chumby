@@ -1,5 +1,5 @@
 DESCRIPTION = "Utilities for driving NeTV"
-LICENSE = "BSD"
+LICENSE = "BSD-2-Clause"
 
 inherit update-rc.d
 
