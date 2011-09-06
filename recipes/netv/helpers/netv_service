@@ -1,5 +1,10 @@
 #!/bin/sh
 
+# This code uses the BSD 2-clause license: http://www.opensource.org/licenses/bsd-license.php
+#
+# Copyright (c) 2011, Andrew "bunnie" Huang / bunnie@bunniestudios.com
+# All rights reserved.
+
 case "$1" in
 	start)
 	      # very important: make sure clock is input before doing this!
