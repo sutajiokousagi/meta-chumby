@@ -1,0 +1,10 @@
+#!/bin/sh
+
+#
+# This script is called when SETUP button is pressed
+# This event is also delivered to ControlPanel at the same time
+#
+# Argument: $1 is the number of times it is pressed within 2 seconds [1-7]
+#
+
+

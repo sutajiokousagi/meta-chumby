@@ -6,7 +6,7 @@ inherit update-rc.d
 INITSCRIPT_NAME = "netv_service"
 INITSCRIPT_PARAMS = "defaults 50 50"
 
-PR = "r60"
+PR = "r61"
 
 PACKAGE_ARCH = "${MACHINE}"
 
@@ -63,6 +63,7 @@ do_compile() {
 do_install() {
         install -d ${D}${sysconfdir}/init.d
 	install -m 0755 helpers/netv_service ${D}${sysconfdir}/init.d/netv_service
+	install -m 0755 helpers/fpga_setup ${D}${bindir}/fpga_setup
 
 	install -d ${D}${bindir}
 	install -m 0755 dumpreg ${D}${bindir}
