@@ -4,7 +4,7 @@ DESCRIPTION = "Control Panel based on HTML & JavaScript"
 HOMEPAGE = "http://www.chumby.com/"
 AUTHOR = "Torin"
 LICENSE = "GPLv3"
-PR = "r40"
+PR = "r41"
 DEPENDS = "chumby-netvserver"
 RDEPENDS = "chumby-netvserver"
 
