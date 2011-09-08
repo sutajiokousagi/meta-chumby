@@ -4,7 +4,7 @@ LICENSE = "BSD-2-Clause"
 inherit update-rc.d
 
 INITSCRIPT_NAME = "netv_service"
-INITSCRIPT_PARAMS = "defaults 50 50"
+INITSCRIPT_PARAMS = "defaults 50 98"
 
 PR = "r66"
 
