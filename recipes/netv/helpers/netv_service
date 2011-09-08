@@ -22,64 +22,39 @@ case "$1" in
 	      regutil -w LCD_SPU_DUMB_CTRL=0x210ff003
 	      
 	      echo "forcing attached mode to a supported EDID"
-	      # can't force HPD before going into customize_edid because we need to determine
-	      # if a monitor IS present.
-#	      fpga_ctl H  # force HPD
-	      # but leave the sleep in because there is some lag to FPGA startup time
-	      sleep 1  # this may be removeable, but just in case FPGA takes a moment to start...
+	      usleep 50000 
 	      fpga_ctl h  # turn off HPD, customize_edid will do the HPD flipping for us
 
-	      writecached_Km # write the cached Km in, if it exists
-
-	      # provisionary -- if we want to save some time during boot, we can try this.
-	      # but, in fact, rediscovering the EDID is quick, about 2 seconds, and
-	      # probably a good thing to do at every boot. Trying to detect if the
-	      # monitor has changed and really muck with the caches and so forth is
-	      # tricky; we'd have to rely on Ksv values and record them and compare them....
-#	      # validate the EDID
-#	      validate_edid /psp/cached.edid
-#	      if [ $? -ne 0 ] # check return code
-#	      then
-#		  # generate an EDID if the cached edid is not valid
-#		  customize_edid -f /psp/cached.edid
-#		  if [ $? -ne 0 ]
-#		  then # this case happens if for some reason derive_km was triggered
-#		      echo "couldn't get semaphore, waiting 5 seconds and trying again"
-#		      sleep 5 # sleep it off and run it again.
-#		      customize_edid -f /psp/cached.edid
-#		  fi
-#
-#		  modeline /psp/cached.edid
-#	      else 
-#		  modeline /psp/cached.edid
-#	      fi
+	      writecached_Km  &> /dev/null # write the cached Km in, if it exists
 
 	      # this is the simple and arguably more reliable way to handle the
 	      # EDID generation dynamically. Just re-derive it every time we startup.
-	      customize_edid -f /psp/cached.edid
+	      customize_edid -f /psp/cached.edid  &> /dev/null
 
 	      fpga_ctl E  # force EDID squashing
-	      fpga_ctl h  # reconnect device
-
-	      # Km re-derivation is now called by an HPD event at this point
-	      echo "starting matchmode daemon"
-	      matchmoded
-
+	      fpga_ctl H  # settle the link
+	      sleep 2
+	      echo "EDID derivation is traumatic. Settling the link"
+	      fpga_ctl h 
+	      echo "Still settling the link"
+	      sleep 2
+	      
 	      echo "setting genlock lead and margin"
 	      # the following magic numbers are chosen to pick about 6 line's depth buffering
 	      # and "locked" to within about 2 lines depth
-	      # these numbers changed based on resolution -- if not 720p, it's different
+	      # these numbers basically work for all resolutions by and large, 480p might be iffy
 	      putreg 0x16 0x30  # 0x3000 pixels times to buffer
 	      putreg 0x12 0x10  # within 0x1000 we'll call "locked"
 
 	      putreg 3 0x45  # reset the genlock machine
 	      putreg 3 0x25  # now run in normal mode with "smart genlocking" on
 
-	      # this is defunct, just for demo purposes
-	      # setbox 100 100 1080 520 # center an opening
+	      # Km re-derivation is now called by an HPD event at this point
+	      echo "starting matchmode daemon"
+	      matchmoded
 
 	      # temp fix for the pink line at the bottom
-	      sleep 2
+	      usleep 50000
 	      regutil -w LCD_SPU_V_PORCH=0x50005 
 
 		;;
