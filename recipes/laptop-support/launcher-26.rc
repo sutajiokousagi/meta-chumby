@@ -1,0 +1,12 @@
+[Global]
+MoveFirst=false
+ArrowPosition=0
+
+[Entry 0]
+Name=100%
+Icon=xfsm-trash-hilight
+Exec=fpga_ctl w 0 0x81
+Path=/
+Terminal=false
+StartupNotify=false
+

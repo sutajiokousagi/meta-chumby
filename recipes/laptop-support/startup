@@ -1,0 +1,35 @@
+#!/bin/sh
+case "$1" in
+
+	start)
+		modprobe chumby_xilinx
+		mount -oremount,rw /
+		fpga_ctl r
+		pq-setfb
+		sleep 1
+		cat /lib/firmware/pq_overlay.bin > /dev/fpga
+		(echo $$ > /tmp/setfb.pid; while true; do pq-setfb; sleep 2; done) &
+		cp /usr/share/pq/my-asound.conf /etc/asound.conf
+		cp /usr/share/pq/my-asound.conf /media/storage/root/.asoundrc
+		cp /usr/share/pq/my-NetworkManager.conf /etc/NetworkManager/
+		cp /usr/share/pq/panels.xml /etc/xdg/xfce4/panel/
+		cp /usr/share/pq/launcher-26.rc /etc/xdg/xfce4/panel/
+		cp /usr/share/pq/launcher-29.rc /etc/xdg/xfce4/panel/
+		cp /usr/share/pq/01-ntpd /etc/NetworkManager/dispatcher.d/
+		;;
+
+	stop)
+		kill $(cat /tmp/setfb.pid); rm -f /tmp/setfb.pid
+		fpga_ctl r
+		rmmod chumby_xilinx
+		;;
+
+	restart)
+		$0 stop
+		$0 start
+		;;
+
+	*)
+		echo "Usage: $0 [start|stop|restart]"
+		;;
+esac

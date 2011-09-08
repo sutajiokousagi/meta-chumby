@@ -1,0 +1,30 @@
+#!/bin/sh
+case "$1" in
+
+	start)
+		mount -oremount,rw /
+		if [ ! -e /media/storage/swap ]
+		then
+			dd if=/dev/zero of=/media/storage/swap bs=1M count=128
+			mkswap /media/storage/swap
+		fi
+		swapon /media/storage/swap
+		hwclock -s
+		fpga_ctl r
+		pq-setfb
+		sleep 1
+		cat /lib/firmware/pq_overlay.bin > /dev/fpga
+		(startxfce4 2> /dev/null > /dev/null &)
+		;;
+	stop)
+		hwclock -w
+		killall xfce4-session
+		;;
+	restart)
+		$0 stop
+		$0 start
+		;;
+	*)
+		echo "Usage: $0 [start|stop|restart]"
+		;;
+esac
