@@ -33,7 +33,7 @@ case "$1" in
 
 	      fpga_ctl E  # force EDID squashing
 	      fpga_ctl H  # settle the link
-	      sleep 3
+	      sleep 1
 	      echo "EDID derivation is traumatic. Settling the link"
 	      fpga_ctl h 
 	      echo "Still settling the link"
