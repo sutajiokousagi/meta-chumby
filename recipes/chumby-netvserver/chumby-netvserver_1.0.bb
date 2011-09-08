@@ -7,7 +7,7 @@ AUTHOR = "Torin"
 LICENSE = "GPLv3"
 PR = "r97"
 DEPENDS = "qt4-embedded"
-RDEPENDS_${PN} = "task-qt4e-base"
+RDEPENDS_${PN} = "task-qt4e-base curl"
 
 SRC_URI = "${CHUMBYSG_GIT_HOST}/chumby-sg/${PN}${CHUMBYSG_GIT_EXTENSION};protocol=${CHUMBYSG_GIT_PROTOCOL}"
 
