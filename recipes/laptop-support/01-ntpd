@@ -1,0 +1,15 @@
+/etc/NetworkManager/dispatcher.d/01-ntpdate:
+#!/bin/bash
+
+if [ -x /usr/bin/logger ]; then
+  LOGGER="/usr/bin/logger -s -p user.notice -t NetworkManagerDispatcher"
+else
+  LOGGER=echo
+fi
+
+if [ -n "$1" ] && [ $2 == "up" ]; then
+  ntpd -p pool.ntp.org
+fi
+if [ -n "$1" ] && [ $2 == "down" ]; then
+  killall ntpd
+fi

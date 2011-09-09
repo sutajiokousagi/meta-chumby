@@ -1,0 +1,12 @@
+[Entry 0]
+Name=0%
+Icon=xfsm-trash-normal
+Exec=fpga_ctl w 0 0x01
+Path=/
+Terminal=false
+StartupNotify=false
+
+[Global]
+MoveFirst=false
+ArrowPosition=0
+
