@@ -81,8 +81,8 @@ static struct timing_range mode_1 = {
 		.htotal = 800,
 		.vtotal_lines = 525,
 
-		.h_bp = 16,
 		.h_fp = 48,
+		.h_bp = 16,
 		.hsync_width = 96,
 
 		.v_fp_lines = 10,
@@ -106,9 +106,9 @@ static struct timing_range mode_2 = {
 		.htotal = 858,
 		.vtotal_lines = 525,
 
-		.h_fp = 46,
+		.h_fp = 60,
 		.h_bp = 16,
-		.hsync_width = 76,
+		.hsync_width = 62,
 
 		.v_fp_lines = 9,
 		.v_bp_lines = 30,
@@ -131,8 +131,8 @@ static struct timing_range mode_4 = {
 		.htotal = 1650,
 		.vtotal_lines = 750,
 
-		.h_fp = 110,
-		.h_bp = 220,
+		.h_fp = 220,
+		.h_bp = 110,
 		.hsync_width = 40,
 
 		.v_fp_lines = 5,
@@ -156,8 +156,8 @@ static struct timing_range mode_19 = {
 		.htotal = 1980,
 		.vtotal_lines = 750,
 
-		.h_fp = 440,
-		.h_bp = 220,
+		.h_fp = 220,
+		.h_bp = 440,
 		.hsync_width = 40,
 
 		.v_fp_lines = 5,
@@ -181,8 +181,8 @@ static struct timing_range mode_32 = {
 		.htotal = 2750,
 		.vtotal_lines = 1125,
 
-		.h_fp = 638,
-		.h_bp = 148,
+		.h_fp = 148,
+		.h_bp = 638,
 		.hsync_width = 44,
 
 		.v_fp_lines = 4,
