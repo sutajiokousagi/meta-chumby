@@ -10,6 +10,7 @@ DEPENDS = "libnl"
 INC_PR = "r7"
 
 SRC_URI = "http://hostap.epitest.fi/releases/wpa_supplicant-${PV}.tar.gz \
+           file://0001-flush-output.patch \
            file://simple-defconfig \
 "
 

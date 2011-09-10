@@ -1,0 +1,11 @@
+diff -ur wpa_supplicant-0.7.3-stock/src/utils/wpa_debug.c wpa_supplicant-0.7.3/src/utils/wpa_debug.c
+--- a/../src/utils/wpa_debug.c	2011-09-10 22:27:56.485275992 +0800
++++ b/../src/utils/wpa_debug.c	2011-09-10 22:30:09.857276658 +0800
+@@ -123,6 +123,7 @@
+ #endif /* CONFIG_DEBUG_SYSLOG */
+ 	}
+ 	va_end(ap);
++	fflush(NULL);
+ }
+ 
+ 
