@@ -1,5 +1,5 @@
 inherit task
-PR = "r17"
+PR = "r18"
 
 RDEPENDS_${PN} = " \
 #      NeTVServer & Webkit browser (Control Panel)
@@ -9,6 +9,8 @@ RDEPENDS_${PN} = " \
 
 #      FPGA stuff
        netv-utils \
+
+       watchdog \
 
 # Update scripts and conrtab entry
        chumby-updates \
