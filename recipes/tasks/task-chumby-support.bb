@@ -1,5 +1,5 @@
 inherit task
-PR = "r5"
+PR = "r6"
 
 CHUMBY_TASK_EXTRAS = ""
 CHUMBY_TASK_EXTRAS_chumby-silvermoon-netv = " \
