@@ -1,4 +1,4 @@
-PR .= "-amend-r2"
+PR .= "-amend-r3"
 SRC_URI += "file://ssh_host_dsa_key.pub.chumby \
             file://ssh_host_rsa_key.pub.chumby \
             file://ssh_host_dsa_key.chumby \
