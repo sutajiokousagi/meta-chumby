@@ -1,0 +1,19 @@
+diff -ur wpa_supplicant-0.7.3-stock/src/utils/wpa_debug.c wpa_supplicant-0.7.3/src/utils/wpa_debug.c
+--- wpa_supplicant-0.7.3-stock/../src/utils/wpa_debug.c	2011-09-10 22:27:56.485275992 +0800
++++ wpa_supplicant-0.7.3/../src/utils/wpa_debug.c	2011-09-10 23:10:29.909276518 +0800
+@@ -123,6 +123,7 @@
+ #endif /* CONFIG_DEBUG_SYSLOG */
+ 	}
+ 	va_end(ap);
++	fflush(NULL);
+ }
+ 
+ 
+@@ -356,6 +357,7 @@
+ 	va_start(ap, fmt);
+ 	len = vsnprintf(buf, buflen, fmt, ap);
+ 	va_end(ap);
++	wpa_printf(level, "%s", buf);
+ 	wpa_msg_cb(ctx, level, buf, len);
+ 	os_free(buf);
+ }
