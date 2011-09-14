@@ -1,4 +1,4 @@
-PR .= "-amend-r2"
+PR .= "-amend-r3"
 SRC_URI += "file://ssh_host_dsa_key.pub.chumby \
             file://ssh_host_rsa_key.pub.chumby \
             file://ssh_host_dsa_key.chumby \
@@ -20,5 +20,5 @@ do_install_append() {
 
 	#touch ${D}${sysconfdir}/ssh/sshd_not_to_be_run
 
-	install -m 0644 ${WORKDIR}/init.chumby ${D}${sysconfdir}/init.d/sshd
+	install -m 0755 ${WORKDIR}/init.chumby ${D}${sysconfdir}/init.d/sshd
 }
