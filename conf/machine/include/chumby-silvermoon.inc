@@ -89,7 +89,7 @@ chumby_make_rom_chumby-silvermoon-netv () {
         --build_ver=${CHUMBY_BUILD} --force --pad \
         --blockdef=${DEPLOY_DIR_IMAGE}/u-boot-${MACHINE}.bin,1507328,u-bt,1,0,0,0 \
         --blockdef=${DEPLOY_DIR_IMAGE}/zImage-${MACHINE}.bin,3932160,krnA,1,0,0,0 \
-        --blockdef=${DEPLOY_DIR_IMAGE}/zImage-${MACHINE}.bin,3932160,krnB,1,0,0,0 \
+        --blockdef=${DEPLOY_DIR_IMAGE}/recovery-mode,3932160,krnB,1,0,0,0 \
         --blockdef=/dev/null,16384,cpid,1,0,0,0 \
         --blockdef=/dev/null,1024,dcid,1,0,0,0 \
         --blockdef=/dev/null,340992,720p,1,0,0,0 \
@@ -104,6 +104,7 @@ chumby_make_rom_chumby-silvermoon-netv () {
     dd conv=notrunc of=${DEPLOY_DIR_IMAGE}/boot-${MACHINE}.bin seek=96 count=32 if=${DEPLOY_DIR_IMAGE}/config_block.bin
     dd conv=notrunc of=${DEPLOY_DIR_IMAGE}/boot-${MACHINE}.bin seek=128 count=2944 if=${DEPLOY_DIR_IMAGE}/u-boot-${MACHINE}.bin
     dd conv=notrunc of=${DEPLOY_DIR_IMAGE}/boot-${MACHINE}.bin seek=3072 count=7680 if=${DEPLOY_DIR_IMAGE}/zImage-${MACHINE}.bin
+    dd conv=notrunc of=${DEPLOY_DIR_IMAGE}/boot-${MACHINE}.bin seek=10752 count=7680 if=${DEPLOY_DIR_IMAGE}/recovery-mode
     dd conv=notrunc of=${DEPLOY_DIR_IMAGE}/boot-${MACHINE}.bin seek=18466  count=666 if=${DEPLOY_DIR_IMAGE}/hdmi_720p.bin
     dd conv=notrunc of=${DEPLOY_DIR_IMAGE}/boot-${MACHINE}.bin seek=19132 count=3600 if=${DEPLOY_DIR_IMAGE}/logo-preparing.raw.gz
 
