@@ -1,4 +1,4 @@
-PR = "r0"
+PR = "r1"
 
 RDEPENDS_${PN} = "config-util"
 
@@ -24,3 +24,5 @@ addtask deploy_bootimage after do_install
 pkg_postinst_${PN}() {
     config_util --cmd=putblock --dev=/dev/mmcblk0p1 --block=krnB < /boot/recovery-mode
 }
+
+FILES_${PN} += "/boot/recovery-mode"
