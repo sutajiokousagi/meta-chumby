@@ -1,5 +1,5 @@
 inherit task
-PR = "r18"
+PR = "r19"
 
 RDEPENDS_${PN} = " \
 #      NeTVServer & Webkit browser (Control Panel)
@@ -14,6 +14,9 @@ RDEPENDS_${PN} = " \
 
 # Update scripts and conrtab entry
        chumby-updates \
+
+# A separate kernel
+       netv-recovery-blob \
 "
 
 RRECOMMENDS_${PN} = " \
