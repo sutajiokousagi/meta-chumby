@@ -2,7 +2,7 @@ inherit chumbysg-git chumby-info
 
 require u-boot.inc
 
-PR = "r24"
+PR = "r25"
 
 PROVIDES = "virtual/bootloader virtual/chumby-bootimage"
 RPROVIDES_${PN} = "virtual/bootloader virtual/chumby-bootimage"
@@ -73,6 +73,7 @@ do_deploy () {
 addtask deploy_bootimage after do_install
 
 pkg_postinst_${PN}() {
+    if test "x$D" != "x"; then exit 1; fi  # Don't do postinst on build system
     config_util --cmd=putblock --dev=/dev/mmcblk0p1 --block=u-bt < /boot/u-boot.bin
     
     # Generate the dcid and cpid config_util if they're missing
