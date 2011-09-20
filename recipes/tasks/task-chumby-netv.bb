@@ -1,5 +1,7 @@
 inherit task
-PR = "r19"
+PR = "r20"
+
+DEPENDS += "netv-recovery-blob"
 
 RDEPENDS_${PN} = " \
 #      NeTVServer & Webkit browser (Control Panel)
