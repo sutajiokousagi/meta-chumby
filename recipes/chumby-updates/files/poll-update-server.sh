@@ -15,6 +15,13 @@ then
 	UPDATE_DEBUG=1
 fi
 
+# Ensure only one copy is running at a time
+if [ $(ps ax | grep "$0" | grep -v grep | wc -l) -gt 2 ]
+then
+	logger -t update "$0 is already running - exiting"
+	exit 0
+fi
+
 
 if [ ${UPDATE_DEBUG} -eq 0 ]
 then
