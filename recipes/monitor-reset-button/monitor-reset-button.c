@@ -10,6 +10,7 @@
 #include <sys/select.h>
 #include <sys/reboot.h>
 #include <syslog.h>
+#include <signal.h>
 
 #define RESET_SECONDS 3
 
@@ -37,10 +38,32 @@ static int nuke_storage() {
 	close(fd);
 	return 0;
 }
+
+static int kill_watchdog() {
+	int fd;
+	int pid;
+	char bfr[128];
+
+	fd = open("/var/run/watchdog.pid", O_RDONLY);
+	if (-1 == fd) {
+		perror("Unable to find watchdog pid -- is it running");
+		return -1;
+	}
+
+	bzero(bfr, sizeof(bfr));
+	read(fd, bfr, sizeof(bfr)-1);
+	close(fd);
+
+	sscanf(bfr, "%d", &pid);
+	if (pid)
+		return kill(pid, SIGTERM);
+	return -1;
+}
 	
 
 static int do_reset_system(void) {
 	syslog(LOG_INFO, "Button hit.  Nuking storage partition and rebooting.");
+	kill_watchdog();
 	nuke_storage();
 	sync();
 	reboot(RB_AUTOBOOT);
