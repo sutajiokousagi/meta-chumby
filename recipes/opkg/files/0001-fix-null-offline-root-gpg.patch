@@ -1,0 +1,14 @@
+Binary files opkg-read-only-mine/libopkg/.opkg_download.c.swp and opkg-read-only/libopkg/.opkg_download.c.swp differ
+diff -ur opkg-read-only-mine/libopkg/opkg_download.c opkg-read-only/libopkg/opkg_download.c
+--- opkg-read-only-mine/libopkg/opkg_download.c	2011-09-20 23:11:24.000000000 +0800
++++ opkg-read-only/libopkg/opkg_download.c	2011-09-20 23:11:27.000000000 +0800
+@@ -360,7 +360,8 @@
+     if (err)
+ 	return -1;
+ 
+-    sprintf_alloc(&trusted_path, "%s/%s", conf->offline_root, "/etc/opkg/trusted.gpg");
++    sprintf_alloc(&trusted_path, "%s/%s",
++            conf->offline_root?conf->offline_root:"", "/etc/opkg/trusted.gpg");
+     err = gpgme_data_new_from_file (&key, trusted_path, 1);
+     free (trusted_path);
+     if (err)
