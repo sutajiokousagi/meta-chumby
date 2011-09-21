@@ -5,12 +5,13 @@ LICENSE = "GPLv2"
 SRCREV = "609"
 PV = "0.1.8+svnr${SRCPV}"
 CONFLICTS = "ipkg"
-INC_PR = "r11"
+INC_PR = "r12"
 RDEPENDS_${PN} = "gpgme"
 DEPENDS = "gpgme curl"
 
 SRC_URI = "svn://opkg.googlecode.com/svn;module=trunk;proto=http \
 	   file://configure.chumby \
+	   file://0001-fix-null-offline-root-gpg.patch \
 "
 
 S = "${WORKDIR}/trunk"
