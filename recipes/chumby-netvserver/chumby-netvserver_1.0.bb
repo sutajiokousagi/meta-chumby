@@ -5,7 +5,7 @@ DESCRIPTION = "Hardware bridge for NeTV"
 HOMEPAGE = "http://www.chumby.com/"
 AUTHOR = "Torin"
 LICENSE = "GPLv3"
-PR = "r122"
+PR = "r123"
 DEPENDS = "qt4-embedded"
 RDEPENDS_${PN} = "task-qt4e-base curl"
 
