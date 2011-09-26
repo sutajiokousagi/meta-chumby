@@ -11,7 +11,7 @@ PR = "r11a"
 
 CNPLATFORM_chumby-wintergrasp = "wintergrasp"
 
-SRC_URI = "${CHUMBYSG_GIT_HOST}/chumby-clone/${PN}${CHUMBYSG_GIT_EXTENSION};protocol=${CHUMBYSG_GIT_PROTOCOL} \
+SRC_URI = "${CHUMBYSG_GIT_HOST}/chumby-sg/${PN}${CHUMBYSG_GIT_EXTENSION};protocol=${CHUMBYSG_GIT_PROTOCOL} \
           file://chumby-cpid \
 "
 SRCREV = "84fbc563a761ddfa18f108ed13227f8414ae5b5f"
