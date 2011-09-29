@@ -13,44 +13,106 @@
 # 12) Copy the resulting .cpio into the directory defined in step (1)
 # 13) Change to the directory in step (1) and run the do_compile kernel script
 # 14) Copy arch/arm/boot/zImage to recovery files directory
+inherit recovery-image
 inherit chumbysg-git
-SRC_URI = "${CHUMBYSG_GIT_HOST}/chumby-sg/${PN}${CHUMBYSG_GIT_EXTENSION};protocol=${CHUMBYSG_GIT_PROTOCOL} \
-           file://ath9k_common.ko \
-           file://ath9k_htc.ko \
-           file://ath9k_hw.ko \
-           file://ath.ko \
-           file://cfg80211.ko \
-           file://compat.ko \
-           file://compat_firmware_class.ko \
-           file://mac80211.ko \
-           file://rfkill_backport.ko \
+
+COMPAT_WIRELESS_VERSION = "2011-04-17"
+
+SRC_URI = "${CHUMBYSG_GIT_HOST}/chumby-sg/${PN}${CHUMBYSG_GIT_EXTENSION};protocol=${CHUMBYSG_GIT_PROTOCOL};name=netv-recovery \
+           ${CHUMBYSG_GIT_HOST}/chumby-sg/linux-2.6.28-silvermoon${CHUMBYSG_GIT_EXTENSION};subpath=src;protocol=${CHUMBYSG_GIT_PROTOCOL};branch=netv;name=kernel \
+           http://wireless.kernel.org/download/compat-wireless-2.6/compat-wireless-${COMPAT_WIRELESS_VERSION}.tar.bz2 \
            file://htc_9271.fw \
+           file://defconfig \
 "
-S = "${WORKDIR}/git"
+S = "${WORKDIR}"
 SRCREV = "${AUTOREV}"
+PACKAGE_ARCH = "${MACHINE}"
+
+
 PREFERRED_PROVIDER_virtual/libsdl = "libsdl-chumby-simple"
+ANGSTRO_BLACKLIST_pn-libsdl-x11 = "WTF?"
 
-DEPENDS = "libsdl-ttf-simple libsdl-chumby-simple"
-RDEPENDS_${PN} = "libsdl-ttf-simple wpa-supplicant-simple libsdl-chumby-simple"
+COMPATIBLE_MACHINE = "chumby-silvermoon-netv"
+ONLINE_PACKAGE_MANAGEMENT = "none"
+IMAGE_FSTYPES = "cpio"
+IMAGE_DEV_MANAGER = ""
+IMAGE_LINGUAS = ""
+IMAGE_INSTALL = "libsdl-chumby-simple libsdl-ttf wpa-supplicant-simple"
 
-do_install() {
-	install -d ${D}
-	install -d ${D}/modules
-	install -d ${D}/firmware
+MACHINE_POSTPROCESS_COMMAND = ""
 
-	install -m 0755 netv-recovery ${D}/init
-	install -m 0755 AMD.ttf ${D}
-	install -m 0644 ${WORKDIR}/ath9k_common.ko ${D}/modules
-	install -m 0644 ${WORKDIR}/ath9k_htc.ko ${D}/modules
-	install -m 0644 ${WORKDIR}/ath9k_hw.ko ${D}/modules
-	install -m 0644 ${WORKDIR}/ath.ko ${D}/modules
-	install -m 0644 ${WORKDIR}/cfg80211.ko ${D}/modules
-	install -m 0644 ${WORKDIR}/compat.ko ${D}/modules
-	install -m 0644 ${WORKDIR}/compat_firmware_class.ko ${D}/modules
-	install -m 0644 ${WORKDIR}/mac80211.ko ${D}/modules
-	install -m 0644 ${WORKDIR}/rfkill_backport.ko ${D}/modules
 
-	install -m 0644 ${WORKDIR}/htc_9271.fw ${D}/firmware
+ROOTFS_POSTPROCESS_COMMAND += "populate_netv_recovery; "
+
+
+DEPENDS = "libsdl-chumby-simple libsdl-ttf"
+RDEPENDS_${PN} = "libsdl-chumby-simple libsdl-ttf wpa-supplicant-simple"
+
+do_compile_kernel_pass1() {
+	unset CFLAGS CPPFLAGS CXXFLAGS LDFLAGS MACHINE
+	export CROSS_COMPILE="${TARGET_PREFIX}"
+	cp defconfig src/.config
+	cd src; oe_runmake ARCH=arm prepare scripts; cd ..
 }
 
+do_compile_compat_wireless() {
+	unset CFLAGS CPPFLAGS CXXFLAGS LDFLAGS
+	export CROSS_COMPILE="${TARGET_PREFIX}"
+	cd compat-wireless-${COMPAT_WIRELESS_VERSION}
+	./scripts/driver-select ath9k_htc
+	oe_runmake ARCH=arm KLIB=${WORKDIR}/src KLIB_BUILD=${WORKDIR}/src
+	cd ..
+}
+
+do_compile_kernel_pass2() {
+	unset CFLAGS CPPFLAGS CXXFLAGS LDFLAGS MACHINE
+	cp "${DEPLOY_DIR_IMAGE}/${IMAGE_NAME}.rootfs.${IMAGE_FSTYPES}" ./src/recovery.cpio
+	export CROSS_COMPILE="${TARGET_PREFIX}"
+	cd src; oe_runmake ARCH=arm; cd ..
+	cp src/arch/arm/boot/zImage ${DEPLOY_DIR_IMAGE}/recovery-mode
+}
+
+
+do_compile() {
+	cd git
+	oe_runmake
+}
+
+populate_netv_recovery() {
+	install -d ${IMAGE_ROOTFS}
+	install -d ${IMAGE_ROOTFS}/modules
+	install -d ${IMAGE_ROOTFS}/firmware
+
+	install -m 0755 ${WORKDIR}/git/netv-recovery ${IMAGE_ROOTFS}/init
+	install -m 0755 ${WORKDIR}/git/AMD.ttf ${IMAGE_ROOTFS}
+
+	for i in $(find ${WORKDIR}/compat-wireless-${COMPAT_WIRELESS_VERSION}/ -name '*.ko'); do cp $i ${IMAGE_ROOTFS}/modules; done
+
+	install -m 0644 ${WORKDIR}/htc_9271.fw ${IMAGE_ROOTFS}/firmware
+}
+
+do_install() {
+	install -d ${D}/boot
+	install -m 0755 ${WORKDIR}/src/arch/arm/boot/zImage ${D}/boot/recovery-mode
+}
+
+def remove_tasks(deltasks, d):
+    for task in filter(lambda k: d.getVarFlag(k, "task"), d.keys()):
+        deps = d.getVarFlag(task, "deps")
+        for preptask in deltasks:
+            if preptask in deps:
+                deps.remove(preptask)
+        d.setVarFlag(task, "deps", deps)
+python () {
+    remove_tasks(["do_populate_sysroot", "do_package_update_index_ipk"], d)
+}
+
+addtask compile_kernel_pass1 after do_unpack before do_compile
+addtask compile_compat_wireless after do_compile_kernel_pass1 before do_rootfs
+
+addtask compile_kernel_pass2 after do_rootfs do_compile_compat_wireless before do_install
+
 FILES_${PN} += "/init /AMD.ttf /modules/* /firmware/*"
+
+SRC_URI[md5sum] = "96d047a7cef1f0541e741290f64b466c"
+SRC_URI[sha256sum] = "633e302019c328e0f8fba8d69927e533dd4f70d41afbe007c506f709d2bd6059"
