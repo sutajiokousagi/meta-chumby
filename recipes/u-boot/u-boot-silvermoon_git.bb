@@ -2,7 +2,7 @@ inherit chumbysg-git chumby-info
 
 require u-boot.inc
 
-PR = "r25"
+PR = "r26"
 
 PROVIDES = "virtual/bootloader virtual/chumby-bootimage"
 RPROVIDES_${PN} = "virtual/bootloader virtual/chumby-bootimage"
@@ -55,6 +55,7 @@ do_install () {
         fi
     # Put this here, because the do_install_append doesn't seem to be working
     install -m 0755 ${WORKDIR}/logo.raw.gz ${D}/boot
+    install -m 0755 ${WORKDIR}/logo-preparing.raw.gz ${D}/boot
 }
 
 do_deploy () {
