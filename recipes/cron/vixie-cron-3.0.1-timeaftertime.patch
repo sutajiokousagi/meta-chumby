@@ -1,0 +1,35 @@
+diff -ru vixie-cron-3.0.1.or/cron.c vixie-cron-3.0.1/cron.c
+--- vixie-cron-3.0.1.or/cron.c	Wed Mar  7 23:02:08 2001
++++ vixie-cron-3.0.1/cron.c	Wed Mar  7 23:21:44 2001
+@@ -206,14 +206,31 @@
+  * Patch from <pererik@onedial.se>:
+  *   Do cron_sync() before each cron_sleep(), to handle changes to the system
+  *   time.
++ *
++ * Redhat bug 29868:
++ * The above patch introduced an anomaly.
++ *
++ * Unwanted double execution can occur for small backwards adjustments in
++ * clock time, such as may occur on a system that regularly syncs its clock
++ * with an outside time source. I suspect a race condition with sleep(3)
++ * as well that triggers this as well. The solution is to enforce the rule
++ * that we cannot wait for time N to occur twice in a row. Time must be 
++ * elastic enough to absorb these small adjustments. <alane@geeksrus.net>
+  */
+ static void
+ cron_sync() {
++	static time_t lastTarget = 0;
++
+  	register struct tm	*tm;
+ 
+ 	TargetTime = time((time_t*)0);
+ 	tm = localtime(&TargetTime);
+ 	TargetTime += (60 - tm->tm_sec);
++
++        if (TargetTime == lastTarget) {
++        	TargetTime += 60;
++        }
++        lastTarget = TargetTime;
+ }
+ 
+ 
