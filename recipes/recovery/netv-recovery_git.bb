@@ -29,15 +29,12 @@ SRCREV = "${AUTOREV}"
 PACKAGE_ARCH = "${MACHINE}"
 
 
-PREFERRED_PROVIDER_virtual/libsdl = "libsdl-chumby-simple"
-ANGSTRO_BLACKLIST_pn-libsdl-x11 = "WTF?"
-
 COMPATIBLE_MACHINE = "chumby-silvermoon-netv"
 ONLINE_PACKAGE_MANAGEMENT = "none"
 IMAGE_FSTYPES = "cpio"
 IMAGE_DEV_MANAGER = ""
 IMAGE_LINGUAS = ""
-IMAGE_INSTALL = "libsdl-chumby-simple libsdl-ttf wpa-supplicant-simple"
+IMAGE_INSTALL = "wpa-supplicant-simple freetype"
 
 MACHINE_POSTPROCESS_COMMAND = ""
 
@@ -45,8 +42,8 @@ MACHINE_POSTPROCESS_COMMAND = ""
 ROOTFS_POSTPROCESS_COMMAND += "populate_netv_recovery; "
 
 
-DEPENDS = "libsdl-chumby-simple libsdl-ttf"
-RDEPENDS_${PN} = "libsdl-chumby-simple libsdl-ttf wpa-supplicant-simple"
+DEPENDS = "libsdl-chumby-simple libsdl-ttf-simple"
+RDEPENDS_${PN} = "libsdl-ttf-simple freetype wpa-supplicant-simple"
 
 do_compile_kernel_pass1() {
 	unset CFLAGS CPPFLAGS CXXFLAGS LDFLAGS MACHINE
@@ -75,7 +72,8 @@ do_compile_kernel_pass2() {
 
 do_compile() {
 	cd git
-	oe_runmake
+	LDFLAGS="${LDFLAGS}"
+	oe_runmake MY_LIBS="-lm -lSDL-ttf-simple -lSDL-chumby-simple -lfreetype -lz -lpthread"
 }
 
 populate_netv_recovery() {
