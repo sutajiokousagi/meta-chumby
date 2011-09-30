@@ -12,7 +12,7 @@
 #include <syslog.h>
 #include <signal.h>
 
-#define RESET_SECONDS 3
+#define RESET_SECONDS 5
 
 static int nuke_storage() {
 	int fd;
