@@ -1,0 +1,2 @@
+ACTION=="add", SUBSYSTEM=="net", KERNEL=="usb0", RUN+="/sbin/ifconfig usb0 10.0.88.1 netmask 255.255.255.0 up"
+ACTION=="add", SUBSYSTEM=="net", KERNEL=="usb0", RUN+="/bin/sh -c 'sleep 5; /etc/init.d/sshd start'"
