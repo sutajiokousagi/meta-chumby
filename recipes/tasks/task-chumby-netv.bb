@@ -20,5 +20,6 @@ RDEPENDS_${PN} = " \
 "
 
 RRECOMMENDS_${PN} = " \
-    perl \
+	ca-certificates \
+	perl \
 "
