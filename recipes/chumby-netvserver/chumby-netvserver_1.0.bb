@@ -5,7 +5,7 @@ DESCRIPTION = "Hardware bridge for NeTV"
 HOMEPAGE = "http://www.chumby.com/"
 AUTHOR = "Torin"
 LICENSE = "GPLv3"
-PR = "r141"
+PR = "r142"
 DEPENDS = "qt4-embedded"
 RDEPENDS_${PN} = "task-qt4e-base curl"
 
@@ -38,7 +38,6 @@ do_install() {
     install -m 0755 ${WORKDIR}/git/etc/NeTVServer.ini        ${D}${sysconfdir}
     install -m 0755 ${WORKDIR}/git/etc/chumby-netvserver.sh  ${D}${sysconfdir}/init.d/chumby-netvserver
     install -m 0755 ${DOCROOT}/favicon.ico                   ${D}/usr/share/netvserver/docroot
-    install -m 0755 ${DOCROOT}/test.html               	     ${D}/usr/share/netvserver/docroot
     install -m 0755 ${DOCROOT}/html_remote.html              ${D}/usr/share/netvserver/docroot
 
     cp -rf ${DOCROOT}/html_test                              ${D}/usr/share/netvserver/docroot
