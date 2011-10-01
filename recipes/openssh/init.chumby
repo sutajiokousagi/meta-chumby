@@ -11,6 +11,11 @@ if test -f /etc/default/ssh; then
 fi
 
 check_for_no_start() {
+    # if we're plugged in via USB, start SSH
+    if [ "x$(cat /sys/class/net/usb0/operstate)" = "xup" ]; then
+        return 0
+    fi
+
     # forget it if we're trying to start, and /etc/ssh/sshd_not_to_be_run exists
     if [ -e /etc/ssh/sshd_not_to_be_run ]; then 
 	echo "OpenBSD Secure Shell server not in use (/etc/ssh/sshd_not_to_be_run)"
