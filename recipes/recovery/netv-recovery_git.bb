@@ -27,6 +27,8 @@ S = "${WORKDIR}"
 SRCREV = "${AUTOREV}"
 PACKAGE_ARCH = "${MACHINE}"
 RECOVERY_IMAGE_ROOTFS = "${WORKDIR}/recovery"
+PR = "r1"
+RREPLACES_${PN} = "netv-recovery-blob"
 
 COMPATIBLE_MACHINE = "chumby-silvermoon-netv"
 ONLINE_PACKAGE_MANAGEMENT = "none"
