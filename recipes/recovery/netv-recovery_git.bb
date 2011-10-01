@@ -27,14 +27,15 @@ S = "${WORKDIR}"
 SRCREV = "${AUTOREV}"
 PACKAGE_ARCH = "${MACHINE}"
 RECOVERY_IMAGE_ROOTFS = "${WORKDIR}/recovery"
-PR = "r1"
+RECOVERY_IMAGE_FILE   = "${WORKDIR}/recovery.cpio"
+PR = "r2"
 RREPLACES_${PN} = "netv-recovery-blob"
 
 COMPATIBLE_MACHINE = "chumby-silvermoon-netv"
 ONLINE_PACKAGE_MANAGEMENT = "none"
 MACHINE_POSTPROCESS_COMMAND = ""
 
-DEPENDS = "libsdl-chumby-simple libsdl-ttf-simple wpa-supplicant-simple"
+DEPENDS = "libsdl-chumby-simple libsdl-ttf-simple wpa-supplicant-simple:do_package_stage_all makedevs-native:do_populate_sysroot fakeroot-native:do_populate_sysroot"
 
 do_compile_kernel_pass1() {
 	unset CFLAGS CPPFLAGS CXXFLAGS LDFLAGS MACHINE
@@ -59,10 +60,12 @@ do_compile() {
 	${STRIP} netv-recovery
 }
 
-do_populate_netv_recovery() {
+fakeroot do_populate_netv_recovery() {
 	install -d ${RECOVERY_IMAGE_ROOTFS}
 	install -d ${RECOVERY_IMAGE_ROOTFS}/modules
 	install -d ${RECOVERY_IMAGE_ROOTFS}/firmware
+	install -d ${RECOVERY_IMAGE_ROOTFS}/dev
+	install -d ${RECOVERY_IMAGE_ROOTFS}/dev/input
 
 	install -m 0755 ${WORKDIR}/git/netv-recovery ${RECOVERY_IMAGE_ROOTFS}/init
 	install -m 0755 ${WORKDIR}/git/AMD.ttf ${RECOVERY_IMAGE_ROOTFS}
@@ -77,13 +80,41 @@ do_populate_netv_recovery() {
 	do
 		ar p ${DEPLOY_DIR_IPK}/$i data.tar.gz | tar xz
 	done
+	mknod ${RECOVERY_IMAGE_ROOTFS}/dev/mem          c 1 1
+	mknod ${RECOVERY_IMAGE_ROOTFS}/dev/kmem         c 1 2
+	mknod ${RECOVERY_IMAGE_ROOTFS}/dev/null         c 1 3
+	mknod ${RECOVERY_IMAGE_ROOTFS}/dev/zero         c 1 5
+	mknod ${RECOVERY_IMAGE_ROOTFS}/dev/random       c 1 8
+	mknod ${RECOVERY_IMAGE_ROOTFS}/dev/urandom      c 1 9
+	mknod ${RECOVERY_IMAGE_ROOTFS}/dev/kmsg         c 1 11
+
+	mknod ${RECOVERY_IMAGE_ROOTFS}/dev/tty0         c 4 0
+	mknod ${RECOVERY_IMAGE_ROOTFS}/dev/ttyS0        c 4 64
+
+	mknod ${RECOVERY_IMAGE_ROOTFS}/dev/tty          c 5 0
+	mknod ${RECOVERY_IMAGE_ROOTFS}/dev/console      c 5 1
+
+	mknod ${RECOVERY_IMAGE_ROOTFS}/dev/input/event0 c 13 64
+	mknod ${RECOVERY_IMAGE_ROOTFS}/dev/input/event1 c 13 65
+
+	mknod ${RECOVERY_IMAGE_ROOTFS}/dev/fb0          c 29 0
+
+	mknod ${RECOVERY_IMAGE_ROOTFS}/dev/mmcblk0      b 179 0
+	mknod ${RECOVERY_IMAGE_ROOTFS}/dev/mmcblk0p1    b 179 1
+	mknod ${RECOVERY_IMAGE_ROOTFS}/dev/mmcblk0p2    b 179 2
+	mknod ${RECOVERY_IMAGE_ROOTFS}/dev/mmcblk0p3    b 179 3
+	mknod ${RECOVERY_IMAGE_ROOTFS}/dev/mmcblk0p4    b 179 4
+
+	mknod ${RECOVERY_IMAGE_ROOTFS}/dev/ttyGS0       c 249 0
+
+	cd ${RECOVERY_IMAGE_ROOTFS} && (find . | cpio -o -H newc >${RECOVERY_IMAGE_FILE})
 }
 
 do_compile_kernel_pass2() {
 	unset CFLAGS CPPFLAGS CXXFLAGS LDFLAGS MACHINE
 	export CROSS_COMPILE="${TARGET_PREFIX}"
 	cd src
-	sed -i 's|^CONFIG_INITRAMFS_SOURCE=.*$|CONFIG_INITRAMFS_SOURCE="${RECOVERY_IMAGE_ROOTFS}"|g' .config
+	sed -i 's|^CONFIG_INITRAMFS_SOURCE=.*$|CONFIG_INITRAMFS_SOURCE="${RECOVERY_IMAGE_FILE}"|g' .config
 	oe_runmake ARCH=arm
 	cd ..
 	cp src/arch/arm/boot/zImage ${DEPLOY_DIR_IMAGE}/recovery-mode
