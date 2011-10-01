@@ -4,9 +4,9 @@ DESCRIPTION = "IR remote plugin for Qt"
 HOMEPAGE = "http://www.chumby.com/"
 AUTHOR = "Sean Cross"
 LICENSE = "GPLv3"
-PR = "r0"
+PR = "r1"
 DEPENDS = "qt4-embedded"
-RDEPENDS_${PN} = "task-qt4e-base"
+RDEPENDS_${PN} = "task-qt4e-minimal"
 
 SRC_URI = "${CHUMBYSG_GIT_HOST}/chumby-sg/${PN}${CHUMBYSG_GIT_EXTENSION};protocol=${CHUMBYSG_GIT_PROTOCOL}"
 
