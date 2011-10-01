@@ -16,6 +16,11 @@ check_for_no_start() {
         return 0
     fi
 
+    # Start if /psp/start_sshd is present (legacy check)
+    if [ -e /psp/start_sshd ]; then
+        return 0
+    fi
+
     # forget it if we're trying to start, and /etc/ssh/sshd_not_to_be_run exists
     if [ -e /etc/ssh/sshd_not_to_be_run ]; then 
 	echo "OpenBSD Secure Shell server not in use (/etc/ssh/sshd_not_to_be_run)"
