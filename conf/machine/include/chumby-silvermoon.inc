@@ -29,7 +29,7 @@ MACHINE_EXTRA_RDEPENDS += " \
     chumby-udev-rules \
 "
 
-MACHINE_EXTRA_RRECOMMENDS = " kernel-modules"
+MACHINE_EXTRA_RRECOMMENDS = ""
 
 INITRAMFS_IMAGE = ""
 

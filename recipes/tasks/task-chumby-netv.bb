@@ -1,5 +1,12 @@
 inherit task
-PR = "r23"
+PR = "r24"
+
+CHUMBY_KERNEL_MODULES = "\
+    kernel-module-cfg80211 kernel-module-chumby-xilinx \
+    kernel-module-g-cdc kernel-module-g-ether kernel-module-g-file-storage \
+    kernel-module-g-serial kernel-module-g-zero \
+    kernel-module-unionfs \
+"
 
 RDEPENDS_${PN} = " \
 #      NeTVServer & Webkit browser (Control Panel)
@@ -17,6 +24,7 @@ RDEPENDS_${PN} = " \
 
 # A separate kernel
        netv-recovery \
+       ${CHUMBY_KERNEL_MODULES} \
 "
 
 RRECOMMENDS_${PN} = " \
