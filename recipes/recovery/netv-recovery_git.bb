@@ -1,18 +1,10 @@
 # The recovery image is rather strange in how it's deployed:
-#  1) Copy defconfig from files/ to a copy of the kernel that's checked out locally
-#  2) Enter devshell
-#  3) Change to the local directory
-#  4) Begin compilation.  Wait for failure.
-#  5) Exit devshell
-#  6) Run the do_compile step of compat-wireless-ath9k-htc
-#  7) Enter the compat-wireless-ath9k-htc directory
-#  8) Modify the run.do_compile script and point it at the path in step (1)
-#  9) Run the modified do_compile script
-# 10) Run "for i in $(find . -name '*.ko'); do cp $i ~/chumby-oe/meta-chumby/recipes/recovery/files/; done"
-# 11) Run "bitbake chumby-recovery-image"
-# 12) Copy the resulting .cpio into the directory defined in step (1)
-# 13) Change to the directory in step (1) and run the do_compile kernel script
-# 14) Copy arch/arm/boot/zImage to recovery files directory
+# 1) Build just enough of a kernel to let modules build
+# 2) Build wifi modules
+# 3) Build recovery console
+# 4) Create cpio with output of (2) and (3)
+# 5) Build a kernel with the cpio image attached from (4)
+# 6) Package the kernel
 inherit chumbysg-git
 
 COMPAT_WIRELESS_VERSION = "2011-04-17"
@@ -28,7 +20,7 @@ SRCREV = "${AUTOREV}"
 PACKAGE_ARCH = "${MACHINE}"
 RECOVERY_IMAGE_ROOTFS = "${WORKDIR}/recovery"
 RECOVERY_IMAGE_FILE   = "${WORKDIR}/recovery.cpio"
-PR = "r2"
+PR = "r3"
 RREPLACES_${PN} = "netv-recovery-blob"
 
 COMPATIBLE_MACHINE = "chumby-silvermoon-netv"
