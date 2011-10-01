@@ -1,5 +1,6 @@
 DESCRIPTION = "QT4 Embedded minimal Image Feed"
-PR = "r0"
+RREPLACES_${PN} = "task-qt4e-base"
+PR = "r1"
 LICENSE = "MIT"
 
 inherit task
