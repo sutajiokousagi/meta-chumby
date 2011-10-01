@@ -2,7 +2,6 @@ inherit rootfs_${IMAGE_PKGTYPE}
 inherit kernel-arch
 
 LICENSE = "MIT"
-PACKAGES = ""
 
 #
 # udev, devfsd, busybox-mdev (from busybox) or none
@@ -70,21 +69,18 @@ def dbg_packages(d):
                       for pkg in chain(oe.packagegroup.active_packages(features, d),
                                        oe.packagegroup.active_recipes(features, d)))
 
-PACKAGE_GROUP_dbg = "${@dbg_packages(d)}"
-PACKAGE_GROUP_dbg[optional] = "1"
-PACKAGE_GROUP_dev = "${@string_set('%s-dev' % pn for pn in oe.packagegroup.active_recipes(image_features_noextras(d), d))}"
-PACKAGE_GROUP_dev[optional] = "1"
-PACKAGE_GROUP_doc = "${@string_set('%s-doc' % pn for pn in oe.packagegroup.active_recipes(image_features_noextras(d), d))}"
-PACKAGE_GROUP_doc[optional] = "1"
+RECOVERY_PACKAGE_GROUP_dbg = "${@dbg_packages(d)}"
+RECOVERY_PACKAGE_GROUP_dbg[optional] = "1"
+RECOVERY_PACKAGE_GROUP_dev = "${@string_set('%s-dev' % pn for pn in oe.packagegroup.active_recipes(image_features_noextras(d), d))}"
+RECOVERY_PACKAGE_GROUP_dev[optional] = "1"
+RECOVERY_PACKAGE_GROUP_doc = "${@string_set('%s-doc' % pn for pn in oe.packagegroup.active_recipes(image_features_noextras(d), d))}"
+RECOVERY_PACKAGE_GROUP_doc[optional] = "1"
 
 # "export IMAGE_BASENAME" not supported at this time
 IMAGE_BASENAME[export] = "1"
 
 # We need to recursively follow RDEPENDS and RRECOMMENDS for images
 do_rootfs[recrdeptask] += "do_deploy "
-
-# Images are generally built explicitly, do not need to be part of world.
-EXCLUDE_FROM_WORLD = "1"
 
 USE_DEVFS ?= "0"
 USE_DEVFS[type] = "boolean"

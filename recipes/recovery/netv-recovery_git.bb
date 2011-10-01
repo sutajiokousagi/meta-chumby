@@ -13,7 +13,6 @@
 # 12) Copy the resulting .cpio into the directory defined in step (1)
 # 13) Change to the directory in step (1) and run the do_compile kernel script
 # 14) Copy arch/arm/boot/zImage to recovery files directory
-inherit recovery-image
 inherit chumbysg-git
 
 COMPAT_WIRELESS_VERSION = "2011-04-17"
@@ -27,23 +26,13 @@ SRC_URI = "${CHUMBYSG_GIT_HOST}/chumby-sg/${PN}${CHUMBYSG_GIT_EXTENSION};protoco
 S = "${WORKDIR}"
 SRCREV = "${AUTOREV}"
 PACKAGE_ARCH = "${MACHINE}"
-
+RECOVERY_IMAGE_ROOTFS = "${WORKDIR}/recovery"
 
 COMPATIBLE_MACHINE = "chumby-silvermoon-netv"
 ONLINE_PACKAGE_MANAGEMENT = "none"
-IMAGE_FSTYPES = "cpio"
-IMAGE_DEV_MANAGER = ""
-IMAGE_LINGUAS = ""
-IMAGE_INSTALL = "wpa-supplicant-simple freetype"
-
 MACHINE_POSTPROCESS_COMMAND = ""
 
-
-ROOTFS_POSTPROCESS_COMMAND += "populate_netv_recovery; "
-
-
 DEPENDS = "libsdl-chumby-simple libsdl-ttf-simple"
-RDEPENDS_${PN} = "libsdl-ttf-simple freetype wpa-supplicant-simple"
 
 do_compile_kernel_pass1() {
 	unset CFLAGS CPPFLAGS CXXFLAGS LDFLAGS MACHINE
@@ -61,38 +50,54 @@ do_compile_compat_wireless() {
 	cd ..
 }
 
+do_compile() {
+	cd git
+	LDFLAGS="${LDFLAGS}"
+	oe_runmake MY_LIBS="-lm -lSDL-ttf-simple -lSDL-chumby-simple -lfreetype -lz -lm"
+	${STRIP} netv-recovery
+}
+
+do_populate_netv_recovery() {
+	install -d ${RECOVERY_IMAGE_ROOTFS}
+	install -d ${RECOVERY_IMAGE_ROOTFS}/modules
+	install -d ${RECOVERY_IMAGE_ROOTFS}/firmware
+
+	install -m 0755 ${WORKDIR}/git/netv-recovery ${RECOVERY_IMAGE_ROOTFS}/init
+	install -m 0755 ${WORKDIR}/git/AMD.ttf ${RECOVERY_IMAGE_ROOTFS}
+
+	for i in $(find ${WORKDIR}/compat-wireless-${COMPAT_WIRELESS_VERSION}/ -name '*.ko'); do cp $i ${RECOVERY_IMAGE_ROOTFS}/modules; done
+
+	install -m 0644 ${WORKDIR}/htc_9271.fw ${RECOVERY_IMAGE_ROOTFS}/firmware
+
+	# Extract wpa_supplicant and the C libraries
+	cd ${RECOVERY_IMAGE_ROOTFS}
+	for i in 'armv5te/wpa-supplicant-simple_*' 'armv5te/libnl2_2.0-r5.0.9_*' 'armv5te/libnl-genl2_*' 'armv5te/libc6_*' 'armv5te/libfreetype6_*' 'armv5te/libz1_*'
+	do
+		ar p ${DEPLOY_DIR_IPK}/$i data.tar.gz | tar xz
+	done
+}
+
 do_compile_kernel_pass2() {
 	unset CFLAGS CPPFLAGS CXXFLAGS LDFLAGS MACHINE
-	cp "${DEPLOY_DIR_IMAGE}/${IMAGE_NAME}.rootfs.${IMAGE_FSTYPES}" ./src/recovery.cpio
 	export CROSS_COMPILE="${TARGET_PREFIX}"
-	cd src; oe_runmake ARCH=arm; cd ..
+	cd src
+	sed -i 's|^CONFIG_INITRAMFS_SOURCE=.*$|CONFIG_INITRAMFS_SOURCE="${RECOVERY_IMAGE_ROOTFS}"|g' .config
+	oe_runmake ARCH=arm
+	cd ..
 	cp src/arch/arm/boot/zImage ${DEPLOY_DIR_IMAGE}/recovery-mode
 }
 
 
-do_compile() {
-	cd git
-	LDFLAGS="${LDFLAGS}"
-	oe_runmake MY_LIBS="-lm -lSDL-ttf-simple -lSDL-chumby-simple -lfreetype -lz -lpthread"
-}
-
-populate_netv_recovery() {
-	install -d ${IMAGE_ROOTFS}
-	install -d ${IMAGE_ROOTFS}/modules
-	install -d ${IMAGE_ROOTFS}/firmware
-
-	install -m 0755 ${WORKDIR}/git/netv-recovery ${IMAGE_ROOTFS}/init
-	install -m 0755 ${WORKDIR}/git/AMD.ttf ${IMAGE_ROOTFS}
-
-	for i in $(find ${WORKDIR}/compat-wireless-${COMPAT_WIRELESS_VERSION}/ -name '*.ko'); do cp $i ${IMAGE_ROOTFS}/modules; done
-
-	install -m 0644 ${WORKDIR}/htc_9271.fw ${IMAGE_ROOTFS}/firmware
-}
-
 do_install() {
 	install -d ${D}/boot
-	install -m 0755 ${WORKDIR}/src/arch/arm/boot/zImage ${D}/boot/recovery-mode
+	install -m 0755 ${DEPLOY_DIR_IMAGE}/recovery-mode ${D}/boot/recovery-mode
 }
+
+pkg_postinst_${PN}() {
+    if test "x$D" != "x"; then exit 1; fi  # Don't do postinst on build system
+    config_util --cmd=putblock --dev=/dev/mmcblk0p1 --block=krnB < /boot/recovery-mode
+}
+
 
 def remove_tasks(deltasks, d):
     for task in filter(lambda k: d.getVarFlag(k, "task"), d.keys()):
@@ -106,11 +111,11 @@ python () {
 }
 
 addtask compile_kernel_pass1 after do_unpack before do_compile
-addtask compile_compat_wireless after do_compile_kernel_pass1 before do_rootfs
+addtask compile_compat_wireless after do_compile_kernel_pass1 before do_compile
+addtask populate_netv_recovery after do_compile before do_compile_kernel_pass2
+addtask compile_kernel_pass2 after do_populate_netv_recovery before do_install
 
-addtask compile_kernel_pass2 after do_rootfs do_compile_compat_wireless before do_install
-
-FILES_${PN} += "/init /AMD.ttf /modules/* /firmware/*"
+FILES_${PN} += "/boot/recovery-mode"
 
 SRC_URI[md5sum] = "96d047a7cef1f0541e741290f64b466c"
 SRC_URI[sha256sum] = "633e302019c328e0f8fba8d69927e533dd4f70d41afbe007c506f709d2bd6059"
