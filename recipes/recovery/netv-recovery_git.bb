@@ -32,7 +32,7 @@ COMPATIBLE_MACHINE = "chumby-silvermoon-netv"
 ONLINE_PACKAGE_MANAGEMENT = "none"
 MACHINE_POSTPROCESS_COMMAND = ""
 
-DEPENDS = "libsdl-chumby-simple libsdl-ttf-simple"
+DEPENDS = "libsdl-chumby-simple libsdl-ttf-simple wpa-supplicant-simple"
 
 do_compile_kernel_pass1() {
 	unset CFLAGS CPPFLAGS CXXFLAGS LDFLAGS MACHINE
