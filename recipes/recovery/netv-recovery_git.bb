@@ -35,7 +35,7 @@ COMPATIBLE_MACHINE = "chumby-silvermoon-netv"
 ONLINE_PACKAGE_MANAGEMENT = "none"
 MACHINE_POSTPROCESS_COMMAND = ""
 
-DEPENDS = "libsdl-chumby-simple libsdl-ttf-simple wpa-supplicant-simple:do_package_stage_all makedevs-native:do_populate_sysroot fakeroot-native:do_populate_sysroot"
+DEPENDS_append_virtclass_native = " wpa-supplicant-simple makedevs-native fakeroot-native libsdl-ttf-simple libsdl-chumby-simple"
 
 do_compile_kernel_pass1() {
 	unset CFLAGS CPPFLAGS CXXFLAGS LDFLAGS MACHINE
