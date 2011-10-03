@@ -1,5 +1,5 @@
 inherit task
-PR = "r21"
+PR = "r22"
 
 RDEPENDS_${PN} = " \
 #      NeTVServer & Webkit browser (Control Panel)
@@ -20,5 +20,6 @@ RDEPENDS_${PN} = " \
 "
 
 RRECOMMENDS_${PN} = " \
-    perl \
+	ca-certificates \
+	perl \
 "
