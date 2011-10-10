@@ -148,6 +148,31 @@ static struct timing_range mode_4 = {
 	.syncCode = 0x1e,  // digital separate sync, vertical sync is positive; hsync is positive
 };
 
+static struct timing_range mode_17 = {
+	.actual = {
+		.hactive = 720,
+		.vactive = 576,
+
+		.htotal = 864,
+		.vtotal_lines = 625,
+
+		.h_fp = 68,
+		.h_bp = 12,
+		.hsync_width = 64,
+
+		.v_fp_lines = 5,
+		.v_bp_lines = 39,
+		.vsync_width_lines = 5,
+
+		.pixclk_in_MHz = 27.00,
+
+		.status = STATUS_OK,
+	},
+	.name = "mode 17 576p PAL",
+	.number = 17,
+	.syncCode = 0x18,  // digital separate sync, vertical sync is negative; hsync is negative
+};
+
 static struct timing_range mode_19 = {
 	.actual = {
 		.hactive = 1280,
@@ -202,6 +227,7 @@ static struct timing_range *timings[] = {
 	&mode_1,
 	&mode_2,
 	&mode_4,
+	&mode_17,
 	&mode_19,
 	&mode_32,
 	NULL,
