@@ -1,5 +1,5 @@
 inherit task
-PR = "r24"
+PR = "r25"
 
 CHUMBY_KERNEL_MODULES = "\
     kernel-module-cfg80211 kernel-module-chumby-xilinx \
@@ -25,6 +25,9 @@ RDEPENDS_${PN} = " \
 # A separate kernel
        netv-recovery \
        ${CHUMBY_KERNEL_MODULES} \
+
+# Chinese font
+       font-wenquanyi \
 "
 
 RRECOMMENDS_${PN} = " \
