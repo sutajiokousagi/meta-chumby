@@ -101,6 +101,7 @@ static struct timing_info self_timed_720p = {
 	.vsync_width_lines 	= 5,
 	.pixclk_in_MHz 		= 74,
 	.status			= STATUS_DISCONNECTED,
+	.fields			= 1,
 };
 
 
