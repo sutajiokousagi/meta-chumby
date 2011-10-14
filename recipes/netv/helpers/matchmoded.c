@@ -89,7 +89,6 @@ static int lockout_attach = 0;
 static int attach_lockedout = 0;
 static int rxpll_state = PLL_UNLOCKED;
 static int event_counter = 0;
-static int overlay_semaphore = 0;
 
 static struct timing_info self_timed_720p = {
         .hactive 		= 1280,
@@ -370,6 +369,7 @@ static int
 read_timing_info(struct timing_info *ti)
 {
 	uint8_t 			buffer[33];
+	bzero(ti, sizeof(*ti));
 
 	if(read_eeprom("/dev/i2c-0", DEVADDR>>1, 32, buffer, sizeof(buffer)-1))
 		return 1;
@@ -536,6 +536,12 @@ set_timing(int fb0, struct timing_info *timing_info)
 
 	var.activate |= FB_ACTIVATE_NOW | FB_ACTIVATE_FORCE;
 
+	var.yres *= timing_info->fields;
+	var.yres_virtual *= timing_info->fields;
+	var.vmode = FB_VMODE_NONINTERLACED;
+	if (timing_info->fields == 2)
+		var.vmode = FB_VMODE_INTERLACED;
+
 	err = ioctl(fb0, FBIOPUT_VSCREENINFO, &var);
 	if (-1 == err) {
 		perror("Unable to set variable screen info");
@@ -556,82 +562,6 @@ send_message(char *txt, int width, int height, int bpp)
 }
 
 
-static int
-load_fpga_firmware(int fpga, char *filename)
-{
-	char firmware_path[1024];
-	unsigned char reg_buf[32];
-	unsigned int bytes_left, offset;
-	struct stat buf;
-	int fd, err;
-
-
-	fprintf(stderr, "Resetting the FPGA to load firmware %s\n", filename);
-
-	snprintf(firmware_path, sizeof(firmware_path)-1, "/lib/firmware/%s", filename);
-
-	if (-1 == stat(firmware_path, &buf)) {
-		perror("Couldn't load firware file");
-		return 1;
-	}
-
-	char firmware[buf.st_size];
-
-	fd = open(firmware_path, O_RDONLY);
-	if (-1 == fd) {
-		perror("Couldn't open firmware file");
-		return 1;
-	}
-
-	bytes_left = sizeof(firmware);
-	offset = 0;
-	while (bytes_left > 0) {
-		err = read(fd, firmware+offset, bytes_left);
-		if (-1 == err) {
-			perror("Couldn't read firmware file");
-			close(fd);
-			return 2;
-		}
-		if (0 == err) {
-			fprintf(stderr, "Firmware file was smaller than it should be\n");
-			close(fd);
-			return 3;
-		}
-
-		offset += err;
-		bytes_left -= err;
-	}
-	close(fd);
-
-
-	/* Read the old register values */
-	read_eeprom("/dev/i2c-0", DEVADDR>>1, 0, reg_buf, sizeof(reg_buf));
-
-
-	/* Reset the FPGA */
-	ioctl(fpga, FPGA_IOCRESET, NULL);
-	usleep(40000); /* Takes up to 40 ms to respond */
-
-	bytes_left = sizeof(firmware);
-	offset = 0;
-	while (bytes_left > 0) {
-		err = write(fpga, firmware+offset, bytes_left>4096?4096:bytes_left);
-		if (-1 == err) {
-			perror("Couldn't write firmware file");
-			fprintf(stderr, "Error at offset %d\n", offset);
-			return 4;
-		}
-		if (0 == err) {
-			fprintf(stderr, "FPGA closed firmware descriptor\n");
-			return 5;
-		}
-		offset += err;
-		bytes_left -= err;
-	}
-	write_eeprom("/dev/i2c-0", DEVADDR>>1, 0, reg_buf, sizeof(reg_buf));
-
-	return 0;
-}
 
 static void switch_to_overlay()
 {
@@ -652,8 +582,6 @@ static void switch_to_overlay()
 static void switch_to_720p()
 {
 	unsigned char buffer;
-	struct timespec waittime;
-	struct timespec remtime;
 
 	read_eeprom("/dev/i2c-0", DEVADDR>>1, 3, &buffer, sizeof(buffer));
 	// trigger this only if we're coming from pass-through mode
@@ -665,14 +593,6 @@ static void switch_to_720p()
 	  buffer = (buffer & ~0x4) | 0x8;
 	  write_eeprom("/dev/i2c-0", DEVADDR>>1, 3, &buffer, sizeof(buffer));
 
-#if 0  // let's see if we really need this...
-	  /* Reset the PLL */
-	  read_eeprom("/dev/i2c-0", DEVADDR>>1, 3, &buffer, sizeof(buffer));
-	  buffer = buffer | 0x10;
-	  write_eeprom("/dev/i2c-0", DEVADDR>>1, 3, &buffer, sizeof(buffer));
-	  buffer = buffer & ~0x10;
-	  write_eeprom("/dev/i2c-0", DEVADDR>>1, 3, &buffer, sizeof(buffer));
-#endif
 	  lockout_attach = 0;
 	  
 	  if( attach_lockedout ) {
@@ -683,40 +603,6 @@ static void switch_to_720p()
 	} else {
 	  fprintf( stderr, "<action> Already in 720pST, ignoring call to set 720pST.\n" );
 	}
-}
-
-static void trigger_hpd()
-{
-	unsigned char buffer;
-
-	/* if semaphore is active, abort this, because someone already initiated the HPD pull */
-	read_eeprom("/dev/i2c-0", DEVADDR>>1, 3, &buffer, sizeof(buffer));
-	if( buffer & 0x80 ) {
-	  fprintf( stderr, "<action> HPD trigger requested, but blocked by semaphore. I give up...\n" );
-	  return;
-	}
-
-	buffer |= 0x80;
-	// set semaphore
-	write_eeprom("/dev/i2c-0", DEVADDR>>1, 3, &buffer, sizeof(buffer));
-	fprintf( stderr, "<action> ***** Drastic: pulling HPD.\n" );
-	event_counter++; // abort any thoughts about changing resolution if they were happening...
-	
-	/* read snoopctl */
-	read_eeprom("/dev/i2c-0", DEVADDR>>1, 0, &buffer, sizeof(buffer));
-	buffer = buffer | 0x8 | 0x4;
-	write_eeprom("/dev/i2c-0", DEVADDR>>1, 0, &buffer, sizeof(buffer));
-
-	deepsleep(0,150); // minimum required by spec is 100ms, 150ms should be plenty.
-	event_counter++; // abort any thoughts about changing resolution if they were happening...
-
-	buffer = (buffer & ~0x8) | 0x4;
-	write_eeprom("/dev/i2c-0", DEVADDR>>1, 0, &buffer, sizeof(buffer));
-
-	// clear semaphore
-	read_eeprom("/dev/i2c-0", DEVADDR>>1, 3, &buffer, sizeof(buffer));
-	buffer &= 0x7F;
-	write_eeprom("/dev/i2c-0", DEVADDR>>1, 3, &buffer, sizeof(buffer));
 }
 
 static void handle_dummy(int num)
@@ -930,18 +816,19 @@ main(int argc, char **argv)
 	  
 	  fprintf(stderr, "                     Old    New    Raw\n");
 	  fprintf(stderr, "----------------------------------------\n");
-	  fprintf(stderr, "hactive             %4d  %4d  %4d\n", last_ti.hactive, new_ti.hactive, raw_ti.hactive);
-	  fprintf(stderr, "vactive             %4d  %4d  %4d\n", last_ti.vactive, new_ti.vactive, raw_ti.vactive);
-	  fprintf(stderr, "htotal              %4d  %4d  %4d\n", last_ti.htotal, new_ti.htotal, raw_ti.htotal);
-	  fprintf(stderr, "vtotal_lines        %4d  %4d  %4d\n", last_ti.vtotal_lines, new_ti.vtotal_lines, raw_ti.vtotal_lines);
-	  fprintf(stderr, "h_fp                %4d  %4d  %4d\n", last_ti.h_fp, new_ti.h_fp, raw_ti.h_fp);
-	  fprintf(stderr, "h_fp                %4d  %4d  %4d\n", last_ti.h_bp, new_ti.h_bp, raw_ti.h_bp);
-	  fprintf(stderr, "hsync_width         %4d  %4d  %4d\n", last_ti.hsync_width, new_ti.hsync_width, raw_ti.hsync_width);
-	  fprintf(stderr, "v_fp_lines          %4d  %4d  %4d\n", last_ti.v_fp_lines, new_ti.v_fp_lines, raw_ti.v_fp_lines);
-	  fprintf(stderr, "v_bp_lines          %4d  %4d  %4d\n", last_ti.v_bp_lines, new_ti.v_bp_lines, raw_ti.v_bp_lines);
-	  fprintf(stderr, "vsync_width_lines   %4d  %4d  %4d\n", last_ti.vsync_width_lines, new_ti.vsync_width_lines, raw_ti.vsync_width_lines);
-	  fprintf(stderr, "pixclk_in_MHz       %4.2f  %4.2f  %4.2f\n", last_ti.pixclk_in_MHz, new_ti.pixclk_in_MHz, raw_ti.pixclk_in_MHz);
-	  fprintf(stderr, "status              %4d  %4d  %4d\n", last_ti.status, new_ti.status, raw_ti.status);
+	  fprintf(stderr, "hactive             %4d   %4d   %4d\n", last_ti.hactive, new_ti.hactive, raw_ti.hactive);
+	  fprintf(stderr, "vactive             %4d   %4d   %4d\n", last_ti.vactive, new_ti.vactive, raw_ti.vactive);
+	  fprintf(stderr, "htotal              %4d   %4d   %4d\n", last_ti.htotal, new_ti.htotal, raw_ti.htotal);
+	  fprintf(stderr, "vtotal_lines        %4d   %4d   %4d\n", last_ti.vtotal_lines, new_ti.vtotal_lines, raw_ti.vtotal_lines);
+	  fprintf(stderr, "h_fp                %4d   %4d   %4d\n", last_ti.h_fp, new_ti.h_fp, raw_ti.h_fp);
+	  fprintf(stderr, "h_bp                %4d   %4d   %4d\n", last_ti.h_bp, new_ti.h_bp, raw_ti.h_bp);
+	  fprintf(stderr, "hsync_width         %4d   %4d   %4d\n", last_ti.hsync_width, new_ti.hsync_width, raw_ti.hsync_width);
+	  fprintf(stderr, "v_fp_lines          %4d   %4d   %4d\n", last_ti.v_fp_lines, new_ti.v_fp_lines, raw_ti.v_fp_lines);
+	  fprintf(stderr, "v_bp_lines          %4d   %4d   %4d\n", last_ti.v_bp_lines, new_ti.v_bp_lines, raw_ti.v_bp_lines);
+	  fprintf(stderr, "vsync_width_lines   %4d   %4d   %4d\n", last_ti.vsync_width_lines, new_ti.vsync_width_lines, raw_ti.vsync_width_lines);
+	  fprintf(stderr, "pixclk_in_MHz       %4.2f%4.2f %4.2f\n", last_ti.pixclk_in_MHz, new_ti.pixclk_in_MHz, raw_ti.pixclk_in_MHz);
+	  fprintf(stderr, "status              %4d   %4d   %4d\n", last_ti.status, new_ti.status, raw_ti.status);
+	  fprintf(stderr, "fields              %4d   %4d   %4d\n", last_ti.fields, new_ti.fields, raw_ti.fields);
 	  
 	  if(new_ti.status == STATUS_OK) {
 	    invalid_count = 0;

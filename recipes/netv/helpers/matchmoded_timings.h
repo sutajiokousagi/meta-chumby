@@ -59,6 +59,7 @@ struct timing_info {
 	unsigned int refclock_count;
 	unsigned int lcd_de_latency_lines;
 	unsigned int lcd_vsync_latency_lines;
+	unsigned int fields;
 	double pixclk_in_MHz;
 	double ns_per_pix;
 	enum timing_status status;
@@ -92,6 +93,7 @@ static struct timing_range mode_1 = {
 		.pixclk_in_MHz = 25.175,
 
 		.status = STATUS_OK,
+		.fields = 1,
 	},
 	.name = "mode 1 480p 4:3",
 	.number = 1,
@@ -117,6 +119,7 @@ static struct timing_range mode_2 = {
 		.pixclk_in_MHz = 27.0,
 
 		.status = STATUS_OK,
+		.fields = 1,
 	},
 	.name = "mode 2 480p anamorphic",
 	.number = 2,
@@ -142,9 +145,36 @@ static struct timing_range mode_4 = {
 		.pixclk_in_MHz = 74.176,
 
 		.status = STATUS_OK,
+		.fields = 1,
 	},
 	.name = "mode 4 720p60",
 	.number = 4,
+	.syncCode = 0x1e,  // digital separate sync, vertical sync is positive; hsync is positive
+};
+
+static struct timing_range mode_5 = {
+	.actual = {
+		.hactive = 1920,
+		.vactive = 540,
+
+		.htotal = 2200,
+		.vtotal_lines = 562,
+
+		.h_fp = 148,
+		.h_bp = 92,
+		.hsync_width = 40,
+
+		.v_fp_lines = 16,
+		.v_bp_lines = 2,
+		.vsync_width_lines = 4,
+
+		.pixclk_in_MHz = 74.176,
+
+		.status = STATUS_OK,
+		.fields = 2,
+	},
+	.name = "mode 5 1080i",
+	.number = 5,
 	.syncCode = 0x1e,  // digital separate sync, vertical sync is positive; hsync is positive
 };
 
@@ -167,6 +197,7 @@ static struct timing_range mode_17 = {
 		.pixclk_in_MHz = 27.00,
 
 		.status = STATUS_OK,
+		.fields = 1,
 	},
 	.name = "mode 17 576p PAL",
 	.number = 17,
@@ -192,6 +223,7 @@ static struct timing_range mode_19 = {
 		.pixclk_in_MHz = 74.250,
 
 		.status = STATUS_OK,
+		.fields = 1,
 	},
 	.name = "mode 19 720p50",
 	.number = 19,
@@ -217,6 +249,7 @@ static struct timing_range mode_32 = {
 		.pixclk_in_MHz = 74.176,
 
 		.status = STATUS_OK,
+		.fields = 1,
 	},
 	.name = "mode 32 1080p24",
 	.number = 32,
@@ -227,6 +260,7 @@ static struct timing_range *timings[] = {
 	&mode_1,
 	&mode_2,
 	&mode_4,
+	&mode_5,
 	&mode_17,
 	&mode_19,
 	&mode_32,
