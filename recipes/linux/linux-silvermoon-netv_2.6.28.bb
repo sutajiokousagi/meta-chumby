@@ -2,7 +2,7 @@ inherit chumbysg-git chumby-info
 
 require recipes/linux/linux.inc
 
-PR = "r41"
+PR = "r42"
 RDEPENDS_${PN} = "config-util"
 
 COMPATIBLE_MACHINE = "chumby-silvermoon-netv"
