@@ -20,13 +20,14 @@ SRCREV = "${AUTOREV}"
 PACKAGE_ARCH = "${MACHINE}"
 RECOVERY_IMAGE_ROOTFS = "${WORKDIR}/recovery"
 RECOVERY_IMAGE_FILE   = "${WORKDIR}/recovery.cpio"
-PR = "r3"
+PR = "r4"
 RREPLACES_${PN} = "netv-recovery-blob"
 
 COMPATIBLE_MACHINE = "chumby-silvermoon-netv"
 ONLINE_PACKAGE_MANAGEMENT = "none"
 MACHINE_POSTPROCESS_COMMAND = ""
 
+DEPENDS = "libsdl-ttf-simple libsdl-chumby-simple"
 DEPENDS_append_virtclass_native = " wpa-supplicant-simple makedevs-native fakeroot-native libsdl-ttf-simple libsdl-chumby-simple"
 
 do_compile_kernel_pass1() {
