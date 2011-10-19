@@ -815,27 +815,27 @@ main(int argc, char **argv)
 	    continue;
 	  }
 	  
-	  fprintf(stderr, "                     Old    New    Raw\n");
-	  fprintf(stderr, "----------------------------------------\n");
-	  fprintf(stderr, "hactive             %4d   %4d   %4d\n", last_ti.hactive, new_ti.hactive, raw_ti.hactive);
-	  fprintf(stderr, "vactive             %4d   %4d   %4d\n", last_ti.vactive, new_ti.vactive, raw_ti.vactive);
-	  fprintf(stderr, "htotal              %4d   %4d   %4d\n", last_ti.htotal, new_ti.htotal, raw_ti.htotal);
-	  fprintf(stderr, "vtotal_lines        %4d   %4d   %4d\n", last_ti.vtotal_lines, new_ti.vtotal_lines, raw_ti.vtotal_lines);
-	  fprintf(stderr, "h_fp                %4d   %4d   %4d\n", last_ti.h_fp, new_ti.h_fp, raw_ti.h_fp);
-	  fprintf(stderr, "h_bp                %4d   %4d   %4d\n", last_ti.h_bp, new_ti.h_bp, raw_ti.h_bp);
-	  fprintf(stderr, "hsync_width         %4d   %4d   %4d\n", last_ti.hsync_width, new_ti.hsync_width, raw_ti.hsync_width);
-	  fprintf(stderr, "v_fp_lines          %4d   %4d   %4d\n", last_ti.v_fp_lines, new_ti.v_fp_lines, raw_ti.v_fp_lines);
-	  fprintf(stderr, "v_bp_lines          %4d   %4d   %4d\n", last_ti.v_bp_lines, new_ti.v_bp_lines, raw_ti.v_bp_lines);
-	  fprintf(stderr, "vsync_width_lines   %4d   %4d   %4d\n", last_ti.vsync_width_lines, new_ti.vsync_width_lines, raw_ti.vsync_width_lines);
-	  fprintf(stderr, "pixclk_in_MHz       %4.2f%4.2f %4.2f\n", last_ti.pixclk_in_MHz, new_ti.pixclk_in_MHz, raw_ti.pixclk_in_MHz);
-	  fprintf(stderr, "status              %4d   %4d   %4d\n", last_ti.status, new_ti.status, raw_ti.status);
-	  fprintf(stderr, "fields              %4d   %4d   %4d\n", last_ti.fields, new_ti.fields, raw_ti.fields);
+	  fprintf(stderr, "                     Old     New    Raw\n");
+	  fprintf(stderr, "-----------------------------------------\n");
+	  fprintf(stderr, "hactive             %4d    %4d   %4d\n", last_ti.hactive, new_ti.hactive, raw_ti.hactive);
+	  fprintf(stderr, "vactive             %4d    %4d   %4d\n", last_ti.vactive, new_ti.vactive, raw_ti.vactive);
+	  fprintf(stderr, "htotal              %4d    %4d   %4d\n", last_ti.htotal, new_ti.htotal, raw_ti.htotal);
+	  fprintf(stderr, "vtotal_lines        %4d    %4d   %4d\n", last_ti.vtotal_lines, new_ti.vtotal_lines, raw_ti.vtotal_lines);
+	  fprintf(stderr, "h_fp                %4d    %4d   %4d\n", last_ti.h_fp, new_ti.h_fp, raw_ti.h_fp);
+	  fprintf(stderr, "h_bp                %4d    %4d   %4d\n", last_ti.h_bp, new_ti.h_bp, raw_ti.h_bp);
+	  fprintf(stderr, "hsync_width         %4d    %4d   %4d\n", last_ti.hsync_width, new_ti.hsync_width, raw_ti.hsync_width);
+	  fprintf(stderr, "v_fp_lines          %4d    %4d   %4d\n", last_ti.v_fp_lines, new_ti.v_fp_lines, raw_ti.v_fp_lines);
+	  fprintf(stderr, "v_bp_lines          %4d    %4d   %4d\n", last_ti.v_bp_lines, new_ti.v_bp_lines, raw_ti.v_bp_lines);
+	  fprintf(stderr, "vsync_width_lines   %4d    %4d   %4d\n", last_ti.vsync_width_lines, new_ti.vsync_width_lines, raw_ti.vsync_width_lines);
+	  fprintf(stderr, "pixclk_in_MHz       %4.2f  %4.2f  %4.2f\n", last_ti.pixclk_in_MHz, new_ti.pixclk_in_MHz, raw_ti.pixclk_in_MHz);
+	  fprintf(stderr, "status              %4d    %4d   %4d\n", last_ti.status, new_ti.status, raw_ti.status);
+	  fprintf(stderr, "fields              %4d    %4d   %4d\n", last_ti.fields, new_ti.fields, raw_ti.fields);
 	  
 	  if(new_ti.status == STATUS_OK) {
 	    invalid_count = 0;
 	    set_timing(fb0, &new_ti);
 	    send_message("connected", new_ti.hactive, new_ti.vactive, 16);
-	    fprintf(stderr, "  Switched LCD to %dx%d\n", new_ti.hactive, new_ti.vactive);
+	    fprintf(stderr, "  Switched LCD to %s\n", modename);
 
 #if 0 // this is too paranoid, causing spurious HPD triggers...
 	    // the handlers already put us into overlay mode, so we don't need to do it now
