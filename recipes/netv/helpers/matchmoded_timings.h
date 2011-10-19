@@ -230,6 +230,33 @@ static struct timing_range mode_19 = {
 	.syncCode = 0x1e,  // digital separate sync, vertical sync is positive; hsync is positive
 };
 
+static struct timing_range mode_20 = {
+	.actual = {
+		.hactive = 1920,
+		.vactive = 540,
+
+		.htotal = 2640,
+		.vtotal_lines = 562,
+
+		.h_fp = 148,
+		.h_bp = 528,
+		.hsync_width = 44,
+
+		.v_fp_lines = 16,
+		.v_bp_lines = 2,
+		.vsync_width_lines = 4,
+
+		.pixclk_in_MHz = 74.25,
+
+		.status = STATUS_OK,
+		.fields = 2,
+	},
+	.name = "mode 20 1080i50",
+	.number = 20,
+	.syncCode = 0x1e,  // digital separate sync, vertical sync is positive; hsync is positive
+};
+
+
 static struct timing_range mode_32 = {
 	.actual = {
 		.hactive = 1920,
@@ -263,6 +290,7 @@ static struct timing_range *timings[] = {
 	&mode_5,
 	&mode_17,
 	&mode_19,
+	&mode_20,
 	&mode_32,
 	NULL,
 };
