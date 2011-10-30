@@ -394,6 +394,14 @@ int main(int argc, char **argv)
     exit(-1);
   }
 
+  read_eeprom("/dev/i2c-0", DEVADDR>>1, FPGA_MAJOR_ADR, &buffer, 1);
+  if( buffer < 192 ) {
+    printf( "FPGA is not configured to drive a motor board, please follow this procedure:\n" );
+    printf( "1. Make sure the HDMI input is connected to the motor board. Do not connect an HDMI device to the port! We are not liable for damages if you wire this up wrong.\n" );
+    printf( "2. Issue the command 'netv_service motor'; this will switch the NeTV into motor driver mode.\n" );
+    exit(0);
+  }
+
   switch(code) {
   case 'r':
     ioctl_reset(file_desc);
