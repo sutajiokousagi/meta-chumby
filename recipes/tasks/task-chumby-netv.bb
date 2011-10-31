@@ -33,4 +33,5 @@ RDEPENDS_${PN} = " \
 RRECOMMENDS_${PN} = " \
 	ca-certificates \
 	perl \
+	git \
 "
