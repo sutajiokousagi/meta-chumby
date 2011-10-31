@@ -6,7 +6,7 @@ inherit update-rc.d
 INITSCRIPT_NAME = "netv_service"
 INITSCRIPT_PARAMS = "defaults 50 98"
 
-PR = "r71"
+PR = "r73"
 
 PACKAGE_ARCH = "${MACHINE}"
 
@@ -20,9 +20,11 @@ SRC_URI = "file://helpers/dumpreg.c \
 	file://helpers/derive_km.c \
 	file://helpers/writecached_Km.c \
 	file://helpers/fpga_ctl.c \
+	file://helpers/mot_ctl.c \
 	file://helpers/fpga_setup \
 	file://helpers/chumby_xilinx.h \
 	file://fpga/hdmi_overlay.bin \
+	file://fpga/hdmi_motor.bin \
 	file://fpga/hdmi_720p.bin \
 	file://fpga/min720p.edid \
 	file://fpga/min1080p24.edid \
@@ -56,6 +58,7 @@ do_compile() {
     ${CC} ${CFLAGS} ${LDFLAGS} -o writecached_Km helpers/writecached_Km.c
 
     ${CC} ${CFLAGS} ${LDFLAGS} -o fpga_ctl helpers/fpga_ctl.c
+    ${CC} ${CFLAGS} ${LDFLAGS} -o mot_ctl helpers/mot_ctl.c
 
     ${CC} ${CFLAGS} ${LDFLAGS} -o validate_edid helpers/validate_edid.c
     ${CC} ${CFLAGS} ${LDFLAGS} -o make_variable_edid.o -c helpers/make_variable_edid.c
@@ -76,6 +79,7 @@ do_install() {
 	install -m 0755 derive_km ${D}${bindir}
 	install -m 0755 writecached_Km ${D}${bindir}
 	install -m 0755 fpga_ctl ${D}${bindir}
+	install -m 0755 mot_ctl ${D}${bindir}
 	install -m 0755 helpers/fpga_setup ${D}${bindir}/fpga_setup
 
 	install -d ${D}${sbindir}
@@ -86,6 +90,7 @@ do_install() {
 
 	install -d ${D}/${base_libdir}/firmware
 	install -m 0644 fpga/hdmi_overlay.bin ${D}${base_libdir}/firmware/
+	install -m 0644 fpga/hdmi_motor.bin ${D}${base_libdir}/firmware/
 	install -m 0644 fpga/hdmi_720p.bin ${D}${base_libdir}/firmware/
 	install -m 0644 fpga/min720p.edid ${D}${base_libdir}/firmware/
 	install -m 0644 fpga/min1080p24.edid ${D}${base_libdir}/firmware/

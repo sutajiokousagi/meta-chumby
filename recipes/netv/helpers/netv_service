@@ -66,6 +66,25 @@ case "$1" in
 	      killall matchmoded
 
 		;;
+    
+    motor)
+	killall matchmoded
+	# very important: make sure clock is input before doing this!
+	regutil -w LCD_CFG_SCLK_DIV=0x90000001
+	echo "installing chumby xilinx driver"
+	modprobe chumby_xilinx
+	sleep 1 # must give FPGA time to stabilize
+	echo "configuring FPGA"
+	fpga_ctl r
+	cat /lib/firmware/hdmi_motor.bin > /dev/fpga
+
+	echo "Note configuration: motor driver on input side, 720p video on output side"
+        # maximize depth of LCD fifos
+	regutil -w LCD_MISC_CNTL=0x0  #0x5 to distress
+	# hard-code sync to active high
+	regutil -w LCD_SPU_DUMB_CTRL=0x210ff003
+	
+	;;
 
     restart)
 	$0 stop
@@ -74,6 +93,6 @@ case "$1" in
 	;;
 
 	*)
-		echo "Usage: $0 {start|stop|restart}" >&2
+		echo "Usage: $0 {start|stop|restart|motor}" >&2
 		;;
 esac
