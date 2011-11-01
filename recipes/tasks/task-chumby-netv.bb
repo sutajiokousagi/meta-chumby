@@ -21,6 +21,7 @@ RDEPENDS_${PN} = " \
 
 # Update scripts and conrtab entry
        chumby-updates \
+       git \
 
 # A separate kernel
        netv-recovery \
@@ -31,7 +32,6 @@ RDEPENDS_${PN} = " \
 "
 
 RRECOMMENDS_${PN} = " \
-	ca-certificates \
-	perl \
-	git \
+       ca-certificates \
+       perl \
 "
