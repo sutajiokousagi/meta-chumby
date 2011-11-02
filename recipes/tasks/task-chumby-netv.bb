@@ -1,5 +1,5 @@
 inherit task
-PR = "r25"
+PR = "r26"
 
 CHUMBY_KERNEL_MODULES = "\
     kernel-module-cfg80211 kernel-module-chumby-xilinx \
