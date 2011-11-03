@@ -43,6 +43,8 @@ All rights reserved.
 #include <linux/i2c.h>
 #include <linux/i2c-dev.h>
 
+#define DEV_I2C_0  		"/dev/i2c-0"
+
 /*
  * Ioctl definitions -- should sync to kernel source instead of copying here
  */
@@ -61,7 +63,7 @@ All rights reserved.
  * Functions for the ioctl calls 
  */
 
-ioctl_reset(int file_desc)
+void ioctl_reset(int file_desc)
 {
   int ret_val;
 
@@ -73,7 +75,7 @@ ioctl_reset(int file_desc)
   }
 }
 
-ioctl_led0(int file_desc, int state) {
+void ioctl_led0(int file_desc, int state) {
   int ret_val;
 
   ret_val = ioctl(file_desc, FPGA_IOCLED0, state);
@@ -84,7 +86,7 @@ ioctl_led0(int file_desc, int state) {
   }
 }
 
-ioctl_led1(int file_desc, int state) {
+void ioctl_led1(int file_desc, int state) {
   int ret_val;
 
   ret_val = ioctl(file_desc, FPGA_IOCLED1, state);
@@ -95,7 +97,7 @@ ioctl_led1(int file_desc, int state) {
   }
 }
 
-ioctl_done(int file_desc, int *state) {
+void ioctl_done(int file_desc, int *state) {
   int ret_val;
   
   ret_val = ioctl(file_desc, FPGA_IOCDONE, state);
@@ -106,7 +108,7 @@ ioctl_done(int file_desc, int *state) {
   }
 }
 
-ioctl_init(int file_desc, int *state) {
+void ioctl_init(int file_desc, int *state) {
   int ret_val;
   
   ret_val = ioctl(file_desc, FPGA_IOCINIT, state);
@@ -117,7 +119,7 @@ ioctl_init(int file_desc, int *state) {
   }
 }
 
-int write_eeprom(char *i2c_device, int addr, int start_reg,
+int write_eeprom(const char *i2c_device, int addr, int start_reg,
                  unsigned char *buffer, int bytes) {
     unsigned char               data[bytes+1];
     int                         device_file;
@@ -151,7 +153,7 @@ int write_eeprom(char *i2c_device, int addr, int start_reg,
     return 0;
 }
 
-int read_eeprom(char *i2c_device, int addr, int start_reg,
+int read_eeprom(const char *i2c_device, int addr, int start_reg,
                 unsigned char *buffer, int bytes) {
     int                         byte;
     int                         device_file;
@@ -262,11 +264,11 @@ struct timinginfo {
 void print_fpga_version() {
   unsigned char major = 0xff;
 
-  //  if(read_eeprom("/dev/i2c-0", DEVADDR>>1, FPGA_MINOR_ADR, &minor, 1)) {
+  //  if(read_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_MINOR_ADR, &minor, 1)) {
   //    printf( "can't access FPGA.\n" );
   //    return;
   //  }
-  if(read_eeprom("/dev/i2c-0", DEVADDR>>1, FPGA_MAJOR_ADR, &major, 1)) {
+  if(read_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_MAJOR_ADR, &major, 1)) {
     printf( "-1\n" );
     return;
   }
@@ -278,7 +280,7 @@ void print_fpga_version() {
 #define STATS_CORRECT_MAJOR 0xd
 int dump_registers(int stats) {
     unsigned char buffer[32];
-    int i;
+    unsigned int i;
     int zero;
     int bytes_per_line = 4;
 
@@ -289,16 +291,16 @@ int dump_registers(int stats) {
     unsigned long long device_id = 0LL;
     unsigned char c;
     
-    //    if(read_eeprom("/dev/i2c-0", DEVADDR>>1, FPGA_MINOR_ADR, &minor, 1)) {
+    //    if(read_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_MINOR_ADR, &minor, 1)) {
     //      printf( "can't access FPGA.\n" );
-    //      return;
+    //      return 1;
     //    }
-    if(read_eeprom("/dev/i2c-0", DEVADDR>>1, FPGA_MAJOR_ADR, &major, 1)) {
+    if(read_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_MAJOR_ADR, &major, 1)) {
       printf( "can't access FPGA.\n" );
-      return;
+      return 1;
     }
 
-    if(read_eeprom("/dev/i2c-0", DEVADDR>>1, 0, buffer, sizeof(buffer))) {
+    if(read_eeprom(DEV_I2C_0, DEVADDR>>1, 0, buffer, sizeof(buffer))) {
         return 1;
     }
 
@@ -325,7 +327,7 @@ int dump_registers(int stats) {
       printf( "Select stats (as of version %d): \n", STATS_CORRECT_MAJOR );
 
       for( i = 0; i < 7; i++ ) {
-	read_eeprom("/dev/i2c-0", DEVADDR>>1, FPGA_DNA_ADR + i, &c, 1);
+	read_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_DNA_ADR + i, &c, 1);
 	device_id <<= 8;
 	device_id |= (c & 0xFF);
       }
@@ -338,8 +340,8 @@ int dump_registers(int stats) {
 int dump_register(unsigned char address) {
   unsigned char buffer;
 
-  read_eeprom("/dev/i2c-0", DEVADDR>>1, (unsigned long) address, &buffer, 1);
-  printf("0x%02x: %02hx\n", (unsigned long) address, buffer);
+  read_eeprom(DEV_I2C_0, DEVADDR>>1, (unsigned long) address, &buffer, 1);
+  printf("0x%02lx: %02hx\n", (unsigned long) address, buffer);
   
   return 0;
 }
@@ -394,7 +396,7 @@ int main(int argc, char **argv)
     exit(-1);
   }
 
-  read_eeprom("/dev/i2c-0", DEVADDR>>1, FPGA_MAJOR_ADR, &buffer, 1);
+  read_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_MAJOR_ADR, &buffer, 1);
   if( buffer < 192 ) {
     printf( "FPGA is not configured to drive a motor board, please follow this procedure:\n" );
     printf( "1. Make sure the HDMI input is connected to the motor board. Do not connect an HDMI device to the port! We are not liable for damages if you wire this up wrong.\n" );
@@ -447,7 +449,7 @@ int main(int argc, char **argv)
       a1 = strtol(argv[2],NULL,0);
       a2 = strtol(argv[3],NULL,0);
       if( (a1 > 4) || (a1 < 1) ) {
-	printf( "Channel %d is out of range (1-4)\n", a1 );
+	printf( "Channel %ld is out of range (1-4)\n", a1 );
 	break;
       }
       if( (a2 > 255) || (a2 < 0) ) {
@@ -455,7 +457,7 @@ int main(int argc, char **argv)
 	break;
       }
       buffer = a2;
-      write_eeprom("/dev/i2c-0", DEVADDR>>1, FPGA_PWM1_ADR + a1 - 1, &buffer, sizeof(buffer));
+      write_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_PWM1_ADR + a1 - 1, &buffer, sizeof(buffer));
     }
     break;
 
@@ -471,9 +473,9 @@ int main(int argc, char **argv)
 	break;
       }
       buffer = a1 & 0xFF;
-      write_eeprom("/dev/i2c-0", DEVADDR>>1, FPGA_PWM_L_DIV_ADR, &buffer, sizeof(buffer));
+      write_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_PWM_L_DIV_ADR, &buffer, sizeof(buffer));
       buffer = (a1 & 0xFF00) >> 8;
-      write_eeprom("/dev/i2c-0", DEVADDR>>1, FPGA_PWM_M_DIV_ADR, &buffer, sizeof(buffer));
+      write_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_PWM_M_DIV_ADR, &buffer, sizeof(buffer));
     }
     break;
 
@@ -489,19 +491,19 @@ int main(int argc, char **argv)
 	break;
       }
       buffer = a1;
-      write_eeprom("/dev/i2c-0", DEVADDR>>1, FPGA_DIG_OUT_ADR, &buffer, sizeof(buffer));
+      write_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_DIG_OUT_ADR, &buffer, sizeof(buffer));
 
-      read_eeprom("/dev/i2c-0", DEVADDR>>1, FPGA_BRD_CTL_ADR, &buffer, 1);
+      read_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_BRD_CTL_ADR, &buffer, 1);
       buffer &= 0xC7;
-      write_eeprom("/dev/i2c-0", DEVADDR>>1, FPGA_BRD_CTL_ADR, &buffer, sizeof(buffer));
+      write_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_BRD_CTL_ADR, &buffer, sizeof(buffer));
       buffer |= 0x20; // trigger sample
-      write_eeprom("/dev/i2c-0", DEVADDR>>1, FPGA_BRD_CTL_ADR, &buffer, sizeof(buffer));
+      write_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_BRD_CTL_ADR, &buffer, sizeof(buffer));
       buffer &= 0xDF; // kill sample
-      write_eeprom("/dev/i2c-0", DEVADDR>>1, FPGA_BRD_CTL_ADR, &buffer, sizeof(buffer));
+      write_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_BRD_CTL_ADR, &buffer, sizeof(buffer));
       buffer |= 0x10; // initiate transfer
-      write_eeprom("/dev/i2c-0", DEVADDR>>1, FPGA_BRD_CTL_ADR, &buffer, sizeof(buffer));
+      write_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_BRD_CTL_ADR, &buffer, sizeof(buffer));
       buffer &= 0xEF; // clear transfer
-      write_eeprom("/dev/i2c-0", DEVADDR>>1, FPGA_BRD_CTL_ADR, &buffer, sizeof(buffer));
+      write_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_BRD_CTL_ADR, &buffer, sizeof(buffer));
     }
     break;
 
@@ -517,21 +519,21 @@ int main(int argc, char **argv)
 	break;
       }
       // first conversion sets address
-      read_eeprom("/dev/i2c-0", DEVADDR>>1, FPGA_BRD_CTL_ADR, &buffer, 1);
+      read_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_BRD_CTL_ADR, &buffer, 1);
       buffer &= 0xE0;
       buffer |= (a1 & 0x7);
       buffer |= 0x08;
       // setup addres
-      write_eeprom("/dev/i2c-0", DEVADDR>>1, FPGA_BRD_CTL_ADR, &buffer, sizeof(buffer));
+      write_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_BRD_CTL_ADR, &buffer, sizeof(buffer));
       buffer |= 0x10;
       // initiate conversion
-      write_eeprom("/dev/i2c-0", DEVADDR>>1, FPGA_BRD_CTL_ADR, &buffer, sizeof(buffer));
+      write_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_BRD_CTL_ADR, &buffer, sizeof(buffer));
       buffer &= 0xEF; // clear transfer
-      write_eeprom("/dev/i2c-0", DEVADDR>>1, FPGA_BRD_CTL_ADR, &buffer, sizeof(buffer));
+      write_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_BRD_CTL_ADR, &buffer, sizeof(buffer));
 
       i = 0;
       do {
-	read_eeprom("/dev/i2c-0", DEVADDR>>1, FPGA_MOT_STAT_ADR, &buffer, 1);
+	read_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_MOT_STAT_ADR, &buffer, 1);
 	i++;
       } while ( ((buffer & 0x08) == 0) && (i < 1000) );
       if( i >= 1000 ) {
@@ -539,21 +541,21 @@ int main(int argc, char **argv)
       }
 
       // second conversion reads out the data
-      read_eeprom("/dev/i2c-0", DEVADDR>>1, FPGA_BRD_CTL_ADR, &buffer, 1);
+      read_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_BRD_CTL_ADR, &buffer, 1);
       buffer &= 0xE0;
       buffer |= (a1 & 0x7);
       buffer |= 0x08;
       // setup addres
-      write_eeprom("/dev/i2c-0", DEVADDR>>1, FPGA_BRD_CTL_ADR, &buffer, sizeof(buffer));
+      write_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_BRD_CTL_ADR, &buffer, sizeof(buffer));
       buffer |= 0x10;
       // initiate conversion
-      write_eeprom("/dev/i2c-0", DEVADDR>>1, FPGA_BRD_CTL_ADR, &buffer, sizeof(buffer));
+      write_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_BRD_CTL_ADR, &buffer, sizeof(buffer));
       buffer &= 0xEF; // clear transfer
-      write_eeprom("/dev/i2c-0", DEVADDR>>1, FPGA_BRD_CTL_ADR, &buffer, sizeof(buffer));
+      write_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_BRD_CTL_ADR, &buffer, sizeof(buffer));
 
       i = 0;
       do {
-	read_eeprom("/dev/i2c-0", DEVADDR>>1, FPGA_MOT_STAT_ADR, &buffer, 1);
+	read_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_MOT_STAT_ADR, &buffer, 1);
 	i++;
       } while ( ((buffer & 0x08) == 0) && (i < 1000) );
       if( i >= 1000 ) {
@@ -561,11 +563,11 @@ int main(int argc, char **argv)
       }
 
       temp = 0;
-      read_eeprom("/dev/i2c-0", DEVADDR>>1, FPGA_ADC_LSB_ADR, &buffer, 1);
+      read_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_ADC_LSB_ADR, &buffer, 1);
       temp = (buffer >> 4) & 0xF;
-      read_eeprom("/dev/i2c-0", DEVADDR>>1, FPGA_ADC_MSB_ADR, &buffer, 1);
+      read_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_ADC_MSB_ADR, &buffer, 1);
       temp |= ((buffer << 4) & 0xF0);
-      printf( "%d: 0x%02x\n", a1, temp & 0xFF );
+      printf( "%ld: 0x%02x\n", a1, temp & 0xFF );
     }
     break;
 
@@ -587,7 +589,7 @@ int main(int argc, char **argv)
       }
 
       // buffer now gets the motor enable value
-      read_eeprom("/dev/i2c-0", DEVADDR>>1, FPGA_MOTEN_ADR, &buffer, 1);
+      read_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_MOTEN_ADR, &buffer, 1);
 
       if( supplement == 'f' ) {
 	buffer &= ~(0x3 << ((a1 - 1) * 2));
@@ -599,14 +601,14 @@ int main(int argc, char **argv)
 	buffer &= ~(0x3 << ((a1 - 1) * 2));
       }
       //      printf( "dir %c, buffer %02x\n", supplement, buffer );
-      write_eeprom("/dev/i2c-0", DEVADDR>>1, FPGA_MOTEN_ADR, &buffer, sizeof(buffer));
+      write_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_MOTEN_ADR, &buffer, sizeof(buffer));
 
-      read_eeprom("/dev/i2c-0", DEVADDR>>1, FPGA_BRD_CTL_ADR, &buffer, 1);
+      read_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_BRD_CTL_ADR, &buffer, 1);
       buffer &= 0xC7;
       buffer |= 0x10; // initiate transfer
-      write_eeprom("/dev/i2c-0", DEVADDR>>1, FPGA_BRD_CTL_ADR, &buffer, sizeof(buffer));
+      write_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_BRD_CTL_ADR, &buffer, sizeof(buffer));
       buffer &= 0xEF; // clear transfer
-      write_eeprom("/dev/i2c-0", DEVADDR>>1, FPGA_BRD_CTL_ADR, &buffer, sizeof(buffer));
+      write_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_BRD_CTL_ADR, &buffer, sizeof(buffer));
     }
     break;
 
@@ -628,26 +630,26 @@ int main(int argc, char **argv)
       // assuming most people are lazy and don't do this, and 20ms is pretty standard (and safe)
       //0x7ef40 = 520000 = 20 ms @ 26 MHz clock periods
       buffer = 0x40;
-      write_eeprom("/dev/i2c-0", DEVADDR>>1, FPGA_SERV_PER1_ADR, &buffer, sizeof(buffer));
+      write_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_SERV_PER1_ADR, &buffer, sizeof(buffer));
       buffer = 0xEF;
-      write_eeprom("/dev/i2c-0", DEVADDR>>1, FPGA_SERV_PER2_ADR, &buffer, sizeof(buffer));
+      write_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_SERV_PER2_ADR, &buffer, sizeof(buffer));
       buffer = 0x07;
-      write_eeprom("/dev/i2c-0", DEVADDR>>1, FPGA_SERV_PER3_ADR, &buffer, sizeof(buffer));
+      write_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_SERV_PER3_ADR, &buffer, sizeof(buffer));
 
       // read back board control register value so as not to bash anything
-      read_eeprom("/dev/i2c-0", DEVADDR>>1, FPGA_BRD_CTL_ADR, &buffer, 1);
+      read_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_BRD_CTL_ADR, &buffer, 1);
       if( supplement == 's' ) {
 	buffer |= ((a1 == 1) ? 0x40 : 0x80);
       } else {
 	buffer &= ((a1 == 1) ? 0xBF : 0x7F);
       }
-      write_eeprom("/dev/i2c-0", DEVADDR>>1, FPGA_BRD_CTL_ADR, &buffer, sizeof(buffer));
+      write_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_BRD_CTL_ADR, &buffer, sizeof(buffer));
     }
     break;
 
   case 'e':
     if( argc != 3 ) {
-      printf( "Servo period set requires an argument in microseconds (math is accurate to <0.5%)\n" );
+      printf( "Servo period set requires an argument in microseconds (math is accurate to <0.5%%)\n" );
       printf( "Accuracy is limited by cheesball integer rounding in driver, not hardware limits\n" );
       break;
     } else {
@@ -656,11 +658,11 @@ int main(int argc, char **argv)
       // if you want more accuracy, rewrite the routine to use floating point or long longs
 
       buffer = a2 & 0xFF;
-      write_eeprom("/dev/i2c-0", DEVADDR>>1, FPGA_SERV_PER1_ADR, &buffer, sizeof(buffer));
+      write_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_SERV_PER1_ADR, &buffer, sizeof(buffer));
       buffer = (a2 >> 8) & 0xFF;
-      write_eeprom("/dev/i2c-0", DEVADDR>>1, FPGA_SERV_PER2_ADR, &buffer, sizeof(buffer));
+      write_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_SERV_PER2_ADR, &buffer, sizeof(buffer));
       buffer = (a2 >> 16) & 0xFF;
-      write_eeprom("/dev/i2c-0", DEVADDR>>1, FPGA_SERV_PER3_ADR, &buffer, sizeof(buffer));
+      write_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_SERV_PER3_ADR, &buffer, sizeof(buffer));
     }
     break;
 
@@ -678,7 +680,7 @@ int main(int argc, char **argv)
       if( (f1 <= 0.0) || (f1 >= 180.0) ) {
 	printf( "Only angles from 0 to 180 degrees is allowed, got %.2lf.\n", f1 );
       }
-      printf( "Setting servo %d angle to %0.2lf\n", a1, f1);
+      printf( "Setting servo %ld angle to %0.2lf\n", a1, f1);
       // 1ms min, 1.5ms mid, 2ms max
       f2 = (1000.0 * 1000.0) * (f1 / 180.0);  // convert to nanoseconds pulse length
       f2 += 1000000.0; // add 1 ms for the minimum time
@@ -700,11 +702,11 @@ int main(int argc, char **argv)
       }
 
       buffer = a2 & 0xFF;
-      write_eeprom("/dev/i2c-0", DEVADDR>>1, adr, &buffer, sizeof(buffer));
+      write_eeprom(DEV_I2C_0, DEVADDR>>1, adr, &buffer, sizeof(buffer));
       buffer = (a2 >> 8) & 0xFF;
-      write_eeprom("/dev/i2c-0", DEVADDR>>1, adr + 1, &buffer, sizeof(buffer));
+      write_eeprom(DEV_I2C_0, DEVADDR>>1, adr + 1, &buffer, sizeof(buffer));
       buffer = (a2 >> 16) & 0xFF;
-      write_eeprom("/dev/i2c-0", DEVADDR>>1, adr + 2, &buffer, sizeof(buffer));
+      write_eeprom(DEV_I2C_0, DEVADDR>>1, adr + 2, &buffer, sizeof(buffer));
     }
     break;
       
@@ -728,7 +730,7 @@ int main(int argc, char **argv)
       }
       
       // buffer now gets the motor enable value
-      read_eeprom("/dev/i2c-0", DEVADDR>>1, FPGA_MOTEN_ADR, &buffer, 1);
+      read_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_MOTEN_ADR, &buffer, 1);
 
       for( i = 0; i < 4; i++ ) {
 	supplement = mcode[i];
@@ -746,14 +748,14 @@ int main(int argc, char **argv)
 	}
       }
       //      printf( "dir %c, buffer %02x\n", supplement, buffer );
-      write_eeprom("/dev/i2c-0", DEVADDR>>1, FPGA_MOTEN_ADR, &buffer, sizeof(buffer));
+      write_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_MOTEN_ADR, &buffer, sizeof(buffer));
 
-      read_eeprom("/dev/i2c-0", DEVADDR>>1, FPGA_BRD_CTL_ADR, &buffer, 1);
+      read_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_BRD_CTL_ADR, &buffer, 1);
       buffer &= 0xC7;
       buffer |= 0x10; // initiate transfer
-      write_eeprom("/dev/i2c-0", DEVADDR>>1, FPGA_BRD_CTL_ADR, &buffer, sizeof(buffer));
+      write_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_BRD_CTL_ADR, &buffer, sizeof(buffer));
       buffer &= 0xEF; // clear transfer
-      write_eeprom("/dev/i2c-0", DEVADDR>>1, FPGA_BRD_CTL_ADR, &buffer, sizeof(buffer));
+      write_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_BRD_CTL_ADR, &buffer, sizeof(buffer));
     }
     break;
 
@@ -766,18 +768,18 @@ int main(int argc, char **argv)
       printf( "Write requires [adr] and [dat] arguments.\n" );
     } else {
       adr = (unsigned char) strtol(argv[2],NULL,0);
-      read_eeprom("/dev/i2c-0", DEVADDR>>1, adr, &buffer, 1);
+      read_eeprom(DEV_I2C_0, DEVADDR>>1, adr, &buffer, 1);
       printf( "0x%02x: 0x%02x -> ", adr, buffer );
       buffer = (unsigned char) strtol(argv[3],NULL,0);
-      write_eeprom("/dev/i2c-0", DEVADDR>>1, adr, &buffer, sizeof(buffer));
-      read_eeprom("/dev/i2c-0", DEVADDR>>1, adr, &buffer, 1);
+      write_eeprom(DEV_I2C_0, DEVADDR>>1, adr, &buffer, sizeof(buffer));
+      read_eeprom(DEV_I2C_0, DEVADDR>>1, adr, &buffer, 1);
       printf( "0x%02x\n", buffer );
     }
     break;
 
   case 'n':
     for( i = 0; i < 7; i++ ) {
-      read_eeprom("/dev/i2c-0", DEVADDR>>1, FPGA_DNA_ADR + i, &buffer, 1);
+      read_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_DNA_ADR + i, &buffer, 1);
       device_id <<= 8;
       device_id |= (buffer & 0xFF);
     }
