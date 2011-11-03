@@ -6,7 +6,8 @@
 
 # change to 900 seconds 8/30/2011 -- temporary for beta, revert to 3600 for release
 DELAY=$(($RANDOM%900))
-URL=http://buildbot.chumby.com.sg/updates/_MACHINE_/update.sh
+POSSIBLE_URLS="http://buildbot.chumby.com.sg/updates/chumby-silvermoon-netv/update.sh http://netv.bunnie-bar.com/updates/chumby-silvermoon-netv/update.sh http://netv.sutajiokousagi.com/updates/chumby-silvermoon-netv/update.sh"
+URL=
 SCRIPT_PATH=/tmp/update.$$.sh
 LAST_ETAG_PATH=/tmp/update.last-etag
 UPDATE_DEBUG=0
@@ -23,6 +24,7 @@ then
 fi
 
 
+# To ensure all the update scripts don't hammer the server, pause for some amount of time.
 if [ ${UPDATE_DEBUG} -eq 0 ]
 then
 	logger -t update "pausing for ${DELAY} seconds before checking update"
@@ -30,8 +32,25 @@ then
 fi
 
 
+# Loop through all possible URLs to try and find one that's active
+for i in ${POSSIBLE_URLS}
+do
+    ETAG=$(curl --stderr /dev/null -I "$i" | grep -i ^etag: | cut -d'"' -f2)
+    if [ ! -z ${ETAG} ]
+    then
+        URL=${i}
+        break
+    fi
+done
+
+if [ -z ${URL} ]
+then
+    logger -t update "unable to find active update host"
+    exit 1
+fi
+
+
 # We use the ETag to determine if the file has changed or not.
-ETAG=$(curl --stderr /dev/null -I "$URL" | grep -i ^etag: | cut -d'"' -f2)
 if [ -f $LAST_ETAG_PATH ]
 then
 	if [ "x$(cat $LAST_ETAG_PATH)" = "x${ETAG}" ]
