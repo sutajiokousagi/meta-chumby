@@ -5,7 +5,7 @@ DESCRIPTION = "Hardware bridge for NeTV"
 HOMEPAGE = "http://www.chumby.com/"
 AUTHOR = "Torin"
 LICENSE = "GPLv3"
-PR = "r165"
+PR = "r166"
 DEPENDS = "qt4-embedded"
 RDEPENDS_${PN} = "task-qt4e-minimal curl"
 
@@ -28,6 +28,7 @@ do_install() {
     install -d ${D}/usr/share/netvserver/docroot/html_remote
     install -d ${D}/usr/share/netvserver/docroot/html_config
     install -d ${D}/usr/share/netvserver/docroot/html_update
+    install -d ${D}/usr/share/netvserver/docroot/html_motor
     install -d ${D}/usr/share/netvserver/docroot/tests
     install -d ${D}/usr/share/netvserver/docroot/tmp
 
@@ -44,7 +45,8 @@ do_install() {
     cp -rf ${DOCROOT}/html_remote                            ${D}/usr/share/netvserver/docroot
     cp -rf ${DOCROOT}/html_config                            ${D}/usr/share/netvserver/docroot
     cp -rf ${DOCROOT}/html_update                            ${D}/usr/share/netvserver/docroot
-    cp -rf ${DOCROOT}/tests	                             ${D}/usr/share/netvserver/docroot
+    cp -rf ${DOCROOT}/html_motor                             ${D}/usr/share/netvserver/docroot
+    cp -rf ${DOCROOT}/tests	                             	 ${D}/usr/share/netvserver/docroot
     cp -rf ${DOCROOT}/scripts                                ${D}/usr/share/netvserver/docroot
     chmod +x ${D}/usr/share/netvserver/docroot/scripts/*
 }
