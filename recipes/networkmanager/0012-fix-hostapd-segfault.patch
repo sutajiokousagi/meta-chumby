@@ -1,0 +1,13 @@
+diff -ur NetworkManager-0.8.1-stock/src/nm-device.c NetworkManager-0.8.1/src/nm-device.c
+--- NetworkManager-0.8.1-stock/src/nm-device.c	2011-11-14 19:34:59.287991999 +0800
++++ NetworkManager-0.8.1/src/nm-device.c	2011-11-14 20:24:46.151992001 +0800
+@@ -3345,7 +3345,8 @@
+ 	NMDevice *self = NM_DEVICE (object);
+ 	NMDevicePrivate *priv = NM_DEVICE_GET_PRIVATE (self);
+ 
+-	g_object_unref (priv->dhcp_manager);
++	if (priv->dhcp_manager)
++		g_object_unref (priv->dhcp_manager);
+ 
+ 	g_free (priv->udi);
+ 	g_free (priv->iface);
