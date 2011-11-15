@@ -5,7 +5,7 @@ DESCRIPTION = "Hardware bridge for NeTV"
 HOMEPAGE = "http://www.chumby.com/"
 AUTHOR = "Torin"
 LICENSE = "GPLv3"
-PR = "r169"
+PR = "r170"
 DEPENDS = "qt4-embedded"
 RDEPENDS_${PN} = "task-qt4e-minimal curl"
 
@@ -32,7 +32,7 @@ do_install() {
     install -d ${D}/usr/share/netvserver/docroot/tests
     install -d ${D}/usr/share/netvserver/docroot/tmp
 
-#   Cache for downloaded thumbnails
+#   Symlink to /tmp for caching downloaded thumbnails
     ln -sf /tmp ${D}/usr/share/netvserver/docroot/tmp/netvserver
 
     install -m 0755 ${S}/bin/NeTVServer                      ${D}${bindir}
