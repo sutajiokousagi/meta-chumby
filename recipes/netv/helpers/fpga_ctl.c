@@ -537,7 +537,7 @@ int main(int argc, char **argv)
   }
 
   read_eeprom("/dev/i2c-0", DEVADDR>>1, FPGA_MAJOR_ADR, &buffer, 1);
-  if( buffer >= 192 ) {
+  if( (buffer >= 192) && (code != 'r') ) {
     printf( "FPGA is configured to drive a motor board on the HDMI input, you can't use this utility for the current configuration.\n" );
     printf( "If you have no idea what this message is about, disconnect the device from the HDMI input NOW or else you may permanantly damage it, and reboot the board to get back to a typical consumer-use application configuration.\n" );
     exit(0);

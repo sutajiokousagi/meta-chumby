@@ -83,7 +83,15 @@ case "$1" in
 	regutil -w LCD_MISC_CNTL=0x0  #0x5 to distress
 	# hard-code sync to active high
 	regutil -w LCD_SPU_DUMB_CTRL=0x210ff003
-	
+
+	sleep 1 # settle in the config
+	mot_ctl A # now auto-detect if the board is present
+	if [ "$?" -ne "0" ]; then
+	    # failure, restart alternate mode
+	    mot_ctl r
+	    $0 start
+	fi
+
 	;;
 
     restart)

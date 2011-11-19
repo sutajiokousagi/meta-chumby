@@ -40,6 +40,9 @@ All rights reserved.
 #include <unistd.h>
 #include <sys/ioctl.h>
 
+#include <time.h>
+#include <sys/time.h>
+
 #include <linux/i2c.h>
 #include <linux/i2c-dev.h>
 
@@ -255,6 +258,10 @@ struct timinginfo {
 #define FPGA_ADC_LSB_ADR   0x21
 #define FPGA_ADC_MSB_ADR   0x22
 #define FPGA_MOT_STAT_ADR  0x23
+#define FPGA_SCAN_TST0_ADR 0x24
+#define FPGA_SCAN_TST1_ADR 0x25
+#define FPGA_SCAN_TST2_ADR 0x26
+#define FPGA_SCAN_TST3_ADR 0x27
 
 #define FPGA_DNA_ADR       0x38 
 //#define FPGA_MINOR_ADR     0x3e // defunct
@@ -337,6 +344,20 @@ int dump_registers(int stats) {
     return 0;
 }
 
+void microsleep(unsigned int us) {
+  struct timespec waittime;
+  struct timespec remtime;
+
+  waittime.tv_sec = us / 1000000;
+  waittime.tv_nsec = (us % 1000000) * 1000;
+
+  while(nanosleep(&waittime, &remtime) == -1) {
+    // this makes us sleep even if we get a signal for the specified time
+    waittime.tv_sec = remtime.tv_sec;
+    waittime.tv_nsec = remtime.tv_nsec;
+  }
+}
+
 int dump_register(unsigned char address) {
   unsigned char buffer;
 
@@ -367,6 +388,8 @@ void print_help(char code) {
     printf( "d       dump the control set registers (raw values)\n" );
     printf( "d [adr] dump the the raw value at [adr]\n" );
     printf( "w [adr] [dat] write data [dat] to address [adr]\n" );
+    printf( "D [tst] detect if the motor controller board is attached using test value [tst].\n" );
+    printf( "A       auto-detect if motor controller board is attached.\n" );
     printf( "n       return device serial number\n" );
 }
 
@@ -397,7 +420,7 @@ int main(int argc, char **argv)
   }
 
   read_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_MAJOR_ADR, &buffer, 1);
-  if( buffer < 192 ) {
+  if( (buffer < 192) && (code != 'r') ) {
     printf( "FPGA is not configured to drive a motor board, please follow this procedure:\n" );
     printf( "1. Make sure the HDMI input is connected to the motor board. Do not connect an HDMI device to the port! We are not liable for damages if you wire this up wrong.\n" );
     printf( "2. Issue the command 'netv_service motor'; this will switch the NeTV into motor driver mode.\n" );
@@ -785,6 +808,143 @@ int main(int argc, char **argv)
     }
     printf( "Device ID: %014llx\n", device_id );
     break;
+
+  case 'D':
+    if( argc != 3 ) {
+      printf( "Write requires [tst] argument.\n" );
+    } else {
+      a1 = (unsigned char) strtol(argv[2],NULL,0);
+      
+      read_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_DIG_OUT_ADR, &buffer, 1);
+      data = buffer; // stash the dig_out value to restore later
+
+      // set test values for the shift chain
+      buffer = a1 & 0xff;
+      write_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_DIG_OUT_ADR, &buffer, sizeof(buffer));
+
+      // set the test mode bit
+      read_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_EXT1_CTL_ADR, &buffer, 1);
+      buffer |= 0x80; 
+      write_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_EXT1_CTL_ADR, &buffer, sizeof(buffer));
+
+      // commit shift values
+      read_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_BRD_CTL_ADR, &buffer, 1);
+      buffer &= 0xC7;
+      buffer |= 0x10; // initiate transfer
+      write_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_BRD_CTL_ADR, &buffer, sizeof(buffer));
+      buffer &= 0xEF; // clear transfer
+      write_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_BRD_CTL_ADR, &buffer, sizeof(buffer));
+
+      microsleep(10000); // wait a millisecond
+
+      // clear the test mode bit
+      read_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_EXT1_CTL_ADR, &buffer, 1);
+      buffer &= 0x7F; 
+      write_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_EXT1_CTL_ADR, &buffer, sizeof(buffer));
+
+      // restore dig_out value
+      write_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_DIG_OUT_ADR, &data, sizeof(buffer));
+
+      // reveal the shift chain value
+      a2 = 0;
+      read_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_SCAN_TST0_ADR, &buffer, 1);
+      a2 |= buffer & 0xFF;
+      read_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_SCAN_TST1_ADR, &buffer, 1);
+      a2 |= (buffer & 0xFF) << 8;
+      read_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_SCAN_TST2_ADR, &buffer, 1);
+      a2 |= (buffer & 0xFF) << 16;
+      read_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_SCAN_TST3_ADR, &buffer, 1);
+      a2 |= (buffer & 0xFF) << 24;
+      printf( "shift chain result: 0x%08x\n", a2 );
+    }
+    break;
+
+  case 'A':
+    read_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_MAJOR_ADR, &buffer, 1);
+    if( buffer < 193 ) {
+      fprintf( stderr, "FPGA version %d is incompatible with motor card auto-detection.\n", buffer );
+      printf( "0\n" );
+      return -1;
+    }
+
+    a1 = 0x6A;
+      
+    read_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_DIG_OUT_ADR, &buffer, 1);
+    data = buffer; // stash the dig_out value to restore later
+
+    // set test values for the shift chain
+    buffer = a1 & 0xff;
+    write_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_DIG_OUT_ADR, &buffer, sizeof(buffer));
+
+    // set the test mode bit
+    read_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_EXT1_CTL_ADR, &buffer, 1);
+    buffer |= 0x80; 
+    write_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_EXT1_CTL_ADR, &buffer, sizeof(buffer));
+
+    // commit shift values
+    read_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_BRD_CTL_ADR, &buffer, 1);
+    buffer &= 0xC7;
+    buffer |= 0x10; // initiate transfer
+    write_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_BRD_CTL_ADR, &buffer, sizeof(buffer));
+    buffer &= 0xEF; // clear transfer
+    write_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_BRD_CTL_ADR, &buffer, sizeof(buffer));
+
+    microsleep(10000); // wait a millisecond
+
+    // reveal the shift chain value
+    a2 = 0;
+    read_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_SCAN_TST0_ADR, &buffer, 1);
+    a2 |= buffer & 0xFF;
+      
+    if( a2 != 0x6A ) {
+      // not attached
+      printf( "0\n" );
+      return -1;
+    }
+
+    a1 = 0x72;
+    // set test values for the shift chain
+    buffer = a1 & 0xff;
+    write_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_DIG_OUT_ADR, &buffer, sizeof(buffer));
+    
+    // set the test mode bit
+    read_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_EXT1_CTL_ADR, &buffer, 1);
+    buffer |= 0x80; 
+    write_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_EXT1_CTL_ADR, &buffer, sizeof(buffer));
+
+    // commit shift values
+    read_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_BRD_CTL_ADR, &buffer, 1);
+    buffer &= 0xC7;
+    buffer |= 0x10; // initiate transfer
+    write_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_BRD_CTL_ADR, &buffer, sizeof(buffer));
+    buffer &= 0xEF; // clear transfer
+    write_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_BRD_CTL_ADR, &buffer, sizeof(buffer));
+    
+    microsleep(10000); // wait a millisecond
+
+    // reveal the shift chain value
+    a2 = 0;
+    read_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_SCAN_TST0_ADR, &buffer, 1);
+    a2 |= buffer & 0xFF;
+    
+    if( a2 != 0x72 ) {
+      // not attached
+      printf( "0\n" );
+      return -1;
+    }
+
+    // clear the test mode bit
+    read_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_EXT1_CTL_ADR, &buffer, 1);
+    buffer &= 0x7F; 
+    write_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_EXT1_CTL_ADR, &buffer, sizeof(buffer));
+
+    // restore dig_out value
+    write_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_DIG_OUT_ADR, &data, sizeof(buffer));
+    
+    printf( "1\n" );
+    return 0;
+    break;
+    
 
   default:
     print_help(code);
