@@ -1,5 +1,5 @@
 inherit task
-PR = "r26"
+PR = "r27"
 
 CHUMBY_KERNEL_MODULES = "\
     kernel-module-cfg80211 kernel-module-chumby-xilinx \
@@ -18,6 +18,7 @@ RDEPENDS_${PN} = " \
        netv-utils \
 
        watchdog \
+       iw \
 
 # Update scripts and conrtab entry
        chumby-updates \
