@@ -1,4 +1,4 @@
-PR_pn-networkmanager .= "r10"
+PR_pn-networkmanager .= "r11"
 SRC_URI_pn-networkmanager = "\
     http://ftp.gnome.org/pub/GNOME/sources/NetworkManager/0.8/NetworkManager-0.8.1.tar.bz2 \
     file://remove-gtk-doc-make.patch \
@@ -19,6 +19,7 @@ SRC_URI_pn-networkmanager = "\
             file://0010-fix-segfault-on-bad-network-configs.patch \
             file://0011-add-destructor-to-nm-chumby-connection.patch \
             file://0012-fix-hostapd-segfault.patch \
+            file://0013-add-ignore-master-interfaces.patch \
             file://nm-system-settings-chumby.conf \
 "
 

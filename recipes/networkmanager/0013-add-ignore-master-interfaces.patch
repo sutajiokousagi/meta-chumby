@@ -1,0 +1,32 @@
+diff -ur NetworkManager-0.8.1-stock/system-settings/plugins/chumby/plugin.c NetworkManager-0.8.1/system-settings/plugins/chumby/plugin.c
+--- NetworkManager-0.8.1-stock/system-settings/plugins/chumby/plugin.c	2011-11-22 10:40:27.358783000 +0800
++++ NetworkManager-0.8.1/system-settings/plugins/chumby/plugin.c	2011-11-22 10:45:21.714783748 +0800
+@@ -478,6 +478,18 @@
+ 	return connections;
+ }
+ 
++static GSList *
++get_unmanaged_specs (NMSystemConfigInterface *config)
++{
++	GSList *specs = NULL;
++
++	g_slist_append (specs, "chum0");
++	g_slist_append (specs, "chumb0");
++	g_slist_append (specs, "chumby0");
++
++	return specs;
++}
++
+ 
+ 
+ 
+@@ -729,6 +741,7 @@
+ 	/* interface implementation */
+ 	system_config_interface_class->init = init;
+ 	system_config_interface_class->get_connections = get_connections;
++	system_config_interface_class->get_unmanaged_specs = get_unmanaged_specs;
+ }
+ 
+ G_MODULE_EXPORT GObject *
+Only in NetworkManager-0.8.1/system-settings/plugins/chumby: .plugin.c.swp
+Only in NetworkManager-0.8.1/system-settings/plugins/keyfile: .plugin.c.swp
