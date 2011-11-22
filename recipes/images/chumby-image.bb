@@ -5,6 +5,7 @@ inherit image chumby-info
 IMAGE_PREPROCESS_COMMAND = "create_etc_timestamp"
 
 DEPENDS = "task-base"
+IMAGE_ROOTFS_SIZE_chumby-silvermoon-netv = "500000"
 
 # Build these packages (if they're available) but don't install them.
 RRECOMMENDS_${PN} += "keygen gdb vim emacs libpcap iw task-sdk-native"

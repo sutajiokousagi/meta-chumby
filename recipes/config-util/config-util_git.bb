@@ -6,7 +6,8 @@ AUTHOR = "Henry Groover"
 LICENSE = "GPLv2"
 PR = "r0"
 
-SRC_URI = "${CHUMBYSG_GIT_HOST}/chumby-clone/https_internal.chumby.com_firmware_utils-1.0_${RVERSION}${CHUMBYSG_GIT_EXTENSION};subpath=src;protocol=${CHUMBYSG_GIT_PROTOCOL}"
+SRC_URI = "${CHUMBYSG_GIT_HOST}/utils.git;subpath=src;protocol=${CHUMBYSG_GIT_PROTOCOL}"
+SRCREV = "241261ec80f9c8d32ded37971fa7bff002d77bdc"
 S = "${WORKDIR}/src"
 
 do_compile() {

@@ -9,7 +9,7 @@ PR = "r175"
 DEPENDS = "qt4-embedded"
 RDEPENDS_${PN} = "task-qt4e-minimal curl"
 
-SRC_URI = "${CHUMBYSG_GIT_HOST}/chumby-sg/${PN}${CHUMBYSG_GIT_EXTENSION};protocol=${CHUMBYSG_GIT_PROTOCOL}"
+SRC_URI = "${CHUMBYSG_GIT_HOST}/${PN};protocol=${CHUMBYSG_GIT_PROTOCOL}"
 
 SRCREV = "${AUTOREV}"
 S = "${WORKDIR}/git/src"

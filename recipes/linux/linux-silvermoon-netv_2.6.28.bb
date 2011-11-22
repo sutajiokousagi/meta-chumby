@@ -7,7 +7,7 @@ RDEPENDS_${PN} = "config-util"
 
 COMPATIBLE_MACHINE = "chumby-silvermoon-netv"
 
-SRC_URI = "${CHUMBYSG_GIT_HOST}/chumby-sg/linux-2.6.28-silvermoon${CHUMBYSG_GIT_EXTENSION};subpath=src;protocol=${CHUMBYSG_GIT_PROTOCOL};branch=netv \
+SRC_URI = "${CHUMBYSG_GIT_HOST}/linux-2.6.28-silvermoon.git;subpath=src;protocol=${CHUMBYSG_GIT_PROTOCOL};branch=netv \
            file://defconfig \
 "
 SRCREV = "${AUTOREV}"

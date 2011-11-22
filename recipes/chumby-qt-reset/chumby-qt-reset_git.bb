@@ -8,7 +8,7 @@ PR = "r1"
 DEPENDS = "qt4-embedded"
 RDEPENDS_${PN} = "task-qt4e-minimal"
 
-SRC_URI = "${CHUMBYSG_GIT_HOST}/chumby-sg/${PN}${CHUMBYSG_GIT_EXTENSION};protocol=${CHUMBYSG_GIT_PROTOCOL}"
+SRC_URI = "${CHUMBYSG_GIT_HOST}/${PN}.git;protocol=${CHUMBYSG_GIT_PROTOCOL}"
 
 SRCREV = "0b633b5cf8153429b93b8d9b7756ba2a67f1ee76"
 S = "${WORKDIR}/git"

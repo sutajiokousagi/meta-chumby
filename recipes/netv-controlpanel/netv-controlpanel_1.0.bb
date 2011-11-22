@@ -8,7 +8,7 @@ PR = "r102"
 DEPENDS = "chumby-netvserver"
 RDEPENDS = "chumby-netvserver"
 
-SRC_URI = "${CHUMBYSG_GIT_HOST}/chumby-sg/${PN}${CHUMBYSG_GIT_EXTENSION};protocol=${CHUMBYSG_GIT_PROTOCOL}"
+SRC_URI = "${CHUMBYSG_GIT_HOST}/${PN};protocol=${CHUMBYSG_GIT_PROTOCOL}"
 # add SRC_URIs here for more files
 
 SRCREV = "${AUTOREV}"
