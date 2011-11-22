@@ -19,8 +19,8 @@ CNPLATFORM_chumby-silvermoon-netv = "netv"
 CNPLATFORM_chumby-wintergrasp = "wintergrasp"
 
 
-SRC_URI = "${CHUMBYSG_GIT_HOST}/chumby-clone/dcid${CHUMBYSG_GIT_EXTENSION};subpath=src;protocol=${CHUMBYSG_GIT_PROTOCOL} \
-           ${CHUMBYSG_GIT_HOST}/chumby-clone/dcid${CHUMBYSG_GIT_EXTENSION};subpath=include;protocol=${CHUMBYSG_GIT_PROTOCOL} \
+SRC_URI = "${CHUMBYSG_GIT_HOST}/${PN}.git;subpath=src;protocol=${CHUMBYSG_GIT_PROTOCOL} \
+           ${CHUMBYSG_GIT_HOST}/${PN}.git;subpath=include;protocol=${CHUMBYSG_GIT_PROTOCOL} \
            file://chumby_accel.h \
 "
 SRCREV = "cf78dd484269c7b4aad776806f4e2a66cf182082"

@@ -10,11 +10,12 @@ PACKAGE_ARCH = "${MACHINE}"
 DEPENDS = "libtomcrypt libtommath tomsfastmath b64"
 RDEPENDS_${PN} = "expat perl expat"
 
-SRC_URI = "${CHUMBYSG_GIT_HOST}/chumby-clone/https_internal.chumby.com_ironforge_cpi_${RVERSION}${CHUMBYSG_GIT_EXTENSION};subpath=src;protocol=${CHUMBYSG_GIT_PROTOCOL} \
-           ${CHUMBYSG_GIT_HOST}/chumby-clone/https_internal.chumby.com_ironforge_cpi_${RVERSION}${CHUMBYSG_GIT_EXTENSION};subpath=include;protocol=${CHUMBYSG_GIT_PROTOCOL} \
+SRC_URI = "${CHUMBYSG_GIT_HOST}/cpi.git;subpath=src;protocol=${CHUMBYSG_GIT_PROTOCOL} \
+           ${CHUMBYSG_GIT_HOST}/cpi.git;subpath=include;protocol=${CHUMBYSG_GIT_PROTOCOL} \
            file://guidgen.sh \
            file://chumby_version.c \
 "
+SRCREV = "835162858bb5ca7647e7567bd5cde82efc222577"
 S = "${WORKDIR}/src"
 
 # Use Falconwing-style daemon for silvermoon

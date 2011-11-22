@@ -1,5 +1,5 @@
 inherit task
-PR = "r6"
+PR = "r7"
 
 CHUMBY_TASK_EXTRAS = ""
 CHUMBY_TASK_EXTRAS_chumby-silvermoon-netv = " \
@@ -15,7 +15,6 @@ RDEPENDS_${PN} = " \
     gnupg \
     chumby-networkmanager \
     imgtool \
-    chumby-wget \
     chumby-updates \
     strace procps \
     networkmanager chumby-networkmanager \

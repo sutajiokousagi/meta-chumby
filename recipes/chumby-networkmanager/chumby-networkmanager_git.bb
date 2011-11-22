@@ -7,7 +7,7 @@ LICENSE = "BSD"
 PR = "r7"
 DEPENDS = "dbus dbus-glib networkmanager glib-2.0 libxml2"
 
-SRC_URI = "${CHUMBYSG_GIT_HOST}/chumby-sg/${PN}${CHUMBYSG_GIT_EXTENSION};protocol=${CHUMBYSG_GIT_PROTOCOL} \
+SRC_URI = "${CHUMBYSG_GIT_HOST}/${PN}.git;protocol=${CHUMBYSG_GIT_PROTOCOL} \
            file://network_configs \
 "
 SRCREV = "c12a964b7092138c1f268965e3b1aeb7f464219e"

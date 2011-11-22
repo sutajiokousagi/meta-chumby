@@ -1,4 +1,4 @@
-inherit chumbysg-git chumby-info
+inherit chumbysg-git chumby-info native
 
 DESCRIPTION = "Chumby config block manager"
 HOMEPAGE = "http://www.chumby.com/"
@@ -23,7 +23,7 @@ do_stage_native() {
 }
 
 do_install() {
-    install -d ${D}${bindir}
-    install -m 0755 ${S}/config_util ${D}${bindir}/config_util
+    install -d ${bindir}
+    install -m 0755 ${S}/config_util ${bindir}/config_util
 }
 
