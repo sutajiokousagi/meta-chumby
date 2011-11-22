@@ -5,7 +5,7 @@ LICENSE = "BSD"
 
 PR = "r7"
 
-SRC_URI = "${CHUMBYSG_GIT_HOST}/chumby-sg/${PN}${CHUMBYSG_GIT_EXTENSION};protocol=${CHUMBYSG_GIT_PROTOCOL}"
+SRC_URI = "${CHUMBYSG_GIT_HOST}/${PN}.git;protocol=${CHUMBYSG_GIT_PROTOCOL}"
 SRCREV = "c591f5c5efbf75aaa1eebb687f8830f0ddad2b14"
 
 S = "${WORKDIR}/git/src/keygen"
