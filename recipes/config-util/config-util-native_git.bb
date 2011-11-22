@@ -23,7 +23,7 @@ do_stage_native() {
 }
 
 do_install() {
-    install -d ${bindir}
-    install -m 0755 ${S}/config_util ${bindir}/config_util
+    install -d ${D}${bindir}
+    install -m 0755 ${S}/config_util ${D}${bindir}/config_util
 }
 
