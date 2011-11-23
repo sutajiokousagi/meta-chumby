@@ -18,5 +18,8 @@ do_install() {
 	echo "${CHUMBY_BUILD}_${CHUMBY_BUILDER}" > ${D}${sysconfdir}/software_version
 	
 	install -d ${D}${bindir}
-	install -m 0755 ${WORKDIR}/lsb_release ${D}${bindir}/
+	if [ -e ${WORKDIR}/lsb_release ]
+	then
+		install -m 0755 ${WORKDIR}/lsb_release ${D}${bindir}/
+	fi
 }
