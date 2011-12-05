@@ -9,7 +9,8 @@ XSERVER ?= "xserver-xorg \
            xf86-input-keyboard \
 "
 
-DEPENDS = "virtual/xserver ${MACHINE_TASK_PROVIDER} task-xfce46-base task-xfce46-extras  \
+DEPENDS = "virtual/xserver ${MACHINE_TASK_PROVIDER} \
+    task-xfce46-base task-xfce46-extras  \
     claws-mail \
     pidgin \
     xmms \
@@ -25,6 +26,8 @@ DEPENDS = "virtual/xserver ${MACHINE_TASK_PROVIDER} task-xfce46-base task-xfce46
     laptop-support \
     bash \
     task-sdk-native \
+    git subversion \
+    vlc \
 "
 
 IMAGE_INSTALL = "${XSERVER} ${MACHINE_TASK_PROVIDER} task-xfce46-base task-xfce46-extras \
@@ -61,6 +64,9 @@ IMAGE_INSTALL = "${XSERVER} ${MACHINE_TASK_PROVIDER} task-xfce46-base task-xfce4
     laptop-support \
     bash bash-sh \
     task-sdk-native \
+    task-fonts-truetype \
+    git subversion \
+    vlc \
 "
 
 inherit image

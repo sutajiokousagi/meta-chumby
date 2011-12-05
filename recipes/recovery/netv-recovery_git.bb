@@ -20,7 +20,7 @@ SRCREV = "${AUTOREV}"
 PACKAGE_ARCH = "${MACHINE}"
 RECOVERY_IMAGE_ROOTFS = "${WORKDIR}/recovery"
 RECOVERY_IMAGE_FILE   = "${WORKDIR}/recovery.cpio"
-PR = "r5"
+PR = "r6"
 RREPLACES_${PN} = "netv-recovery-blob"
 
 COMPATIBLE_MACHINE = "chumby-silvermoon-netv"
@@ -29,6 +29,10 @@ MACHINE_POSTPROCESS_COMMAND = ""
 
 DEPENDS = "libsdl-ttf-simple libsdl-chumby-simple wpa-supplicant-simple"
 DEPENDS_append_virtclass_native = " wpa-supplicant-simple makedevs-native fakeroot-native libsdl-ttf-simple libsdl-chumby-simple"
+
+do_compile() {
+	true
+}
 
 do_compile_kernel_pass1() {
 	unset CFLAGS CPPFLAGS CXXFLAGS LDFLAGS MACHINE
@@ -46,7 +50,7 @@ do_compile_compat_wireless() {
 	cd ..
 }
 
-do_compile() {
+do_compile_recovery() {
 	cd git
 	LDFLAGS="${LDFLAGS}"
 	oe_runmake MY_LIBS="-lm -lSDL-ttf-simple -lSDL-chumby-simple -lfreetype -lz -lm"
@@ -136,9 +140,10 @@ python () {
     remove_tasks(["do_populate_sysroot", "do_package_update_index_ipk"], d)
 }
 
-addtask compile_kernel_pass1 after do_unpack before do_compile
-addtask compile_compat_wireless after do_compile_kernel_pass1 before do_compile
-addtask populate_netv_recovery after do_compile before do_compile_kernel_pass2
+addtask do_compile_recovery after do_compile do_unpack do_patch
+addtask compile_kernel_pass1 after do_unpack before do_compile_recovery
+addtask compile_compat_wireless after do_compile_kernel_pass1 before do_compile_recovery
+addtask populate_netv_recovery after do_compile_recovery before do_compile_kernel_pass2
 addtask compile_kernel_pass2 after do_populate_netv_recovery before do_install
 
 FILES_${PN} += "/boot/recovery-mode"
