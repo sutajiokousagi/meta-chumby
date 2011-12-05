@@ -3,7 +3,6 @@ inherit chumbysg-git chumby-info
 DESCRIPTION = "IPP modules for Silvermoon"
 HOMEPAGE = "http://www.chumby.com"
 LICENSE = "GPL"
-PR = "r0"
 
 COMPATIBLE_MACHINE = "chumby-silvermoon-*"
 
