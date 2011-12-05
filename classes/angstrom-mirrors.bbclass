@@ -3,13 +3,13 @@
 # This overrides the class bundled with openembedded.
 
 PREMIRRORS_append () {
-svn://.*/.* http://git.chumby.com.sg/sources-mirror/
-git://.*/.* http://git.chumby.com.sg/sources-mirror/
-cvs://.*/.* http://git.chumby.com.sg/sources-mirror/
-hg://.*/.* http://git.chumby.com.sg/sources-mirror/
-bzr://.*/.* http://git.chumby.com.sg/sources-mirror/
-ftp://.*/.*	http://git.chumby.com.sg/sources-mirror/
-https?$://.*/.*	http://git.chumby.com.sg/sources-mirror/
+svn://.*/.* http://netv-bunnie-bar.com/sources-mirror/
+git://.*/.* http://netv-bunnie-bar.com/sources-mirror/
+cvs://.*/.* http://netv-bunnie-bar.com/sources-mirror/
+hg://.*/.* http://netv-bunnie-bar.com/sources-mirror/
+bzr://.*/.* http://netv-bunnie-bar.com/sources-mirror/
+ftp://.*/.*	http://netv-bunnie-bar.com/sources-mirror/
+https?$://.*/.*	http://netv-bunnie-bar.com/sources-mirror/
 
 svn://.*/.* http://www.angstrom-distribution.org/unstable/sources/
 git://.*/.* http://www.angstrom-distribution.org/unstable/sources/
