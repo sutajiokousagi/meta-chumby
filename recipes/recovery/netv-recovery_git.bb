@@ -140,7 +140,7 @@ python () {
     remove_tasks(["do_populate_sysroot", "do_package_update_index_ipk"], d)
 }
 
-addtask do_compile_recovery after do_compile
+addtask do_compile_recovery after do_compile do_unpack do_patch
 addtask compile_kernel_pass1 after do_unpack before do_compile_recovery
 addtask compile_compat_wireless after do_compile_kernel_pass1 before do_compile_recovery
 addtask populate_netv_recovery after do_compile_recovery before do_compile_kernel_pass2
