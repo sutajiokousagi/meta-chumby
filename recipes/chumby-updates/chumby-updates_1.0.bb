@@ -7,7 +7,7 @@ SRC_URI = "file://poll-update-server.sh \
            file://opkg-chumby-upgrade.c \
 "
 S = "${WORKDIR}"
-PR = "r14"
+PR = "r15"
 
 do_compile() {
 	sed -e 's/_MACHINE_/${MACHINE}/g' -i poll-update-server.sh

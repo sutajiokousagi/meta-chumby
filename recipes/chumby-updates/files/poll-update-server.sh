@@ -6,7 +6,7 @@
 
 # change to 900 seconds 8/30/2011 -- temporary for beta, revert to 3600 for release
 DELAY=$(($RANDOM%900))
-POSSIBLE_URLS="http://buildbot.chumby.com.sg/updates/chumby-silvermoon-netv/update.sh http://netv.bunnie-bar.com/updates/chumby-silvermoon-netv/update.sh http://netv.sutajiokousagi.com/updates/chumby-silvermoon-netv/update.sh"
+POSSIBLE_URLS="http://netv.bunnie-bar.com/updates/chumby-silvermoon-netv/update.sh http://netv.sutajiokousagi.com/updates/chumby-silvermoon-netv/update.sh http://buildbot.chumby.com.sg/updates/chumby-silvermoon-netv/update.sh"
 URL=
 SCRIPT_PATH=/tmp/update.$$.sh
 LAST_ETAG_PATH=/tmp/update.last-etag
