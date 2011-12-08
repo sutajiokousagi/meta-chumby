@@ -374,16 +374,22 @@ void print_help(char code) {
     printf( "o       return the state of the FPGA programming done pin\n" );
     printf( "V       print the version number of the FPGA\n" );
 
-    printf( "a [ch]  read ADC vaule from channel ch0-7\n" );
+    printf( "a [ch]  read ADC value from channel ch0-7\n" );
+    printf( "a       dump all ADC  channel values\n" );
     printf( "S [ch] [s,m] set channel ch[1,2] to mode [s,m] (servo or motor mode)\n" );
+    printf( "S [ch] returns the servo mode status of channel [ch]\n" );
     printf( "s [ch] [val] set servo channel ch [1,2] to angle val [0.0-180.0, floating point]\n" );
     printf( "e [val] set servo pulse period to [val] microseconds (integer only)\n" );
+    printf( "e      get servo pulse period\n" );
     printf( "m [ch] [cmd] motor command for channel ch1-4. cmd = [f,r,s] -> forward, reverse, stop\n" );
     printf( "M [xxxx] set motor channel [1234] to respective states [f,r,s,x] (x means don't change)\n" );
     printf( "p [ch] [dc] PWM duty cycle for channel ch1-4 and duty cycle dc0-255\n" );
     printf( "P [div] set PWM divider (div = 0-65535, rate = 101.5kHz / (div + 2))\n" );
+    printf( "f [freq] set motor PWM to frequency [freq] Hz\n" );
     printf( "u [val] set digital output to value val\n" );
+    printf( "u [ch] [val] set digital output bit [ch] to value [val]\n" );
     printf( "i       print the value of the digital inputs\n" );
+    printf( "i [ch]  print the value of channel [ch]\n" );
 
     printf( "d       dump the control set registers (raw values)\n" );
     printf( "d [adr] dump the the raw value at [adr]\n" );
@@ -502,20 +508,58 @@ int main(int argc, char **argv)
     }
     break;
 
-  case 'u':
+  case 'f':
     if( argc != 3 ) {
+      printf( "Insufficient arguments\n" );
+      print_help('f');
+      break;
+    } else {
+      a2 = strtol(argv[2], NULL, 0);
+      if( (a2 > 50000) || (a2 < 1) ) {
+	printf( "Frequency %d is out of range (1 - 50000)\n", a2 );
+      }
+      a1 = (101500 - (a2 * 2)) / a2;
+      printf( "Note: after rounding, frequency is %d Hz\n", (101500 / (a1 + 2)));
+      
+      buffer = a1 & 0xFF;
+      write_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_PWM_L_DIV_ADR, &buffer, sizeof(buffer));
+      buffer = (a1 & 0xFF00) >> 8;
+      write_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_PWM_M_DIV_ADR, &buffer, sizeof(buffer));
+    }
+    break;
+
+  case 'u':
+    if( argc < 3 ) {
       printf( "Insufficient arguments\n" );
       print_help('u');
       break;
     } else {
-      a1 = strtol(argv[2],NULL,0);
-      if( (a1 > 255) || (a1 < 0) ) {
-	printf( "Digital output is out of range (0-255)\n" );
-	break;
-      }
-      buffer = a1;
-      write_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_DIG_OUT_ADR, &buffer, sizeof(buffer));
+      if( argc == 3 ) {
+	a1 = strtol(argv[2],NULL,0);
+	if( (a1 > 255) || (a1 < 0) ) {
+	  printf( "Digital output is out of range (0-255)\n" );
+	  break;
+	}
+	buffer = a1;
+	write_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_DIG_OUT_ADR, &buffer, sizeof(buffer));
+      } else {  // argc is 4 or greater, but ignore extra arguments
+	a1 = strtol(argv[3],NULL,0);
+	a1 = a1 ? 1 : 0;
+	
+	a2 = strtol(argv[2],NULL,0);
+	if( (a1 > 7) || (a1 < 0) ) {
+	  printf( "Channel specifier %d out of range (0-7)\n", a1);
+	  break;
+	}
 
+	// read back the current output register setting
+	read_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_DIG_OUT_ADR, &buffer, 1);
+	buffer &= ~(1 << a2);
+	buffer |= a1 << a2;
+	write_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_DIG_OUT_ADR, &buffer, sizeof(buffer));
+      }
+
+      
       read_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_BRD_CTL_ADR, &buffer, 1);
       buffer &= 0xC7;
       write_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_BRD_CTL_ADR, &buffer, sizeof(buffer));
@@ -531,11 +575,67 @@ int main(int argc, char **argv)
     break;
 
   case 'a':
-    if( argc != 3 ) {
-      printf( "Insufficient arguments\n" );
-      print_help('a');
-      break;
+    if( argc == 2 ) {
+      for( a1 = 0; a1 < 8; a1++ ) {
+	// first conversion sets address
+	read_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_BRD_CTL_ADR, &buffer, 1);
+	buffer &= 0xE0;
+	buffer |= (a1 & 0x7);
+	buffer |= 0x08;
+	// setup addres
+	write_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_BRD_CTL_ADR, &buffer, sizeof(buffer));
+	buffer |= 0x10;
+	// initiate conversion
+	write_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_BRD_CTL_ADR, &buffer, sizeof(buffer));
+	buffer &= 0xEF; // clear transfer
+	write_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_BRD_CTL_ADR, &buffer, sizeof(buffer));
+
+	i = 0;
+	do {
+	  read_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_MOT_STAT_ADR, &buffer, 1);
+	  i++;
+	} while ( ((buffer & 0x08) == 0) && (i < 1000) );
+	if( i >= 1000 ) {
+	  printf( "Note: ADC timed out during readback\n" );
+	}
+
+	// second conversion reads out the data
+	read_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_BRD_CTL_ADR, &buffer, 1);
+	buffer &= 0xE0;
+	buffer |= (a1 & 0x7);
+	buffer |= 0x08;
+	// setup addres
+	write_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_BRD_CTL_ADR, &buffer, sizeof(buffer));
+	buffer |= 0x10;
+	// initiate conversion
+	write_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_BRD_CTL_ADR, &buffer, sizeof(buffer));
+	buffer &= 0xEF; // clear transfer
+	write_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_BRD_CTL_ADR, &buffer, sizeof(buffer));
+
+	i = 0;
+	do {
+	  read_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_MOT_STAT_ADR, &buffer, 1);
+	  i++;
+	} while ( ((buffer & 0x08) == 0) && (i < 1000) );
+	if( i >= 1000 ) {
+	  printf( "Note: ADC timed out during readback\n" );
+	}
+
+	temp = 0;
+	read_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_ADC_LSB_ADR, &buffer, 1);
+	temp = (buffer >> 4) & 0xF;
+	read_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_ADC_MSB_ADR, &buffer, 1);
+	temp |= ((buffer << 4) & 0xF0);
+	printf( "0x%02x ", temp & 0xFF );
+      }
+      printf( "\n" );
+
     } else {
+      if( argc != 3 ) {
+	printf( "Insufficient arguments\n" );
+	print_help('a');
+	break;
+      }
       a1 = strtol(argv[2],NULL,0);
       if( (a1 > 7) || (a1 < 0) ) {
 	printf( "ADC channel is out of range (0-7)\n" );
@@ -636,10 +736,31 @@ int main(int argc, char **argv)
     break;
 
   case 'S':
-    if( argc != 4 ) {
-      printf( "Servo channel set requires [ch] and [mode] arguments.\n" );
-      break;
+    if( argc == 3 ) {
+      a1 = strtol(argv[2],NULL,0);
+      if( !((a1 == 1) || (a1 ==2)) ) {
+	printf( "Only channels 1 and 2 can be toggled to servo or motor control\n" );
+      }
+      read_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_BRD_CTL_ADR, &buffer, 1);
+      
+      if( a1 == 1 ) {
+	if( buffer & 0x40 ) {
+	  printf( "Channel 1 is in servo mode.\n" );
+	} else { 
+	  printf( "Channel 1 is in motor mode.\n" );
+	}
+      } else { 
+	if( buffer & 0x80 ) {
+	  printf( "Channel 2 is in servo mode.\n" );
+	} else { 
+	  printf( "Channel 2 is in motor mode.\n" );
+	}
+      }
     } else {
+      if( argc != 4 ) {
+	printf( "Servo channel set requires [ch] and [mode] arguments.\n" );
+	break;
+      }
       a1 = strtol(argv[2],NULL,0);
       if( !((a1 == 1) || (a1 ==2)) ) {
 	printf( "Only channels 1 and 2 can be toggled to servo or motor control\n" );
@@ -671,11 +792,23 @@ int main(int argc, char **argv)
     break;
 
   case 'e':
-    if( argc != 3 ) {
-      printf( "Servo period set requires an argument in microseconds (math is accurate to <0.5%%)\n" );
-      printf( "Accuracy is limited by cheesball integer rounding in driver, not hardware limits\n" );
-      break;
+    if( argc == 2 ) {
+      buffer = 0;
+      a2 = 0;
+      read_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_SERV_PER1_ADR, &buffer, sizeof(buffer));
+      a2 = buffer & 0xFF;
+      read_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_SERV_PER2_ADR, &buffer, sizeof(buffer));
+      a2 |= (buffer << 8) & 0xFF00;
+      read_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_SERV_PER3_ADR, &buffer, sizeof(buffer));
+      a2 |= (buffer << 16) & 0xFF0000;
+      
+      printf( "Servo period is approximately %ld microseconds\n", (a2 * 385) / 10000 );
     } else {
+      if( argc != 3 ) {
+	printf( "Servo period set requires an argument in microseconds (math is accurate to <0.5%%)\n" );
+	printf( "Accuracy is limited by cheesball integer rounding in driver, not hardware limits\n" );
+	break;
+      }
       a1 = strtol(argv[2],NULL,0);
       a2 = (a1 * 10000) / 385; // gets you to about 0.5% accuracy
       // if you want more accuracy, rewrite the routine to use floating point or long longs
@@ -783,7 +916,34 @@ int main(int argc, char **argv)
     break;
 
   case 'i':
-    dump_register((unsigned char) 0x20);
+    read_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_BRD_CTL_ADR, &buffer, 1);
+    buffer &= 0xC7;
+    write_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_BRD_CTL_ADR, &buffer, sizeof(buffer));
+    buffer |= 0x20; // trigger sample
+    write_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_BRD_CTL_ADR, &buffer, sizeof(buffer));
+    buffer &= 0xDF; // kill sample
+    write_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_BRD_CTL_ADR, &buffer, sizeof(buffer));
+    buffer |= 0x10; // initiate transfer
+    write_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_BRD_CTL_ADR, &buffer, sizeof(buffer));
+    buffer &= 0xEF; // clear transfer
+    write_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_BRD_CTL_ADR, &buffer, sizeof(buffer));
+
+    if( argc == 2 ) {
+      dump_register((unsigned char) FPGA_DIG_IN_ADR);
+    } else {
+      if( argc != 3 ) {
+	printf( "Insufficient arguments\n" );
+	print_help('i');
+	break;
+      } 
+      a1 = strtol(argv[2],NULL,0);
+      if( (a1 > 7) || (a1 < 0) ) {
+	printf( "Channel value %d out of range (0-7)\n", a1 );
+	break;
+      }
+      read_eeprom(DEV_I2C_0, DEVADDR>>1, (unsigned long) FPGA_DIG_IN_ADR, &buffer, 1);
+      printf( "%d\n", ((buffer >> a1) & 0x1) ? 1 : 0 );
+    }
     break;
 
   case 'w':
