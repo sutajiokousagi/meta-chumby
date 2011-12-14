@@ -13,7 +13,7 @@ SRCREV = "e944835b70dcc630aef3fff619daeecd9bb5391a"
 S = "${WORKDIR}/src"
 
 do_compile() {
-    ${CXX} ${CFLAGS} ${LDFLAGS} imgtool.cpp -o imgtool \
+    ${CC} ${CFLAGS} ${LDFLAGS} imgtool.c -o imgtool \
            -DCNPLATFORM_${CNPLATFORM} -DCNPLATFORM=\"${CNPLATFORM}\" \
            -lpng -lgif -ljpeg
 }
