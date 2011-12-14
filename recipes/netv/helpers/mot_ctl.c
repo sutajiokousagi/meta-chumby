@@ -408,7 +408,7 @@ int main(int argc, char **argv)
   unsigned int temp;
   unsigned long long device_id = 0LL;
   int i;
-  unsigned long a1, a2;
+  long a1, a2;
   double f1, f2;
   char *mcode;
 
@@ -482,7 +482,7 @@ int main(int argc, char **argv)
 	break;
       }
       if( (a2 > 255) || (a2 < 0) ) {
-	printf( "Duty cycle on percentage is out of range (0-255)\n", a2 );
+        printf( "Duty cycle on percentage is out of range (0-255)\n" );
 	break;
       }
       buffer = a2;
@@ -516,10 +516,10 @@ int main(int argc, char **argv)
     } else {
       a2 = strtol(argv[2], NULL, 0);
       if( (a2 > 50000) || (a2 < 1) ) {
-	printf( "Frequency %d is out of range (1 - 50000)\n", a2 );
+        printf( "Frequency %ld is out of range (1 - 50000)\n", a2 );
       }
       a1 = (101500 - (a2 * 2)) / a2;
-      printf( "Note: after rounding, frequency is %d Hz\n", (101500 / (a1 + 2)));
+      printf( "Note: after rounding, frequency is %ld Hz\n", (101500 / (a1 + 2)));
       
       buffer = a1 & 0xFF;
       write_eeprom(DEV_I2C_0, DEVADDR>>1, FPGA_PWM_L_DIV_ADR, &buffer, sizeof(buffer));
@@ -548,7 +548,7 @@ int main(int argc, char **argv)
 	
 	a2 = strtol(argv[2],NULL,0);
 	if( (a1 > 7) || (a1 < 0) ) {
-	  printf( "Channel specifier %d out of range (0-7)\n", a1);
+          printf( "Channel specifier %ld out of range (0-7)\n", a1);
 	  break;
 	}
 
@@ -938,7 +938,7 @@ int main(int argc, char **argv)
       } 
       a1 = strtol(argv[2],NULL,0);
       if( (a1 > 7) || (a1 < 0) ) {
-	printf( "Channel value %d out of range (0-7)\n", a1 );
+        printf( "Channel value %ld out of range (0-7)\n", a1 );
 	break;
       }
       read_eeprom(DEV_I2C_0, DEVADDR>>1, (unsigned long) FPGA_DIG_IN_ADR, &buffer, 1);
