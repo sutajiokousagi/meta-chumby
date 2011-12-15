@@ -57,6 +57,8 @@ case "$1" in
 	      usleep 50000
 	      regutil -w LCD_SPU_V_PORCH=0x50005 
 
+	      fpga_ctl x i  # turn on chroma keying by default
+
 		;;
 
 	stop)
