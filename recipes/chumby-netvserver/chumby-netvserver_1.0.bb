@@ -5,7 +5,7 @@ DESCRIPTION = "Hardware bridge for NeTV"
 HOMEPAGE = "http://www.chumby.com/"
 AUTHOR = "Torin"
 LICENSE = "GPLv3"
-PR = "r178"
+PR = "r185"
 DEPENDS = "qt4-embedded"
 RDEPENDS_${PN} = "task-qt4e-minimal curl"
 
@@ -50,6 +50,25 @@ do_install() {
     cp -rf ${DOCROOT}/scripts                                ${D}/usr/share/netvserver/docroot
     chmod +x ${D}/usr/share/netvserver/docroot/scripts/*
 }
+
+# Cron job to check network condition every 30 minutes
+pkg_postinst() {
+#!/bin/sh -e
+        ROOTCRON=/var/cron/tabs/root
+
+        if test -e ${ROOTCRON}
+	then
+		if grep -q '^[^#].*check_network.sh' $ROOTCRON
+		then
+			exit 0
+		fi
+	fi
+
+	echo "30 * * * * /usr/share/netvserver/docroot/scripts/check_network.sh" >> $ROOTCRON
+    /etc/init.d/cron restart
+    exit 0
+}
+
 
 # this puts it into a tidy package
 FILES_${PN}-dbg += "/usr/share/netvserver/.debug"
