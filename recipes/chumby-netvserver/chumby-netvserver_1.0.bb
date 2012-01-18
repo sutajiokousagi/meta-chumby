@@ -6,7 +6,7 @@ HOMEPAGE = "http://www.chumby.com/"
 AUTHOR = "Torin"
 LICENSE = "GPLv3"
 PR = "r188"
-DEPENDS = "qt4-embedded"
+DEPENDS = "qt4-embedded fastcgi"
 RDEPENDS_${PN} = "task-qt4e-minimal curl fastcgi"
 
 SRC_URI = "${CHUMBYSG_GIT_HOST}/${PN};protocol=${CHUMBYSG_GIT_PROTOCOL}"
