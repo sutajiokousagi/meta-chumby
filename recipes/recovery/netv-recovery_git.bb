@@ -20,7 +20,7 @@ SRCREV = "${AUTOREV}"
 PACKAGE_ARCH = "${MACHINE}"
 RECOVERY_IMAGE_ROOTFS = "${WORKDIR}/recovery"
 RECOVERY_IMAGE_FILE   = "${WORKDIR}/recovery.cpio"
-PR = "r7"
+PR = "r8"
 RREPLACES_${PN} = "netv-recovery-blob"
 
 COMPATIBLE_MACHINE = "chumby-silvermoon-netv"
@@ -102,7 +102,9 @@ fakeroot do_populate_netv_recovery() {
 	mknod ${RECOVERY_IMAGE_ROOTFS}/dev/mmcblk0p3    b 179 3
 	mknod ${RECOVERY_IMAGE_ROOTFS}/dev/mmcblk0p4    b 179 4
 
-	mknod ${RECOVERY_IMAGE_ROOTFS}/dev/ttyGS0       c 249 0
+	mknod ${RECOVERY_IMAGE_ROOTFS}/dev/ttyGS0       c 253 0
+
+	mknod ${RECOVERY_IMAGE_ROOTFS}/dev/ttyUSB0      c 188 0
 
 	cd ${RECOVERY_IMAGE_ROOTFS} && (find . | cpio -o -H newc >${RECOVERY_IMAGE_FILE})
 }
