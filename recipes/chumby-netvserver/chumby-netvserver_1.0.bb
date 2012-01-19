@@ -5,9 +5,9 @@ DESCRIPTION = "Hardware bridge for NeTV"
 HOMEPAGE = "http://www.chumby.com/"
 AUTHOR = "Torin"
 LICENSE = "GPLv3"
-PR = "r185"
-DEPENDS = "qt4-embedded"
-RDEPENDS_${PN} = "task-qt4e-minimal curl"
+PR = "r188"
+DEPENDS = "qt4-embedded fastcgi"
+RDEPENDS_${PN} = "task-qt4e-minimal curl fastcgi"
 
 SRC_URI = "${CHUMBYSG_GIT_HOST}/${PN};protocol=${CHUMBYSG_GIT_PROTOCOL}"
 
@@ -64,7 +64,7 @@ pkg_postinst() {
 		fi
 	fi
 
-	echo "30 * * * * /usr/share/netvserver/docroot/scripts/check_network.sh" >> $ROOTCRON
+	echo "05,35 * * * * /usr/share/netvserver/docroot/scripts/check_network.sh" >> $ROOTCRON
     /etc/init.d/cron restart
     exit 0
 }
