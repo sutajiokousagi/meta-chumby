@@ -17,8 +17,7 @@ do_compile() {
 
 do_install() {
 	mkdir -p ${D}/www/pages/luaed
-	cp -r ${S} ${D}/www/pages/luaed
-	chmod -R 0644 ${D}/www/pages/luaed
+	cp -r ${S}/* ${D}/www/pages/luaed
 }
 
 FILES_${PN} = "/www/pages/luaed"
