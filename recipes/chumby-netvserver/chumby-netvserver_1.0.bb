@@ -5,7 +5,7 @@ DESCRIPTION = "Hardware bridge for NeTV"
 HOMEPAGE = "http://www.chumby.com/"
 AUTHOR = "Torin"
 LICENSE = "GPLv3"
-PR = "r188"
+PR = "r187"
 DEPENDS = "qt4-embedded fastcgi"
 RDEPENDS_${PN} = "task-qt4e-minimal curl fastcgi"
 
@@ -54,9 +54,16 @@ do_install() {
 # Cron job to check network condition every 30 minutes
 pkg_postinst() {
 #!/bin/sh -e
-        ROOTCRON=/var/cron/tabs/root
 
-        if test -e ${ROOTCRON}
+	# Create a symlink for lighttpd to point to
+	if [ ! -e /www/netvserver ]; then
+		ln -s /usr/share/netvserver/docroot /www/netvserver
+	fi
+
+	# Cron job: Check for valid Internet connection & otherwise respawn wlan interface
+    ROOTCRON=/var/cron/tabs/root
+
+    if test -e ${ROOTCRON}
 	then
 		if grep -q '^[^#].*check_network.sh' $ROOTCRON
 		then
