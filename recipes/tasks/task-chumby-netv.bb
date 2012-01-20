@@ -1,5 +1,5 @@
 inherit task
-PR = "r28"
+PR = "r29"
 DEPENDS += "iw"
 
 CHUMBY_KERNEL_MODULES = "\
@@ -11,6 +11,7 @@ CHUMBY_KERNEL_MODULES = "\
 
 RDEPENDS_${PN} = " \
 #      NeTVServer & Webkit browser (Control Panel)
+       lighttpd \
        chumby-netvserver \
        chumby-netvbrowser \
        netv-controlpanel \
