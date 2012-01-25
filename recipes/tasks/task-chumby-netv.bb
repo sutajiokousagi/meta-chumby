@@ -10,8 +10,11 @@ CHUMBY_KERNEL_MODULES = "\
 "
 
 RDEPENDS_${PN} = " \
-#      NeTVServer & Webkit browser (Control Panel)
+#      lighttpd & plugins
        lighttpd \
+       lighttpd-module-fastcgi \
+
+#      NeTVServer & Webkit browser (Control Panel)
        chumby-netvserver \
        chumby-netvbrowser \
        netv-controlpanel \
