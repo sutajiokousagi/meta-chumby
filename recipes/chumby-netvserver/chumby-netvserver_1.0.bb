@@ -1,11 +1,11 @@
 inherit chumbysg-git chumby-info qt4e
 inherit update-rc.d
 
-DESCRIPTION = "Hardware bridge for NeTV"
+DESCRIPTION = "Hardware bridge for NeTV; implemented as a FastCGI server"
 HOMEPAGE = "http://www.chumby.com/"
 AUTHOR = "Torin"
 LICENSE = "GPLv3"
-PR = "r187"
+PR = "r188"
 DEPENDS = "qt4-embedded fastcgi"
 RDEPENDS_${PN} = "task-qt4e-minimal curl fastcgi"
 
@@ -63,19 +63,64 @@ pkg_postinst() {
 	# Cron job: Check for valid Internet connection & otherwise respawn wlan interface
     ROOTCRON=/var/cron/tabs/root
 
-    if test -e ${ROOTCRON}
+    if [ -e ${ROOTCRON} ];
 	then
 		if grep -q '^[^#].*check_network.sh' $ROOTCRON
 		then
-			exit 0
+			echo "cron job for netvserver already exists"
+		else
+			echo "05,35 * * * * /usr/share/netvserver/docroot/scripts/check_network.sh" >> $ROOTCRON
+    		/etc/init.d/cron restart
 		fi
 	fi
 
-	echo "05,35 * * * * /usr/share/netvserver/docroot/scripts/check_network.sh" >> $ROOTCRON
-    /etc/init.d/cron restart
-    exit 0
+	# Patch lighttpd.conf
+	CONF=/etc/lighttpd.conf
+
+	# Ignore lighttpd conf munging if it's already present
+	if grep -q 'bridge.socket' ${CONF}
+	then
+		exit 0
+	fi
+
+	# Add our configuration to the lighttpd conf file
+	cat >> ${CONF} <<EOL
+fastcgi.server += (
+    "/lua/" =>
+        ((
+          "socket" => "/tmp/bridge.socket",
+          "check-local" => "disable",
+        ))
+)
+EOL
+
+	# Ensure mod_fastgti is enabled
+	sed  's/.*"mod_fastcgi".*/                                "mod_fastcgi",/' -i ${CONF}
+
+	/etc/init.d/lighttpd restart
 }
 
+pkg_postrm_${PN}() {
+    
+	CONF=/etc/lighttpd.conf
+
+	if ! grep -q 'bridge.socket' ${CONF}
+	then
+		echo "lua-server not present in lighttpd conf"
+		exit 0
+	fi
+
+	# Figure out what line our little addition starts on
+	LINE=$(($(grep -n bridge.socket ${CONF} | cut -d: -f1 | head -n1)-3))
+	echo "${PN} configuration begins on line ${LINE}"
+
+	# Remove our config from the file
+	sed ${LINE},$((${LINE}+6))d -i ${CONF}
+
+	# Note: Leave fastcgi on in case it's used elsewhere
+
+	exit 0
+}
 
 # this puts it into a tidy package
 FILES_${PN}-dbg += "/usr/share/netvserver/.debug"
