@@ -5,7 +5,7 @@ DESCRIPTION = "Hardware bridge for NeTV; implemented as a FastCGI server"
 HOMEPAGE = "http://www.chumby.com/"
 AUTHOR = "Torin"
 LICENSE = "GPLv3"
-PR = "r190"
+PR = "r191"
 DEPENDS = "qt4-embedded fastcgi"
 RDEPENDS_${PN} = "task-qt4e-minimal curl fastcgi"
 
@@ -86,7 +86,7 @@ pkg_postinst() {
 	# Add our configuration to the lighttpd conf file
 	cat >> ${CONF} <<EOL
 fastcgi.server += (
-    "/lua/" =>
+    "/bridge" =>
         ((
           "socket" => "/tmp/bridge.socket",
           "check-local" => "disable",
