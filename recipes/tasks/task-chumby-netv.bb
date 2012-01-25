@@ -1,5 +1,5 @@
 inherit task
-PR = "r30"
+PR = "r31"
 DEPENDS += "iw"
 
 CHUMBY_KERNEL_MODULES = "\
