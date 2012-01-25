@@ -8,7 +8,7 @@ DEPENDS += "fastcgi"
 RDEPENDS_${PN} += "fastcgi lighttpd"
 RRECOMMENDS_${PN} += "luaed"
 
-PR = "r1"
+PR = "r2"
 S = "${WORKDIR}/git"
 
 SRC_URI = "${CHUMBYSG_GIT_HOST}/${PN}.git;protocol=${CHUMBYSG_GIT_PROTOCOL} \
@@ -48,7 +48,7 @@ pkg_postinst_${PN}() {
 
 	# Add our configuration to the lighttpd conf file
 	cat >> ${CONF} <<EOL
-fastcgi.server = (
+fastcgi.server += (
     "/lua/" =>
         ((
           "socket" => "/tmp/lua.socket",
