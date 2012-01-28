@@ -15,7 +15,7 @@ RDEPENDS_${PN} = " \
        lighttpd-module-fastcgi \
 
 # Testing
-       lighttpd-module-php \
+       php \
        sqlite \
 
 #      NeTVServer & Webkit browser (Control Panel)
