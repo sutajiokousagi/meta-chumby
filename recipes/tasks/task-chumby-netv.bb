@@ -1,5 +1,5 @@
 inherit task
-PR = "r34"
+PR = "r35"
 DEPENDS += "iw"
 
 CHUMBY_KERNEL_MODULES = "\
@@ -15,6 +15,8 @@ RDEPENDS_${PN} = " \
        lighttpd-module-fastcgi \
 
 # Testing
+       lighttpd-module-auth \
+       lighttpd-module-rewrite \
        php \
        sqlite \
 
