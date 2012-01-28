@@ -14,6 +14,10 @@ RDEPENDS_${PN} = " \
        lighttpd \
        lighttpd-module-fastcgi \
 
+# Testing
+       lighttpd-module-php \
+       sqlite \
+
 #      NeTVServer & Webkit browser (Control Panel)
        chumby-netvserver \
        chumby-netvbrowser \
@@ -25,7 +29,7 @@ RDEPENDS_${PN} = " \
        watchdog \
        iw \
 
-# Update scripts and conrtab entry
+# Update scripts and crontab entry
        chumby-updates \
        git \
 
