@@ -1,5 +1,5 @@
 inherit task
-PR = "r33"
+PR = "r34"
 DEPENDS += "iw"
 
 CHUMBY_KERNEL_MODULES = "\
@@ -15,7 +15,7 @@ RDEPENDS_${PN} = " \
        lighttpd-module-fastcgi \
 
 # Testing
-       lighttpd-module-php \
+       php \
        sqlite \
 
 #      NeTVServer & Webkit browser (Control Panel)
