@@ -4,7 +4,7 @@ DESCRIPTION = "Install php-cgi, mod-rewrite and configure lighttpd for PHP suppo
 HOMEPAGE = "http://www.kosagi.com/"
 AUTHOR = "Torin"
 LICENSE = "GPLv3"
-PR = "r0"
+PR = "r1"
 DEPENDS = " "
 RDEPENDS_${PN} = "php-cgi lighttpd lighttpd-module-auth lighttpd-module-rewrite fastcgi"
 
