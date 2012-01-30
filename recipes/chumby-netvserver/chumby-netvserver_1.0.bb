@@ -94,7 +94,7 @@ fastcgi.server += (
 )
 EOL
 
-	# Ensure mod_fastgti is enabled
+	# Ensure mod_fastcgi is enabled
 	sed  's/.*"mod_fastcgi".*/                                "mod_fastcgi",/' -i ${CONF}
 
 	/etc/init.d/lighttpd restart
@@ -106,7 +106,7 @@ pkg_postrm_${PN}() {
 
 	if ! grep -q 'bridge.socket' ${CONF}
 	then
-		echo "lua-server not present in lighttpd conf"
+		echo "NeTVServer not present in lighttpd conf"
 		exit 0
 	fi
 
