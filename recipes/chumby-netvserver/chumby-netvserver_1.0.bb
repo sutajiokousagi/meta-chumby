@@ -5,7 +5,7 @@ DESCRIPTION = "Hardware bridge for NeTV; implemented as a FastCGI server"
 HOMEPAGE = "http://www.chumby.com/"
 AUTHOR = "Torin"
 LICENSE = "GPLv3"
-PR = "r193"
+PR = "r195"
 DEPENDS = "qt4-embedded fastcgi"
 RDEPENDS_${PN} = "task-qt4e-minimal curl fastcgi"
 
@@ -96,6 +96,21 @@ EOL
 
 	# Ensure mod_fastcgi is enabled
 	sed  's/.*"mod_fastcgi".*/                                "mod_fastcgi",/' -i ${CONF}
+
+	# Allow execution of shell script
+
+	# Ensure mod_cgi is enabled
+	sed  's/.*"mod_cgi".*/                                	  "mod_cgi",/' -i ${CONF}
+
+	# Script files are not to be downloaded as static files
+	sed 's|".pl", ".fcgi"|".pl", ".sh", ".fcgi"|g' -i /etc/lighttpd.conf
+
+	# Execute scripts with CGI/Perl
+	cat >> ${CONF} <<EOL
+cgi.assign                 += ( ".pl"  => "/usr/bin/perl",
+                               ".sh" => "/usr/bin/perl",
+                               ".cgi" => "/usr/bin/perl" )
+EOL
 
 	/etc/init.d/lighttpd restart
 }
