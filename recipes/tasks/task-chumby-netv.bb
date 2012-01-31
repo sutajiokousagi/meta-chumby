@@ -1,5 +1,5 @@
 inherit task
-PR = "r41"
+PR = "r42"
 DEPENDS += "iw"
 
 CHUMBY_KERNEL_MODULES = "\
@@ -18,8 +18,8 @@ RDEPENDS_${PN} = " \
        lighttpd-module-auth \
        lighttpd-module-rewrite \
        php-cgi \
-       mysql \
        netv-php-demo \	
+       mysql5 \
 
 #      NeTVServer & Webkit browser (Control Panel)
        chumby-netvserver \
