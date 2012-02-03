@@ -5,7 +5,7 @@ DESCRIPTION = "Hardware bridge for NeTV; implemented as a FastCGI server"
 HOMEPAGE = "http://www.chumby.com/"
 AUTHOR = "Torin"
 LICENSE = "GPLv3"
-PR = "r195"
+PR = "r196"
 DEPENDS = "qt4-embedded fastcgi"
 RDEPENDS_${PN} = "task-qt4e-minimal curl fastcgi"
 
@@ -65,13 +65,23 @@ pkg_postinst() {
 
     if [ -e ${ROOTCRON} ];
 	then
+		# Check valid Internet access & respawn wlan interface if necessary
 		if grep -q '^[^#].*check_network.sh' $ROOTCRON
 		then
-			echo "cron job for netvserver already exists"
+			echo "cron job for check_network.sh already exists"
 		else
 			echo "05,35 * * * * /usr/share/netvserver/docroot/scripts/check_network.sh" >> $ROOTCRON
-    		/etc/init.d/cron restart
 		fi
+
+		# Automatic update cpanel git repository every hour
+		if grep -q '^[^#].*updatecpanel.sh' $ROOTCRON
+		then
+			echo "cron job for updatecpanel.sh already exists"
+		else
+			echo "24 * * * * /usr/share/netvserver/docroot/scripts/updatecpanel.sh >> /tmp/cron_updatecpanel.log 2>&1" >> $ROOTCRON
+		fi
+
+  		/etc/init.d/cron restart
 	fi
 
 	# Patch lighttpd.conf
