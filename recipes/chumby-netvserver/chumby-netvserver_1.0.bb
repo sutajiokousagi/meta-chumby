@@ -5,7 +5,7 @@ DESCRIPTION = "Hardware bridge for NeTV; implemented as a FastCGI server"
 HOMEPAGE = "http://www.chumby.com/"
 AUTHOR = "Torin"
 LICENSE = "GPLv3"
-PR = "r197"
+PR = "r198"
 DEPENDS = "qt4-embedded fastcgi"
 RDEPENDS_${PN} = "task-qt4e-minimal curl fastcgi"
 
@@ -58,6 +58,7 @@ pkg_postinst() {
 	# Create a symlink for lighttpd to point to
 	if [ ! -e /www/netvserver ]; then
 		ln -s /usr/share/netvserver/docroot /www/netvserver
+		echo "created default docroot symlink /www/netvserver -> /usr/share/netvserver/docroot"
 	fi
 
 	# Cron job: Check for valid Internet connection & otherwise respawn wlan interface
@@ -71,6 +72,7 @@ pkg_postinst() {
 			echo "cron job for check_network.sh already exists"
 		else
 			echo "05,35 * * * * /usr/share/netvserver/docroot/scripts/check_network.sh" >> $ROOTCRON
+			echo "added new cron job for check_network.sh"
 		fi
 
 		# Automatic update cpanel git repository every hour
@@ -79,6 +81,7 @@ pkg_postinst() {
 			echo "cron job for updatecpanel.sh already exists"
 		else
 			echo "24 * * * * /usr/share/netvserver/docroot/scripts/updatecpanel.sh >> /tmp/cron_updatecpanel.log 2>&1" >> $ROOTCRON
+			echo "added new cron job for updatecpanel.sh"
 		fi
 
 		# Automatic update /psp/homepage symlink every hour
@@ -87,8 +90,10 @@ pkg_postinst() {
 			echo "cron job for psphomepage.sh already exists"
 		else
 			echo "39 * * * * /usr/share/netvserver/docroot/scripts/psphomepage.sh >> /tmp/cron_psphomepage.log 2>&1" >> $ROOTCRON
+			echo "added new cron job for psphomepage.sh"
 		fi
 
+		echo "restarting cron..."
   		/etc/init.d/cron restart
 	fi
 
@@ -111,6 +116,7 @@ fastcgi.server += (
         ))
 )
 EOL
+	echo "added lighttpd config for NeTVServer (/tmp/bridge.socket)"
 
 	# Ensure mod_fastcgi is enabled
 	sed  's/.*"mod_fastcgi".*/                                "mod_fastcgi",/' -i ${CONF}
@@ -129,7 +135,9 @@ cgi.assign                 += ( ".pl"  => "/usr/bin/perl",
                                ".sh" => "/usr/bin/perl",
                                ".cgi" => "/usr/bin/perl" )
 EOL
+	echo "added lighttpd config for NeCGI/PerlTVServer (/usr/bin/perl)"
 
+	echo "Restarting lighttpd..."
 	/etc/init.d/lighttpd restart
 }
 
