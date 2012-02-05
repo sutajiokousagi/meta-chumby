@@ -5,7 +5,7 @@ DESCRIPTION = "Hardware bridge for NeTV; implemented as a FastCGI server"
 HOMEPAGE = "http://www.chumby.com/"
 AUTHOR = "Torin"
 LICENSE = "GPLv3"
-PR = "r196"
+PR = "r197"
 DEPENDS = "qt4-embedded fastcgi"
 RDEPENDS_${PN} = "task-qt4e-minimal curl fastcgi"
 
@@ -79,6 +79,14 @@ pkg_postinst() {
 			echo "cron job for updatecpanel.sh already exists"
 		else
 			echo "24 * * * * /usr/share/netvserver/docroot/scripts/updatecpanel.sh >> /tmp/cron_updatecpanel.log 2>&1" >> $ROOTCRON
+		fi
+
+		# Automatic update /psp/homepage symlink every hour
+		if grep -q '^[^#].*psphomepage.sh' $ROOTCRON
+		then
+			echo "cron job for psphomepage.sh already exists"
+		else
+			echo "39 * * * * /usr/share/netvserver/docroot/scripts/psphomepage.sh >> /tmp/cron_psphomepage.log 2>&1" >> $ROOTCRON
 		fi
 
   		/etc/init.d/cron restart
