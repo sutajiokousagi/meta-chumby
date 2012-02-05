@@ -5,7 +5,7 @@ DESCRIPTION = "Hardware bridge for NeTV; implemented as a FastCGI server"
 HOMEPAGE = "http://www.chumby.com/"
 AUTHOR = "Torin"
 LICENSE = "GPLv3"
-PR = "r200"
+PR = "r201"
 DEPENDS = "qt4-embedded fastcgi"
 RDEPENDS_${PN} = "task-qt4e-minimal curl fastcgi"
 
@@ -51,7 +51,7 @@ do_install() {
     chmod +x ${D}/usr/share/netvserver/docroot/scripts/*
 }
 
-# Cron job to check network condition every 30 minutes
+# Cron jobs
 pkg_postinst() {
 #!/bin/sh -e
 
@@ -97,17 +97,20 @@ pkg_postinst() {
   		/etc/init.d/cron restart
 	fi
 
-	# Patch lighttpd.conf
+
+	# Patching lighttpd.conf
 	CONF=/etc/lighttpd.conf
 
-	# Ignore lighttpd conf munging if it's already present
+	# Ignore lighttpd conf patching for /bridge if it's already present
 	if grep -q 'bridge.socket' ${CONF}
 	then
 		exit 0
-	fi
+		echo "lighttpd is already patched for /bridge"
+	else
 
-	# Add our configuration to the lighttpd conf file
-	cat >> ${CONF} <<EOL
+		# Add our configuration to the lighttpd conf file
+		cat >> ${CONF} <<EOL
+
 fastcgi.server += (
     "/bridge" =>
         ((
@@ -115,27 +118,41 @@ fastcgi.server += (
           "check-local" => "disable",
         ))
 )
+
 EOL
-	echo "added lighttpd config for NeTVServer (/tmp/bridge.socket)"
+		echo "added lighttpd config for NeTVServer (/tmp/bridge.socket)"
+	fi
 
 	# Ensure mod_fastcgi is enabled
 	sed  's/.*"mod_fastcgi".*/                                "mod_fastcgi",/' -i ${CONF}
 
+	#
 	# Allow execution of shell script
+	#
 
 	# Ensure mod_cgi is enabled
-	sed  's/.*"mod_cgi".*/                                	  "mod_cgi",/' -i ${CONF}
+	sed  's/.*"mod_cgi".*/                             	  "mod_cgi",/' -i ${CONF}
 
-	# Script files are not to be downloaded as static files
+	# Shell script files (.sh) are not to be downloaded as static files
 	sed 's|".pl", ".fcgi"|".pl", ".sh", ".fcgi"|g' -i /etc/lighttpd.conf
 
-	# Execute scripts with CGI/Perl
+	# Ignore lighttpd conf patching for CGI if it's already present
+	if grep -q '".sh" => "/usr/bin/perl"' ${CONF}
+	then
+		exit 0
+		echo "lighttpd is already patched for .sh"
+	else
+
+		# Add our configuration to the lighttpd conf file
 	cat >> ${CONF} <<EOL
-cgi.assign                 += ( ".pl"  => "/usr/bin/perl",
-                               ".sh" => "/usr/bin/perl",
-                               ".cgi" => "/usr/bin/perl" )
+
+cgi.assign += ( ".pl"  => "/usr/bin/perl",
+             	".sh" => "/usr/bin/perl",
+                ".cgi" => "/usr/bin/perl" )
+
 EOL
-	echo "added lighttpd config for NeCGI/PerlTVServer (/usr/bin/perl)"
+		echo "added lighttpd config for CGI/Perl (/usr/bin/perl)"
+	fi
 
 	echo "Restarting lighttpd..."
 	/etc/init.d/lighttpd restart
@@ -145,20 +162,19 @@ pkg_postrm_${PN}() {
     
 	CONF=/etc/lighttpd.conf
 
-	if ! grep -q 'bridge.socket' ${CONF}
+	# Remove config for /bridge
+	if grep -q 'bridge.socket' ${CONF}
 	then
-		echo "NeTVServer not present in lighttpd conf"
-		exit 0
+		# Figure out what line our little addition starts on
+		LINE=$(($(grep -n bridge.socket ${CONF} | cut -d: -f1 | head -n1)-3))
+		echo "${PN} configuration begins on line ${LINE}"
+
+		# Remove our config from the file
+		sed ${LINE},$((${LINE}+6))d -i ${CONF}
 	fi
 
-	# Figure out what line our little addition starts on
-	LINE=$(($(grep -n bridge.socket ${CONF} | cut -d: -f1 | head -n1)-3))
-	echo "${PN} configuration begins on line ${LINE}"
-
-	# Remove our config from the file
-	sed ${LINE},$((${LINE}+6))d -i ${CONF}
-
 	# Note: Leave fastcgi on in case it's used elsewhere
+	# Note: Leave CGI/Perl on
 
 	exit 0
 }
