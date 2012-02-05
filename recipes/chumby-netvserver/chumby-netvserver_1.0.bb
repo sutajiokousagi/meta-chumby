@@ -5,7 +5,7 @@ DESCRIPTION = "Hardware bridge for NeTV; implemented as a FastCGI server"
 HOMEPAGE = "http://www.chumby.com/"
 AUTHOR = "Torin"
 LICENSE = "GPLv3"
-PR = "r201"
+PR = "r202"
 DEPENDS = "qt4-embedded fastcgi"
 RDEPENDS_${PN} = "task-qt4e-minimal curl fastcgi"
 
@@ -32,9 +32,6 @@ do_install() {
     install -d ${D}/usr/share/netvserver/docroot/tests
     install -d ${D}/usr/share/netvserver/docroot/tmp
 
-#   Symlink to /tmp for caching downloaded thumbnails
-    ln -sf /tmp ${D}/usr/share/netvserver/docroot/tmp/netvserver
-
     install -m 0755 ${S}/bin/NeTVServer                      ${D}${bindir}
     install -m 0755 ${WORKDIR}/git/etc/NeTVServer.ini        ${D}${sysconfdir}
     install -m 0755 ${WORKDIR}/git/etc/chumby-netvserver.sh  ${D}${sysconfdir}/init.d/chumby-netvserver
@@ -54,6 +51,11 @@ do_install() {
 # Cron jobs
 pkg_postinst() {
 #!/bin/sh -e
+
+	# Symlink to volatile memory for caching downloaded thumbnails
+	if [ ! -e /usr/share/netvserver/docroot/tmp/netvserver ]; then
+    	ln -sf /tmp /usr/share/netvserver/docroot/tmp/netvserver
+	fi
 
 	# Create a symlink for lighttpd to point to
 	if [ ! -e /www/netvserver ]; then
