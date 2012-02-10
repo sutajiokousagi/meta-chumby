@@ -15,6 +15,7 @@ RDEPENDS_${PN} = "config-util"
 BRANCH_NAME = "ERROR"
 BRANCH_NAME_chumby-silvermoon-netv = "netv"
 BRANCH_NAME_chumby-silvermoon-chumby8 = "master"
+BRANCH_NAME_kovan = "kovan"
 
 SRC_URI = "${CHUMBYSG_GIT_HOST}/u-boot-2009.07-silvermoon.git;subpath=src;protocol=${CHUMBYSG_GIT_PROTOCOL};branch=${BRANCH_NAME} \
            file://logo.raw.gz \
