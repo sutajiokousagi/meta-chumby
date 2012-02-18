@@ -5,7 +5,7 @@ DESCRIPTION = "Hardware bridge for NeTV; implemented as a FastCGI server"
 HOMEPAGE = "http://www.chumby.com/"
 AUTHOR = "Torin"
 LICENSE = "GPLv3"
-PR = "r204"
+PR = "r205"
 DEPENDS = "qt4-embedded fastcgi"
 RDEPENDS_${PN} = "task-qt4e-minimal curl fastcgi"
 
@@ -139,21 +139,22 @@ EOL
 	sed 's|".pl", ".fcgi"|".pl", ".sh", ".fcgi"|g' -i /etc/lighttpd.conf
 
 	# Ignore lighttpd conf patching for CGI if it's already present
-	if grep -q '".sh" => "/usr/bin/perl"' ${CONF}
+	if grep -q '".sh" => ""' ${CONF}
 	then
 		exit 0
 		echo "lighttpd is already patched for .sh"
 	else
 
 		# Add our configuration to the lighttpd conf file
+		# /usr/bin/perl is not needed in this config
 	cat >> ${CONF} <<EOL
 
-cgi.assign += ( ".pl"  => "/usr/bin/perl",
-             	".sh" => "/usr/bin/perl",
-                ".cgi" => "/usr/bin/perl" )
+cgi.assign += ( ".pl"  => "",
+             	".sh" => "",
+                ".cgi" => "" )
 
 EOL
-		echo "added lighttpd config for CGI/Perl (/usr/bin/perl)"
+		echo "added lighttpd config for CGI"
 	fi
 
 	echo "Restarting lighttpd..."
