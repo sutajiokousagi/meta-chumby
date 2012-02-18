@@ -1,0 +1,19 @@
+diff -ur src-stock/drivers/video/pxa168fb_ovly.c src/drivers/video/pxa168fb_ovly.c
+--- src-stock/drivers/video/pxa168fb_ovly.c	2012-02-17 17:22:25.146465761 +0800
++++ src/drivers/video/pxa168fb_ovly.c	2012-02-17 17:24:03.436345820 +0800
+@@ -2235,6 +2235,7 @@
+ 	}
+ 
+ 
++#if 0
+ 	/* Allocate the HPD interrupt GPIO */
+ 	gpio_request(91, "HPD report");
+ 	gpio_direction_input(91);
+@@ -2280,6 +2281,7 @@
+ 			 "Source PLL lock status change", fbi);
+ 	if (ret)
+ 		dev_err(&pdev->dev, "Can't allocate IRQ 117 for low voltage interrupt");
++#endif
+ 
+ 	/*
+ 	 * Enable Video interrupt
