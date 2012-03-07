@@ -1,13 +1,13 @@
 inherit chumbysg-git chumby-info qt4e
 inherit update-rc.d
 
-DESCRIPTION = "Hardware bridge for NeTV"
+DESCRIPTION = "Hardware bridge for NeTV; implemented as a FastCGI server"
 HOMEPAGE = "http://www.chumby.com/"
 AUTHOR = "Torin"
 LICENSE = "GPLv3"
-PR = "r178"
-DEPENDS = "qt4-embedded"
-RDEPENDS_${PN} = "task-qt4e-minimal curl"
+PR = "r205"
+DEPENDS = "qt4-embedded fastcgi"
+RDEPENDS_${PN} = "task-qt4e-minimal curl fastcgi"
 
 SRC_URI = "${CHUMBYSG_GIT_HOST}/${PN};protocol=${CHUMBYSG_GIT_PROTOCOL}"
 
@@ -32,9 +32,6 @@ do_install() {
     install -d ${D}/usr/share/netvserver/docroot/tests
     install -d ${D}/usr/share/netvserver/docroot/tmp
 
-#   Symlink to /tmp for caching downloaded thumbnails
-    ln -sf /tmp ${D}/usr/share/netvserver/docroot/tmp/netvserver
-
     install -m 0755 ${S}/bin/NeTVServer                      ${D}${bindir}
     install -m 0755 ${WORKDIR}/git/etc/NeTVServer.ini        ${D}${sysconfdir}
     install -m 0755 ${WORKDIR}/git/etc/chumby-netvserver.sh  ${D}${sysconfdir}/init.d/chumby-netvserver
@@ -49,6 +46,140 @@ do_install() {
     cp -rf ${DOCROOT}/tests	                             	 ${D}/usr/share/netvserver/docroot
     cp -rf ${DOCROOT}/scripts                                ${D}/usr/share/netvserver/docroot
     chmod +x ${D}/usr/share/netvserver/docroot/scripts/*
+}
+
+# Cron jobs
+pkg_postinst() {
+#!/bin/sh -e
+
+	# Symlink to volatile memory for caching downloaded thumbnails
+	if [ ! -e /usr/share/netvserver/docroot/tmp/netvserver ]; then
+    	ln -sf /tmp /usr/share/netvserver/docroot/tmp/netvserver
+	fi
+
+	# Create a symlink for lighttpd to point to
+	if [ ! -e /www/netvserver ]; then
+		ln -s /usr/share/netvserver/docroot /www/netvserver
+		echo "created default docroot symlink /www/netvserver -> /usr/share/netvserver/docroot"
+	fi
+
+	# Cron job: Check for valid Internet connection & otherwise respawn wlan interface
+    ROOTCRON=/var/cron/tabs/root
+
+    if [ -e ${ROOTCRON} ];
+	then
+		# Check valid Internet access & respawn wlan interface if necessary
+		if grep -q '^[^#].*check_network.sh' $ROOTCRON
+		then
+			echo "cron job for check_network.sh already exists"
+		else
+			echo "05,35 * * * * /usr/share/netvserver/docroot/scripts/check_network.sh" >> $ROOTCRON
+			echo "added new cron job for check_network.sh"
+		fi
+
+		# Automatic update cpanel git repository every hour
+		if grep -q '^[^#].*updatecpanel.sh' $ROOTCRON
+		then
+			echo "cron job for updatecpanel.sh already exists"
+		else
+			echo "24 * * * * /usr/share/netvserver/docroot/scripts/updatecpanel.sh >> /var/log/cron_updatecpanel.log 2>&1" >> $ROOTCRON
+			echo "added new cron job for updatecpanel.sh"
+		fi
+
+		# Automatic update /psp/homepage symlink every hour
+		if grep -q '^[^#].*psphomepage.sh' $ROOTCRON
+		then
+			echo "cron job for psphomepage.sh already exists"
+		else
+			echo "39 * * * * /usr/share/netvserver/docroot/scripts/psphomepage.sh >> /var/log/cron_psphomepage.log 2>&1" >> $ROOTCRON
+			echo "added new cron job for psphomepage.sh"
+		fi
+
+		echo "restarting cron..."
+  		/etc/init.d/cron restart
+	fi
+
+
+	# Patching lighttpd.conf
+	CONF=/etc/lighttpd.conf
+
+	# Ignore lighttpd conf patching for /bridge if it's already present
+	if grep -q 'bridge.socket' ${CONF}
+	then
+		exit 0
+		echo "lighttpd is already patched for /bridge"
+	else
+
+		# Add our configuration to the lighttpd conf file
+		cat >> ${CONF} <<EOL
+
+fastcgi.server += (
+    "/bridge" =>
+        ((
+          "socket" => "/tmp/bridge.socket",
+          "check-local" => "disable",
+        ))
+)
+
+EOL
+		echo "added lighttpd config for NeTVServer (/tmp/bridge.socket)"
+	fi
+
+	# Ensure mod_fastcgi is enabled
+	sed  's/.*"mod_fastcgi".*/                                "mod_fastcgi",/' -i ${CONF}
+
+	#
+	# Allow execution of shell script
+	#
+
+	# Ensure mod_cgi is enabled
+	sed  's/.*"mod_cgi".*/                             	  "mod_cgi",/' -i ${CONF}
+
+	# Shell script files (.sh) are not to be downloaded as static files
+	sed 's|".pl", ".fcgi"|".pl", ".sh", ".fcgi"|g' -i /etc/lighttpd.conf
+
+	# Ignore lighttpd conf patching for CGI if it's already present
+	if grep -q '".sh" => ""' ${CONF}
+	then
+		exit 0
+		echo "lighttpd is already patched for .sh"
+	else
+
+		# Add our configuration to the lighttpd conf file
+		# /usr/bin/perl is not needed in this config
+	cat >> ${CONF} <<EOL
+
+cgi.assign += ( ".pl"  => "",
+             	".sh" => "",
+                ".cgi" => "" )
+
+EOL
+		echo "added lighttpd config for CGI"
+	fi
+
+	echo "Restarting lighttpd..."
+	/etc/init.d/lighttpd restart
+}
+
+pkg_postrm_${PN}() {
+    
+	CONF=/etc/lighttpd.conf
+
+	# Remove config for /bridge
+	if grep -q 'bridge.socket' ${CONF}
+	then
+		# Figure out what line our little addition starts on
+		LINE=$(($(grep -n bridge.socket ${CONF} | cut -d: -f1 | head -n1)-3))
+		echo "${PN} configuration begins on line ${LINE}"
+
+		# Remove our config from the file
+		sed ${LINE},$((${LINE}+6))d -i ${CONF}
+	fi
+
+	# Note: Leave fastcgi on in case it's used elsewhere
+	# Note: Leave CGI/Perl on
+
+	exit 0
 }
 
 # this puts it into a tidy package

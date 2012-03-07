@@ -69,6 +69,7 @@ echo "${ETAG}" > $LAST_ETAG_PATH
 if ! curl --stderr /dev/null -f -o $SCRIPT_PATH "$URL"
 then
 	logger -t update "unable to locate update file - $URL"
+	rm -f ${$LAST_ETAG_PATH}
 	exit 0
 fi
 
@@ -77,6 +78,7 @@ fi
 if ! curl --stderr /dev/null -f -o $SCRIPT_PATH.sig "$URL.sig"
 then
 	logger -t update "unable to locate update signature file - $URL.sig"
+	rm -f ${$LAST_ETAG_PATH}
 	exit 0
 fi
 
@@ -90,6 +92,7 @@ then
 		if [ ${UPDATE_DEBUG} -eq 0 ]
 		then
 			logger -t update "abandoning update process"
+			rm -f ${$LAST_ETAG_PATH}
 			exit 0
 		fi
 	fi

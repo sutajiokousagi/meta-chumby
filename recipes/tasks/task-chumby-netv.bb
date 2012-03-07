@@ -1,5 +1,6 @@
 inherit task
-PR = "r27"
+PR = "r43"
+DEPENDS += "iw"
 
 CHUMBY_KERNEL_MODULES = "\
     kernel-module-cfg80211 kernel-module-chumby-xilinx \
@@ -9,6 +10,18 @@ CHUMBY_KERNEL_MODULES = "\
 "
 
 RDEPENDS_${PN} = " \
+#      lighttpd & plugins
+       lighttpd \
+       lighttpd-module-fastcgi \
+       lighttpd-module-cgi \
+
+# 	   PHP & SQL support
+       lighttpd-module-auth \
+       lighttpd-module-rewrite \
+       php-cgi \
+       netv-php-demo \	
+       mysql5 \
+
 #      NeTVServer & Webkit browser (Control Panel)
        chumby-netvserver \
        chumby-netvbrowser \
@@ -20,7 +33,7 @@ RDEPENDS_${PN} = " \
        watchdog \
        iw \
 
-# Update scripts and conrtab entry
+# Update scripts and crontab entry
        chumby-updates \
        git \
 

@@ -2,20 +2,18 @@ inherit chumbysg-git chumby-info
 
 require recipes/linux/linux.inc
 
-PR = "r44"
+PR = "r43"
 RDEPENDS_${PN} = "config-util"
 
-COMPATIBLE_MACHINE = "chumby-silvermoon-netv"
+COMPATIBLE_MACHINE = "kovan"
 
-SRC_URI = "${CHUMBYSG_GIT_HOST}/linux-2.6.28-silvermoon.git;subpath=src;protocol=${CHUMBYSG_GIT_PROTOCOL};branch=netv \
-           file://defconfig \
-"
+SRC_URI = "https://github.com/xobs/linux/zipball/kovan"
 SRCREV = "${AUTOREV}"
 S = "${WORKDIR}/src"
 
 # Mark archs/machines that this kernel supports
 DEFAULT_PREFERENCE = "-1"
-DEFAULT_PREFERENCE_chumby-silvermoon-netv = "1"
+DEFAULT_PREFERENCE_kovan = "1"
 
 pkg_postinst_kernel_append() {
     config_util --cmd=putblock --dev=/dev/mmcblk0p1 --block=krnA < /boot/zImage
