@@ -358,7 +358,7 @@ int dump_hdmi_timings() {
 }
 
 //#define STATS_CORRECT_MINOR 2
-#define STATS_CORRECT_MAJOR 0xe
+#define STATS_CORRECT_MAJOR 0x10
 int dump_registers(int stats) {
     unsigned char buffer[32];
     int i;
