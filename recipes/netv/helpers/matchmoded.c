@@ -427,16 +427,17 @@ normalize_timing_info(struct timing_range **ranges, struct timing_info *ti)
 		
 		// total pixel counts are more reliable, as they only rely upon the gross detection
 		// of syncs and are less influenced by "bouncing" on sync edges
+		//		printf( "lower %d upper %d total %d pixclk %4.2f\n", tr->lower.htotal, tr->upper.htotal, ti->htotal, ti->pixclk_in_MHz );
 		if (!(ti->htotal >= tr->lower.htotal && ti->htotal <= tr->upper.htotal)) {
 		  if((ti->htotal >= 1900) && (ti->pixclk_in_MHz < 95) && (ti->pixclk_in_MHz > 60)) { 
 		    // if we have wide lines, we need to tell between 1080p24 and 1080i60
 		    mismatches += 6;
 		  } else {
-		    mismatches+=2;
+		    mismatches+=3;
 		  }
 		}
 		if (!(ti->vtotal_lines >= tr->lower.vtotal_lines && ti->vtotal_lines <= tr->upper.vtotal_lines))
-		  mismatches+=2;
+		  mismatches+=6;
 
 #if USE_SYNC
 		if (!(ti->h_fp >= tr->lower.h_fp && ti->h_fp <= tr->upper.h_fp))
