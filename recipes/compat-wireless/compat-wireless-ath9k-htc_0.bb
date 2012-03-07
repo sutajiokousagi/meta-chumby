@@ -1,6 +1,6 @@
 include compat-wireless.inc
 
-PR .= "-amend-r2"
+PR .= "-amend-r3"
 
 #SRC_URI += "file://0001-disable-leds-by-default.patch \
 #            file://0002-light-off-by-default.patch \
