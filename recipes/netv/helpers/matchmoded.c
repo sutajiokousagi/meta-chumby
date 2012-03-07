@@ -427,8 +427,14 @@ normalize_timing_info(struct timing_range **ranges, struct timing_info *ti)
 		
 		// total pixel counts are more reliable, as they only rely upon the gross detection
 		// of syncs and are less influenced by "bouncing" on sync edges
-		if (!(ti->htotal >= tr->lower.htotal && ti->htotal <= tr->upper.htotal))
-		  mismatches+=2;
+		if (!(ti->htotal >= tr->lower.htotal && ti->htotal <= tr->upper.htotal)) {
+		  if((ti->htotal >= 1900) && (ti->pixclk_in_MHz < 95) && (ti->pixclk_in_MHz > 60)) { 
+		    // if we have wide lines, we need to tell between 1080p24 and 1080i60
+		    mismatches += 6;
+		  } else {
+		    mismatches+=2;
+		  }
+		}
 		if (!(ti->vtotal_lines >= tr->lower.vtotal_lines && ti->vtotal_lines <= tr->upper.vtotal_lines))
 		  mismatches+=2;
 
@@ -720,6 +726,7 @@ main(int argc, char **argv)
 	char pathBuffer[256];
 	char shownInfo = 0;
 	FILE *touch_sshd;
+	char tried720pOnly = 0;
 
 	// check for the type of behavior based upon the presence of a file
 	if( access( "/psp/behavior.passthru", F_OK ) != -1 ) {
@@ -913,6 +920,7 @@ main(int argc, char **argv)
 	  fprintf(stderr, "fields              %4d    %4d   %4d\n", last_ti.fields, new_ti.fields, raw_ti.fields);
 	  
 	  if(new_ti.status == STATUS_OK) {
+	    tried720pOnly = 0;
 	    shownInfo = 0;
 	    invalid_count = 0;
 	    set_timing(fb0, &new_ti);
@@ -935,7 +943,23 @@ main(int argc, char **argv)
 	  } else if(new_ti.status == STATUS_INVALID || (new_ti.status == STATUS_DISCONNECTED || new_ti.status == STATUS_NOSOURCE) ) {
 	    if( invalid_count > 4 ) {  // approx 4-6 seconds in an invalid state
 	      if( behavior == PASSTHRU_MODE ) {
-		if( !shownInfo ) {
+		if( (!tried720pOnly) && (new_ti.pixclk_in_MHz > 95) ) {
+		  tried720pOnly = 1;
+		  system("cp /lib/firmware/min720p.edid /psp/cached.edid");
+		  system("modeline /lib/firmware/min720p.edid");
+		  system("fpga_ctl E");
+		  
+		  lockout_attach = 0;
+		  switch_to_overlay();
+		  lockout_attach = 1;
+		  system("fpga_ctl H"); // pull HPD to get 720p mode to sink in
+		  deepsleep(1,0);
+		  system("fpga_ctl h");
+		  deepsleep(3,0); // give the system 3 seconds to stabilize. 
+		  lockout_attach = 0;
+		    
+		  invalid_count = 2; // start the count a little higher as we already gave the system time to settle
+		} else if( !shownInfo ) {
 		  generateResInfo( &last_ti, &new_ti, &raw_ti );
 
 		  switch_to_720p();	   
