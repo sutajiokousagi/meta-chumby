@@ -49,7 +49,7 @@ do_install() {
 }
 
 # Cron jobs
-pkg_postinst() {
+pkg_postinst_$(PN)() {
 #!/bin/sh -e
 
 	# Symlink to volatile memory for caching downloaded thumbnails
@@ -188,4 +188,5 @@ FILES_${PN} += "/usr/share/netvserver"
 FILES_${PN} += ${bindir}
 FILES_${PN} += ${sysconfdir}
 FILES_${PN} += ${sysconfdir}/init.d
+FILES_${PN} += "/www"
 
