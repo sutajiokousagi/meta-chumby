@@ -1,0 +1,32 @@
+diff -ur NetworkManager-0.8.1.stock/src/nm-device-wifi.c NetworkManager-0.8.1/src/nm-device-wifi.c
+--- NetworkManager-0.8.1.stock/src/nm-device-wifi.c	2012-03-08 12:23:17.376080260 +0800
++++ NetworkManager-0.8.1/src/nm-device-wifi.c	2012-03-08 13:05:56.496076868 +0800
+@@ -63,7 +63,8 @@
+ /* All of these are in seconds */
+ #define SCAN_INTERVAL_MIN 0
+ #define SCAN_INTERVAL_STEP 20
+-#define SCAN_INTERVAL_MAX 120
++#define SCAN_INTERVAL_MAX (60*60*8)
++#define SCAN_INTERVAL_CONNECTED 3600
+ 
+ #define WIRELESS_SECRETS_TRIES "wireless-secrets-tries"
+ 
+@@ -162,7 +163,7 @@
+ 	gboolean          enabled; /* rfkilled or not */
+ 	
+ 	glong             scheduled_scan_time;
+-	guint8            scan_interval; /* seconds */
++	guint32           scan_interval; /* seconds */
+ 	guint             pending_scan_id;
+ 
+ 	Supplicant        supplicant;
+@@ -3414,7 +3415,7 @@
+ 	periodic_update (self);
+ 
+ 	/* Reset scan interval to something reasonable */
+-	priv->scan_interval = SCAN_INTERVAL_MIN + (SCAN_INTERVAL_STEP * 2);
++	priv->scan_interval = SCAN_INTERVAL_CONNECTED;
+ }
+ 
+ 
+Only in NetworkManager-0.8.1/src: .nm-device-wifi.c.swp
