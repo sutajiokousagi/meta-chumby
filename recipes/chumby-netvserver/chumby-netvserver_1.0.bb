@@ -59,8 +59,9 @@ pkg_postinst_$(PN)() {
 
 	# Create a symlink for lighttpd to point to
 	if [ ! -e /www/netvserver ]; then
-		ln -s /usr/share/netvserver/docroot /www/netvserver
-		echo "created default docroot symlink /www/netvserver -> /usr/share/netvserver/docroot"
+	   mkdir /www || true
+ 	   ln -s /usr/share/netvserver/docroot /www/netvserver
+	   echo "created default docroot symlink /www/netvserver -> /usr/share/netvserver/docroot"
 	fi
 
 	# Cron job: Check for valid Internet connection & otherwise respawn wlan interface
