@@ -6,7 +6,7 @@ inherit update-rc.d
 INITSCRIPT_NAME = "netv_service"
 INITSCRIPT_PARAMS = "defaults 50 98"
 
-PR = "r81"
+PR = "r82"
 
 PACKAGE_ARCH = "${MACHINE}"
 

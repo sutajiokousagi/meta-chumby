@@ -7,8 +7,6 @@
 
 case "$1" in
 	start)
-	      ntpd -p pool.ntp.org  # really doesn't belong here but it's a convenient place to put it
-
 	      # very important: make sure clock is input before doing this!
 	      regutil -w LCD_CFG_SCLK_DIV=0x90000001
 	      echo "installing chumby xilinx driver"
@@ -64,7 +62,6 @@ case "$1" in
 		;;
 
 	stop)
-	      killall ntpd
 	      echo "resetting FPGA and stopping"
 	      fpga_ctl r
 	      rmmod chumby_xilinx
