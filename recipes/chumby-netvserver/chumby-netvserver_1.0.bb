@@ -49,7 +49,7 @@ do_install() {
 }
 
 # Cron jobs
-pkg_postinst_$(PN)() {
+pkg_postinst_${PN}() {
 #!/bin/sh -e
 
 	# Symlink to volatile memory for caching downloaded thumbnails
