@@ -4,7 +4,7 @@ DESCRIPTION = "chumby adapters for NetworkManager"
 HOMEPAGE = "http://www.chumby.com/"
 AUTHOR = "Sean Cross"
 LICENSE = "BSD"
-PR = "r11"
+PR = "r12"
 DEPENDS = "dbus dbus-glib networkmanager glib-2.0 libxml2"
 CONFFILES_${PN} = "/psp/network_config /psp/network_configs"
 
@@ -21,3 +21,4 @@ do_install() {
     echo "<configurations/>" > ${D}/psp/network_configs
 }
 
+FILES_${PN} += "/psp/"
