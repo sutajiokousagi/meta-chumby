@@ -49,7 +49,7 @@ do_install() {
 }
 
 # Cron jobs
-pkg_postinst() {
+pkg_postinst_$(PN)() {
 #!/bin/sh -e
 
 	# Symlink to volatile memory for caching downloaded thumbnails
@@ -59,8 +59,9 @@ pkg_postinst() {
 
 	# Create a symlink for lighttpd to point to
 	if [ ! -e /www/netvserver ]; then
-		ln -s /usr/share/netvserver/docroot /www/netvserver
-		echo "created default docroot symlink /www/netvserver -> /usr/share/netvserver/docroot"
+	   mkdir /www || true
+ 	   ln -s /usr/share/netvserver/docroot /www/netvserver
+	   echo "created default docroot symlink /www/netvserver -> /usr/share/netvserver/docroot"
 	fi
 
 	# Cron job: Check for valid Internet connection & otherwise respawn wlan interface
@@ -188,4 +189,5 @@ FILES_${PN} += "/usr/share/netvserver"
 FILES_${PN} += ${bindir}
 FILES_${PN} += ${sysconfdir}
 FILES_${PN} += ${sysconfdir}/init.d
+FILES_${PN} += "/www"
 
