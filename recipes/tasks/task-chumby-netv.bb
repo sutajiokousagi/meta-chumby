@@ -1,5 +1,5 @@
 inherit task
-PR = "r43"
+PR = "r44"
 DEPENDS += "iw"
 
 CHUMBY_KERNEL_MODULES = "\
@@ -32,6 +32,7 @@ RDEPENDS_${PN} = " \
 
        watchdog \
        iw \
+       ntp \
 
 # Update scripts and crontab entry
        chumby-updates \
