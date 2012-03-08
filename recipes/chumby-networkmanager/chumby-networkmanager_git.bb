@@ -4,7 +4,7 @@ DESCRIPTION = "chumby adapters for NetworkManager"
 HOMEPAGE = "http://www.chumby.com/"
 AUTHOR = "Sean Cross"
 LICENSE = "BSD"
-PR = "r10"
+PR = "r11"
 DEPENDS = "dbus dbus-glib networkmanager glib-2.0 libxml2"
 CONFFILES_${PN} = "/psp/network_config /psp/network_configs"
 
@@ -17,5 +17,7 @@ do_install() {
     install -d ${D}${bindir}
     install -m 0755 signal_strength ap_scan macgen.sh network_adapter_list.sh network_status.sh start_network ${D}${bindir}
     install -d ${D}/psp
+    echo "<configuration/>" > ${D}/psp/network_config
+    echo "<configurations/>" > ${D}/psp/network_configs
 }
 
