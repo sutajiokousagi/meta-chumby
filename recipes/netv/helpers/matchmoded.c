@@ -76,6 +76,17 @@ All rights reserved.
 #define PLL_UNLOCKED   0
 #define PLL_LOCKED     1
 
+#define OVERLAY_MODE  0
+#define PASSTHRU_MODE 1
+
+#define TOL_STRICT    0 
+#define TOL_LOOSE     1  
+
+#define RESINFO_PATH  "/media/storage/root/resinfo.html"
+
+static int behavior = OVERLAY_MODE;
+static int tolerance = TOL_STRICT;
+
 static int fd = 0;
 static int   *mem_32 = 0;
 static short *mem_16 = 0;
@@ -185,8 +196,8 @@ calculate_timing_margin(struct timing_range *tr, int margin) {
 	tr->upper.vsync_width_lines = tr->actual.vsync_width_lines * margin/100;
 
 	// pixclocks should be very tightly constrained as this is a reliable measurement
-	tr->lower.pixclk_in_MHz = tr->actual.pixclk_in_MHz * 100.0/2.0;
-	tr->upper.pixclk_in_MHz = tr->actual.pixclk_in_MHz * 2.0/100;
+	tr->lower.pixclk_in_MHz = tr->actual.pixclk_in_MHz * 0.98;
+	tr->upper.pixclk_in_MHz = tr->actual.pixclk_in_MHz * 1.02;
 }
 
 /*
@@ -410,16 +421,23 @@ normalize_timing_info(struct timing_range **ranges, struct timing_info *ti)
 
 		// less reliable measures, such as active lines and pixels, are weighted lighter
 		if (!(ti->hactive >= tr->lower.hactive && ti->hactive <= tr->upper.hactive))
-			mismatches+=1;
+		  mismatches+=1;
 		if (!(ti->vactive >= tr->lower.vactive && ti->vactive <= tr->upper.vactive))
-			mismatches+=1;
-
+		  mismatches+=1;
+		
 		// total pixel counts are more reliable, as they only rely upon the gross detection
 		// of syncs and are less influenced by "bouncing" on sync edges
-		if (!(ti->htotal >= tr->lower.htotal && ti->htotal <= tr->upper.htotal))
-			mismatches+=2;
+		//		printf( "lower %d upper %d total %d pixclk %4.2f\n", tr->lower.htotal, tr->upper.htotal, ti->htotal, ti->pixclk_in_MHz );
+		if (!(ti->htotal >= tr->lower.htotal && ti->htotal <= tr->upper.htotal)) {
+		  if((ti->htotal >= 1900) && (ti->pixclk_in_MHz < 95) && (ti->pixclk_in_MHz > 60)) { 
+		    // if we have wide lines, we need to tell between 1080p24 and 1080i60
+		    mismatches += 6;
+		  } else {
+		    mismatches+=3;
+		  }
+		}
 		if (!(ti->vtotal_lines >= tr->lower.vtotal_lines && ti->vtotal_lines <= tr->upper.vtotal_lines))
-			mismatches+=2;
+		  mismatches+=6;
 
 #if USE_SYNC
 		if (!(ti->h_fp >= tr->lower.h_fp && ti->h_fp <= tr->upper.h_fp))
@@ -438,9 +456,10 @@ normalize_timing_info(struct timing_range **ranges, struct timing_info *ti)
 		
 		// pixclock is a very robust measure, if this is off, then weight it heavily:
 		// it's more than a correct htotal and vtotal combined
-		if (!(ti->pixclk_in_MHz >= tr->lower.pixclk_in_MHz && ti->pixclk_in_MHz <= tr->upper.pixclk_in_MHz))
-			mismatches+=5;
-
+		if (!(ti->pixclk_in_MHz >= tr->lower.pixclk_in_MHz && ti->pixclk_in_MHz <= tr->upper.pixclk_in_MHz)) {
+		  //		  fprintf(stderr, "pixclk mismatch: got %4.2f not between %4.2f and %4.2f\n", ti->pixclk_in_MHz, tr->lower.pixclk_in_MHz, tr->upper.pixclk_in_MHz );
+		  mismatches+=6; // force a mismatch if clock doesn't match -- because otherwise we can't tell between 1080p24 and 1080p60
+		}
 		do_tweak = 0;
 
 #if USE_SYNC
@@ -652,6 +671,46 @@ static void handle_hpd(int num)
   }
 }
 
+void generateResInfo( struct timing_info *last_ti,
+		      struct timing_info *new_ti,
+		      struct timing_info *raw_ti ) 
+{
+  FILE *resInfo;
+  resInfo = fopen( RESINFO_PATH, "w" );
+  if( resInfo == NULL ) {
+    printf( "Couldn't open %s, no feedback on res failure\n", RESINFO_PATH );
+    return;
+  }
+	
+  fprintf(resInfo, "<html>\n<div style=\"background-color:#FFFFFF;width:640px;\">\n" );
+  fprintf(resInfo, "<style type=\"text/css\">\n" );
+  fprintf(resInfo, "table { border: 0; margin; 5px; }\n" );
+  fprintf(resInfo, "td {border: 0; margin: 2px; padding-right: 10px;}\n" );
+  fprintf(resInfo, "th {border: 0; margin: 2px;\n" );
+  fprintf(resInfo, "</style>\n<p>\n<br>\n" );
+  fprintf(resInfo, "<h2><center>Problem detecting input resolution</center></h2>" );
+  fprintf(resInfo, "Signal will attempt to resume in about 10 seconds. Diagnostic info:<br>\n<br>\n" );
+  fprintf(resInfo, "<table width=\"90\%\" border=\"1\">\n<tr>\n" );
+  fprintf(resInfo, "<th>Signal</th><th>Old</th><th>New</th><th>Raw</th></tr>\n" );
+  fprintf(resInfo, "<tr><td ALIGN=\"right\">  hactive             </td><td>%4d</td>    <td>%4d</td>   <td>%4d</td></tr>\n", last_ti->hactive, new_ti->hactive, raw_ti->hactive);
+  fprintf(resInfo, "<tr><td ALIGN=\"right\">  vactive             </td><td>%4d</td>    <td>%4d</td>   <td>%4d</td></tr>\n", last_ti->vactive, new_ti->vactive, raw_ti->vactive);
+  fprintf(resInfo, "<tr><td ALIGN=\"right\">  htotal              </td><td>%4d</td>    <td>%4d</td>   <td>%4d</td></tr>\n", last_ti->htotal, new_ti->htotal, raw_ti->htotal);
+  fprintf(resInfo, "<tr><td ALIGN=\"right\">  vtotal_lines        </td><td>%4d</td>    <td>%4d</td>   <td>%4d</td></tr>\n", last_ti->vtotal_lines, new_ti->vtotal_lines, raw_ti->vtotal_lines);
+  fprintf(resInfo, "<tr><td ALIGN=\"right\">  h_fp                </td><td>%4d</td>    <td>%4d</td>   <td>%4d</td></tr>\n", last_ti->h_fp, new_ti->h_fp, raw_ti->h_fp);
+  fprintf(resInfo, "<tr><td ALIGN=\"right\">  h_bp                </td><td>%4d</td>    <td>%4d</td>   <td>%4d</td></tr>\n", last_ti->h_bp, new_ti->h_bp, raw_ti->h_bp);
+  fprintf(resInfo, "<tr><td ALIGN=\"right\">  hsync_width         </td><td>%4d</td>    <td>%4d</td>   <td>%4d</td></tr>\n", last_ti->hsync_width, new_ti->hsync_width, raw_ti->hsync_width);
+  fprintf(resInfo, "<tr><td ALIGN=\"right\">  v_fp_lines          </td><td>%4d</td>    <td>%4d</td>   <td>%4d</td></tr>\n", last_ti->v_fp_lines, new_ti->v_fp_lines, raw_ti->v_fp_lines);
+  fprintf(resInfo, "<tr><td ALIGN=\"right\">  v_bp_lines          </td><td>%4d</td>    <td>%4d</td>   <td>%4d</td></tr>\n", last_ti->v_bp_lines, new_ti->v_bp_lines, raw_ti->v_bp_lines);
+  fprintf(resInfo, "<tr><td ALIGN=\"right\">  vsync_width_lines   </td><td>%4d</td>    <td>%4d</td>   <td>%4d</td></tr>\n", last_ti->vsync_width_lines, new_ti->vsync_width_lines, raw_ti->vsync_width_lines);
+  fprintf(resInfo, "<tr><td ALIGN=\"right\">  pixclk_in_MHz       </td><td>%4.2f</td>  <td>%4.2f</td>  <td>%4.2f</td></tr>\n", last_ti->pixclk_in_MHz, new_ti->pixclk_in_MHz, raw_ti->pixclk_in_MHz);
+  fprintf(resInfo, "<tr><td ALIGN=\"right\">  status              </td><td>%4d</td>    <td>%4d</td>   <td>%4d</td></tr>\n", last_ti->status, new_ti->status, raw_ti->status);
+  fprintf(resInfo, "<tr><td ALIGN=\"right\">  fields              </td><td>%4d</td>    <td>%4d</td>   <td>%4d</td></tr>\n", last_ti->fields, new_ti->fields, raw_ti->fields);
+  fprintf(resInfo, "</table>\n" );
+  fprintf(resInfo, "</p>\n</div>\n</html>\n" );
+  fflush(resInfo);
+  fclose(resInfo);
+}
+
 int
 main(int argc, char **argv)
 {
@@ -665,7 +724,32 @@ main(int argc, char **argv)
 	char *modename = NULL;
 	int invalid_count = 0;
 	unsigned char buffer;
+	char pathBuffer[256];
+	char shownInfo = 0;
+	FILE *touch_sshd;
+	char tried720pOnly = 0;
 
+	// check for the type of behavior based upon the presence of a file
+	if( access( "/psp/behavior.passthru", F_OK ) != -1 ) {
+	  behavior = PASSTHRU_MODE;
+	  printf( "Selecting passthrough behavior on HDMI failure.\n" );
+	} else if( access( "/psp/behavior.overlay", F_OK ) != -1 ) {
+	  printf( "Selecting default behavior on HDMI failure.\n" );
+	  behavior = OVERLAY_MODE;
+	} else {
+	  behavior = PASSTHRU_MODE;
+	  printf( "Selecting passthrough behavior on HDMI failure.\n" );
+	}
+
+	// check for the type of behavior based upon the presence of a file
+	if( access( "/psp/tolerance.loose", F_OK ) != -1 ) {
+	  tolerance = TOL_LOOSE;
+	  printf( "Selecting loose timing tolerances.\n" );
+	} else {
+	  printf( "Selecting default (strict) timing tolerances.\n" );
+	  tolerance = TOL_STRICT;
+	}
+	
 	// parse args
 	if( argc == 1 ) {
 	  printf( "Daemonizing...\n" );
@@ -706,8 +790,13 @@ main(int argc, char **argv)
 
 
 	/* Calculate a 10% timing margin */
-	for (current_range = 0; ranges[current_range]; current_range++)
-		calculate_timing_margin(ranges[current_range], 10);
+	for (current_range = 0; ranges[current_range]; current_range++) {
+		if( tolerance == TOL_STRICT ) {
+		  calculate_timing_margin(ranges[current_range], 10);
+		} else {
+		  calculate_timing_margin(ranges[current_range], 25);
+		}
+	}
 
 	fb0 = open("/dev/fb0", O_RDWR);
         if (-1 == fb0) {
@@ -832,10 +921,17 @@ main(int argc, char **argv)
 	  fprintf(stderr, "fields              %4d    %4d   %4d\n", last_ti.fields, new_ti.fields, raw_ti.fields);
 	  
 	  if(new_ti.status == STATUS_OK) {
+	    tried720pOnly = 0;
+	    shownInfo = 0;
 	    invalid_count = 0;
 	    set_timing(fb0, &new_ti);
 	    send_message("connected", new_ti.hactive, new_ti.vactive, 16);
 	    fprintf(stderr, "  Switched LCD to %s\n", modename);
+
+	    if( behavior == PASSTHRU_MODE ) {
+	      fprintf(stderr, "Turning overlay back on.\n" );
+	      system("fpga_ctl C"); // turn on compositing
+	    }
 
 #if 0 // this is too paranoid, causing spurious HPD triggers...
 	    // the handlers already put us into overlay mode, so we don't need to do it now
@@ -847,16 +943,75 @@ main(int argc, char **argv)
 #endif
 	  } else if(new_ti.status == STATUS_INVALID || (new_ti.status == STATUS_DISCONNECTED || new_ti.status == STATUS_NOSOURCE) ) {
 	    if( invalid_count > 4 ) {  // approx 4-6 seconds in an invalid state
-	      read_eeprom("/dev/i2c-0", DEVADDR>>1, 3, &buffer, sizeof(buffer));
-	      if( !(buffer & 0x8) ) { // switch if we're not already in the mode
-		switch_to_720p();	   
-		
-		set_timing(fb0, &self_timed_720p);
-		send_message("invalid", self_timed_720p.hactive, self_timed_720p.vactive, 16);
-		fprintf(stderr, "  Switched LCD to 720p self-timed\n");
+	      if( behavior == PASSTHRU_MODE ) {
+		if( (!tried720pOnly) && (new_ti.pixclk_in_MHz > 95) ) {
+		  tried720pOnly = 1;
+		  system("cp /lib/firmware/min720p.edid /psp/cached.edid");
+		  system("modeline /lib/firmware/min720p.edid");
+		  system("fpga_ctl E");
+		  
+		  lockout_attach = 0;
+		  switch_to_overlay();
+		  lockout_attach = 1;
+		  system("fpga_ctl H"); // pull HPD to get 720p mode to sink in
+		  deepsleep(1,0);
+		  system("fpga_ctl h");
+		  deepsleep(3,0); // give the system 3 seconds to stabilize. 
+		  lockout_attach = 0;
+		    
+		  invalid_count = 2; // start the count a little higher as we already gave the system time to settle
+		} else if( !shownInfo ) {
+		  generateResInfo( &last_ti, &new_ti, &raw_ti );
 
-		deepsleep(4,0); // don't allow any new decisions on self-timed mode for a couple seconds
-		// to avoid thrashing
+		  switch_to_720p();	   
+		
+		  set_timing(fb0, &self_timed_720p);
+		  send_message("invalid", self_timed_720p.hactive, self_timed_720p.vactive, 16);
+		  fprintf(stderr, "  Switched LCD to 720p self-timed\n");
+		  system("setbrowser r");
+
+		  // switch to the tab for a few seconds, and then close it
+		  sprintf(pathBuffer, "NeTVBrowser Tab 9 file://%s\n", RESINFO_PATH );
+		  system(pathBuffer);
+		  deepsleep(7,0); 
+
+		  lockout_attach = 0;
+		  switch_to_overlay();
+		  lockout_attach = 1;
+		  deepsleep(4,0); // give the system 4 seconds to stabilize. This ia generous margin.
+		  lockout_attach = 0;
+		  system("NeTVBrowser Tab 9 hide");
+		  shownInfo = 1;
+		  
+		  fprintf(stderr, "Turning off overlay, as system is unstable\n" );
+		  system("fpga_ctl c"); // turn off compositing
+		} else {
+		  // do nothing
+		}
+
+		if( invalid_count > 30 ) {
+		  // been wedged for a while, turn on sshd if it isn't already to help with debugging
+#if 0
+		  if( access( "/psp/touch_sshd", F_OK ) == -1 ) {
+		    touch_sshd = fopen( "/psp/touch_sshd", "w" );
+		    fprintf( touch_sshd, "1\n" );
+		    fclose( touch_sshd );
+		  }
+#endif
+		  system("/etc/init.d/sshd start-chumby");
+		}
+	      } else { 
+		read_eeprom("/dev/i2c-0", DEVADDR>>1, 3, &buffer, sizeof(buffer));
+		if( !(buffer & 0x8) ) { // switch if we're not already in the mode
+		  switch_to_720p();	   
+		
+		  set_timing(fb0, &self_timed_720p);
+		  send_message("invalid", self_timed_720p.hactive, self_timed_720p.vactive, 16);
+		  fprintf(stderr, "  Switched LCD to 720p self-timed\n");
+		  
+		  deepsleep(4,0); // don't allow any new decisions on self-timed mode for a couple seconds
+		  // to avoid thrashing
+		}
 	      }
 	    } else {
 	      invalid_count++;
@@ -864,11 +1019,12 @@ main(int argc, char **argv)
 	    }
 	  } else {
 	    fprintf(stderr, "<error> Reached an unknown status.\n");
+	    shownInfo = 0;
 	  }
 
 	  /* Tell both NeTVBrowser and the flash player that the resolution changed */
 	  system("setbrowser r");
-	  system("setplayer r");
+	  /* system("setplayer r"); */ // no more flashplayer
 	  
 	  last_ti = new_ti;
 	}
