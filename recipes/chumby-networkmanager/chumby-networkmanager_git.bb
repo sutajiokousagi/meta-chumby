@@ -4,8 +4,9 @@ DESCRIPTION = "chumby adapters for NetworkManager"
 HOMEPAGE = "http://www.chumby.com/"
 AUTHOR = "Sean Cross"
 LICENSE = "BSD"
-PR = "r9"
+PR = "r10"
 DEPENDS = "dbus dbus-glib networkmanager glib-2.0 libxml2"
+CONFFILES_${PN} = "/psp/network_config /psp/network_configs"
 
 SRC_URI = "${CHUMBYSG_GIT_HOST}/${PN}.git;protocol=${CHUMBYSG_GIT_PROTOCOL} \
 "
