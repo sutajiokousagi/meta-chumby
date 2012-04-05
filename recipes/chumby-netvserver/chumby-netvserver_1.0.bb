@@ -5,7 +5,7 @@ DESCRIPTION = "Hardware bridge for NeTV; implemented as a FastCGI server"
 HOMEPAGE = "http://www.chumby.com/"
 AUTHOR = "Torin"
 LICENSE = "GPLv3"
-PR = "r207"
+PR = "r211"
 DEPENDS = "qt4-embedded fastcgi"
 RDEPENDS_${PN} = "task-qt4e-minimal curl fastcgi"
 
@@ -67,8 +67,8 @@ pkg_postinst_${PN}() {
 	# Cron job: Check for valid Internet connection & otherwise respawn wlan interface
     ROOTCRON=/var/cron/tabs/root
 
-    if [ -e ${ROOTCRON} ];
-	then
+#    if [ -e ${ROOTCRON} ];
+#	then
 		# Check valid Internet access & respawn wlan interface if necessary
 		if grep -q '^[^#].*check_network.sh' $ROOTCRON
 		then
@@ -78,12 +78,12 @@ pkg_postinst_${PN}() {
 			echo "added new cron job for check_network.sh"
 		fi
 
-		# Automatic update cpanel git repository every hour
+		# Automatic update cpanel git repository once every day
 		if grep -q '^[^#].*updatecpanel.sh' $ROOTCRON
 		then
 			echo "cron job for updatecpanel.sh already exists"
 		else
-			echo "24 * * * * /usr/share/netvserver/docroot/scripts/updatecpanel.sh >> /var/log/cron_updatecpanel.log 2>&1" >> $ROOTCRON
+			echo "24 0 * * * /usr/share/netvserver/docroot/scripts/updatecpanel.sh >> /var/log/cron_updatecpanel.log 2>&1" >> $ROOTCRON
 			echo "added new cron job for updatecpanel.sh"
 		fi
 
@@ -98,7 +98,7 @@ pkg_postinst_${PN}() {
 
 		echo "restarting cron..."
   		/etc/init.d/cron restart
-	fi
+#	fi
 
 
 	# Patching lighttpd.conf
