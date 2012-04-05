@@ -6,7 +6,7 @@ COMPATIBLE_MACHINE = "chumby-falconwing"
 
 PROVIDES = "virtual/kernel"
 
-SRC_URI = "http://files.chumby.com/source/falconwing/build3454/linux-2.6.28.mx233-falconwing-1.0.7.tgz \
+SRC_URI = "http://files.chumby.com/source/falconwing/build3454/linux-2.6.28.mx233-falconwing-1.0.7-053111.tgz \
            file://defconfig \
 "
 S = "${WORKDIR}/linux-2.6.28.mx233-falconwing-1.0.7"
@@ -15,5 +15,5 @@ S = "${WORKDIR}/linux-2.6.28.mx233-falconwing-1.0.7"
 DEFAULT_PREFERENCE = "-1"
 DEFAULT_PREFERENCE_chumby-falconwing = "1"
 
-SRC_URI[md5sum] = "7ff9f40b4c08e7393098fe231197e0f0"
-SRC_URI[sha256sum] = "b6df540b1e450b791c659481d54e4187d554aef5fff12a004dda76ce92bd6413"
+SRC_URI[md5sum] = "29029e3c2d964e1bb32ae5c58f91460e"
+SRC_URI[sha256sum] = "d458547493ab14071c624c26d7eda06c2af633884cff9f8399f312ef1b27467c"
