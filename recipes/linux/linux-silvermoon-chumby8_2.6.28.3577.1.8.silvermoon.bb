@@ -6,7 +6,7 @@ PR = "r0"
 
 COMPATIBLE_MACHINE = "chumby-silvermoon-chumby8"
 
-SRC_URI = "${CHUMBYSG_GIT_HOST}/chumby-sg/linux-2.6.28-silvermoon.git;subpath=src;protocol=${CHUMBYSG_GIT_PROTOCOL} \
+SRC_URI = "${CHUMBYSG_GIT_HOST}/linux-2.6.28-silvermoon.git;subpath=src;protocol=${CHUMBYSG_GIT_PROTOCOL} \
            file://0001-disable-cache-thingy.patch \
 	   file://0002-fix-touchscreen-init.patch \
            file://defconfig \
